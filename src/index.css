@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-primary: #10b981;
+  --color-brand-primary-hover: #059669;
+  --color-brand-slate: #0f172a;
+  --color-brand-accent: #34d399;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+
+  /* Map shadcn-like variables to tailwind colors if needed */
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+}
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #020817;
+    --border: #e2e8f0;
+    --input: #e2e8f0;
+    --ring: #10b981;
+    --primary: #10b981;
+    --primary-foreground: #ffffff;
+    --secondary: #f1f5f9;
+    --secondary-foreground: #0f172a;
+    --accent: #f1f5f9;
+    --accent-foreground: #0f172a;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: #020817;
+    --foreground: #f8fafc;
+    --border: #1e293b;
+    --input: #1e293b;
+    --ring: #34d399;
+    --primary: #34d399;
+    --primary-foreground: #020817;
+    --secondary: #1e293b;
+    --secondary-foreground: #f8fafc;
+    --accent: #1e293b;
+    --accent-foreground: #f8fafc;
+    --destructive: #7f1d1d;
+    --destructive-foreground: #f8fafc;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-brand-slate/10; /* Avoid border-border if problematic */
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  h1 { font-size: 2.25rem; line-height: 1.2; font-weight: 900; }
+  h2 { font-size: 1.5rem; line-height: 1.3; font-weight: 800; }
+  h3 { font-size: 1.25rem; line-height: 1.35; font-weight: 700; }
+  h4 { font-size: 1.1rem; line-height: 1.4; font-weight: 700; }
+  p, span, a, label, li, td, th, div {
+    min-font-size: 13px;
+  }
+}
+
+/* ── Global Typography Scale-Up ── */
+/* Override all micro-text classes to readable minimums */
+/* Tailwind text-[9px] and text-[10px] are way too small on screen */
+.\!text-\[9px\], .text-\[9px\] { font-size: 12px !important; }
+.\!text-\[10px\], .text-\[10px\] { font-size: 13px !important; }
+.\!text-\[11px\], .text-\[11px\] { font-size: 13px !important; }
+
+/* Boost text-xs (12px) to 13px for better legibility */
+.text-xs { font-size: 13px !important; line-height: 1.5 !important; }
+
+/* Boost text-sm (14px) to 15px */
+.text-sm { font-size: 15px !important; line-height: 1.5 !important; }
+
+/* Ensure tracking-widest labels are at least 12px */
+.tracking-widest { font-size: max(12px, inherit); }
+.tracking-wider { font-size: max(13px, inherit); }
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #1e293b;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass {
+  background-color: rgba(2, 8, 23, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.shadow-3xl {
+  box-shadow: 0 35px 60px -15px rgba(0, 0, 0, 0.3);
+}
+
+.dark .shadow-3xl {
+  box-shadow: 0 35px 60px -15px rgba(0, 0, 0, 0.6);
+}
+
+/* Custom Select Arrow */
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1.5rem center;
+  background-size: 1.25rem;
+}
