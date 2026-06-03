@@ -116,7 +116,7 @@ export const CartDrawer: React.FC = () => {
           book_id: book.id,
           access_type: isOwn ? 'own' : 'rent',
           lifetime_rent_total: accumulatedRent,
-          expires_at: isOwn ? null : (book.type === 'book_rent' ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() : null)
+          expires_at: isOwn ? null : (book.type === 'book_rent' ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() : null)
         }, { onConflict: 'user_id, book_id' });
         
         if (error) throw error;

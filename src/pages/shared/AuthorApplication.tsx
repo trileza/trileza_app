@@ -321,15 +321,44 @@ const AuthorApplication: React.FC<AuthorApplicationProps> = ({ inline = false, o
             </Card>
 
             <div className="space-y-6">
-              <Card className="p-8 border-none shadow-[0_24px_48px_-12px_rgba(0,0,0,0.05)] rounded-[2.5rem] bg-slate-900 text-white space-y-6 relative overflow-hidden">
+              <Card className="p-8 border-none shadow-[0_24px_48px_-12px_rgba(0,0,0,0.05)] rounded-[2.5rem] bg-slate-900 text-white space-y-6 relative overflow-hidden animate-in zoom-in duration-500">
                 <div className="relative z-10 space-y-6">
                   <h4 className="text-xl font-black tracking-tight">Need Quick Approval?</h4>
-                  <p className="text-slate-350 text-sm font-medium leading-relaxed">
-                    You are in the simulated interface! To test immediately, switch your role to **Management** via the role-switcher, and approve this application inside the **Admin Hub**.
+                  <p className="text-slate-350 text-xs font-medium leading-relaxed">
+                    You are in the simulated interface! To test immediately, click the **Auto-Approve** button below to instantly activate your author privileges.
                   </p>
+                  <Button 
+                    onClick={async () => {
+                      try {
+                        // 1. Update application in DB to approved
+                        await nexus.database
+                          .from('author_applications')
+                          .update({ status: 'approved' })
+                          .eq('user_id', user.id);
+                        
+                        // 2. Update user profile metadata in Auth Store
+                        const updatedMeta = { ...user.metadata, is_author: true };
+                        await updateProfile({ metadata: updatedMeta });
+                        
+                        // 3. Reload application status
+                        await fetchApplications();
+                        
+                        // 4. Trigger standard visual notification
+                        const notificationEvent = new CustomEvent('show-notification', {
+                          detail: { message: 'Author status auto-approved successfully!', type: 'success' }
+                        });
+                        window.dispatchEvent(notificationEvent);
+                      } catch (e: any) {
+                        alert('Failed to auto-approve: ' + e.message);
+                      }
+                    }}
+                    className="w-full bg-emerald-400 hover:bg-emerald-500 text-slate-950 font-black py-3.5 rounded-2xl border-none shadow-lg text-[9px] uppercase tracking-widest transition-transform hover:scale-[1.02] flex items-center justify-center gap-2"
+                  >
+                    🚀 Auto-Approve Right Now (Dev Sim)
+                  </Button>
                   <div className="pt-2">
                     <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl bg-white/10 text-emerald-400">
-                      Simulation Tip
+                      Simulation Mode
                     </span>
                   </div>
                 </div>

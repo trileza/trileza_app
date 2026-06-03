@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -144,3 +145,49 @@ select {
   background-position: right 1.5rem center;
   background-size: 1.25rem;
 }
+
+/* ── Reading Aid Utilities ── */
+
+/* Lexend font style simulating OpenDyslexic design: heavy-bottomed, highly readable weights and generous spacing */
+.font-dyslexic {
+  font-family: 'Lexend', 'Comic Sans MS', sans-serif !important;
+  font-weight: 500 !important;
+}
+
+/* Word-by-word active highlight for TTS */
+.tts-word-highlight {
+  background-color: rgba(253, 224, 71, 0.7) !important;
+  color: #000000 !important;
+  border-radius: 4px;
+  padding: 0 2px;
+  box-shadow: 0 0 0 2px rgba(253, 224, 71, 0.4);
+  font-weight: 700;
+  transition: all 0.1s ease;
+}
+
+/* Contrast Tint Filter presets for visual stress */
+.tint-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  transition: background-color 0.3s ease;
+  z-index: 50;
+}
+
+/* Reading Ruler focus guide line */
+.reading-ruler {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background-color: rgba(234, 179, 8, 0.15);
+  border-top: 2px solid rgba(234, 179, 8, 0.6);
+  border-bottom: 2px solid rgba(234, 179, 8, 0.6);
+  box-shadow: 0 0 15px rgba(234, 179, 8, 0.1);
+  pointer-events: none;
+  z-index: 40;
+  mix-blend-mode: multiply;
+  transition: top 0.05s ease-out;
+}
+

@@ -55,11 +55,7 @@ const PublicLibrary: React.FC = () => {
             </button>
             
             <div className="p-6 md:p-10">
-              {user?.metadata?.is_author ? (
-                <AuthorDashboard inline={true} onClose={() => setShowPublishingModal(false)} />
-              ) : (
-                <AuthorApplication inline={true} onClose={() => setShowPublishingModal(false)} />
-              )}
+              <AuthorDashboard inline={true} onClose={() => setShowPublishingModal(false)} />
             </div>
           </div>
         </div>

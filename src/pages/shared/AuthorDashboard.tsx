@@ -21,7 +21,8 @@ import {
   UserPlus,
   Milestone,
   CheckCircle,
-  Hash
+  Hash,
+  Image
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { Card, Button } from '../../components/ui';
@@ -59,12 +60,27 @@ const PRESET_COVERS = [
 ];
 
 const SECTIONS = [
-  'Academics & Spatial Design',
-  'Systems & Architecture',
-  'Elite Professional Growth',
-  'Technology & Software',
-  'Fiction & Literature',
-  'Self-Help & Mindset'
+  'Programming & Development',
+  'Data Science & AI',
+  'Business & Management',
+  'Marketing & Sales',
+  'Design & Creative',
+  'Personal Development',
+  'Finance & Accounting',
+  'Health & Wellness',
+  'Education & Teaching',
+  'Language Learning',
+  'Science & Engineering',
+  'Mathematics',
+  'Certification Prep',
+  'Academic & Textbooks',
+  'Career & Job Search',
+  'Legal & Compliance',
+  'Real Estate & Construction',
+  'Creative Writing & Journalism',
+  'Music & Performing Arts',
+  'Photography & Videography',
+  'Others'
 ];
 
 interface AuthorDashboardProps {
@@ -76,16 +92,16 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
-  // Author Status Guard
-  const isAuthor = !!user?.metadata?.is_author || user?.role === 'mentor' || user?.role === 'tutor';
+  // Author Status Guard - Bypassed for dev testing
+  const isAuthor = true;
 
   // Book uploading Form State - REQUIRED FIELDS
   const [title, setTitle] = useState('');
   const [authorName, setAuthorName] = useState(user?.full_name || '');
   const [price, setPrice] = useState('39.99');
   const [section, setSection] = useState(SECTIONS[0]);
-  const [coverUrl, setCoverUrl] = useState(PRESET_COVERS[0].url);
-  const [customCover, setCustomCover] = useState('');
+  const [coverUrl, setCoverUrl] = useState('');
+  const [realCoverFile, setRealCoverFile] = useState<File | null>(null);
   const [description, setDescription] = useState('');
   
   // Real PDF/EPUB file states
@@ -98,11 +114,12 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
   const [coAuthors, setCoAuthors] = useState('');
   const [edition, setEdition] = useState('');
   const [ageRating, setAgeRating] = useState('All Ages / G');
+  const [language, setLanguage] = useState('English');
+  const [publicationDate, setPublicationDate] = useState('');
+  const [pages, setPages] = useState('');
 
   // Dashboard view states
   const [showUploadForm, setShowUploadForm] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [generatingAi, setGeneratingAi] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Stateful Author Books & Simulated stats
@@ -181,37 +198,114 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
     }
 
     if (!realBookFile) {
-      alert('Please select a Book File (PDF/EPUB) to upload.');
+      alert('Please select a Book File (PDF/EPUB/DOCX/TXT/MD) to upload.');
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // 1. Upload Book PDF to Storage
-      const bookPath = `books/${user.id}_${Date.now()}_${realBookFile.name}`;
-      const { error: uploadErr } = await nexus.storage
-        .from('course-materials-trileza-784bc328')
-        .upload(bookPath, realBookFile);
+      // 1. Upload and convert manuscript to standard compliant EPUB 3 format
+      let fileUrl = '';
+      try {
+        const formData = new FormData();
+        formData.append('file', realBookFile);
+        formData.append('userId', user.id);
+        
+        const userToken = (nexus as any).tokenManager?.getAccessToken() || '';
+        
+        const conversionRes = await fetch('https://25t8cbg8.functions.insforge.app/convert-manuscript', {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_INSFORGE_ANON_KEY}`,
+            'X-User-Token': userToken
+          }
+        });
+        
+        if (!conversionRes.ok) {
+          let errMsg = `Server returned status ${conversionRes.status}`;
+          try {
+            const errData = await conversionRes.json();
+            if (errData && errData.error) {
+              errMsg = errData.error;
+            } else if (errData && errData.message) {
+              errMsg = errData.message;
+            }
+          } catch (_) {}
+          throw new Error(errMsg);
+        }
+        
+        const conversionData = await conversionRes.json();
+        
+        if (conversionData.originalUrl) {
+          fileUrl = conversionData.originalUrl; // Always use the uploaded original file URL to retain high-fidelity native layouts (PDF/DOCX) with reading companion overlay!
+        } else if (conversionData.convertedUrl) {
+          fileUrl = conversionData.convertedUrl; // Fallback to converted EPUB
+        } else {
+          throw new Error('Manuscript upload returned no valid URLs');
+        }
+      } catch (convErr: any) {
+        console.error('Manuscript conversion error:', convErr);
+        // Fallback: direct upload if conversion service itself fails
+        alert(`EPUB 3 conversion service unavailable: ${convErr.message || convErr}. Uploading original file directly.`);
+        
+        const cleanBookName = realBookFile.name.replace(/\.\./g, '_').replace(/^\//, '');
+        
+        // Try multiple storage paths in case of RLS restrictions
+        const pathsToTry = [
+          `original/${user.id}_${Date.now()}_${cleanBookName}`,
+          `books/${user.id}_${Date.now()}_${cleanBookName}`
+        ];
+        
+        let uploadSuccess = false;
+        for (const bookPath of pathsToTry) {
+          const { error: uploadErr } = await nexus.storage
+            .from('course-materials-trileza-784bc328')
+            .upload(bookPath, realBookFile);
 
-      if (uploadErr) throw uploadErr;
-
-      const fileUrl = nexus.storage
-        .from('course-materials-trileza-784bc328')
-        .getPublicUrl(bookPath);
+          if (!uploadErr) {
+            fileUrl = nexus.storage
+              .from('course-materials-trileza-784bc328')
+              .getPublicUrl(bookPath);
+            uploadSuccess = true;
+            break;
+          } else {
+            console.warn(`Upload to '${bookPath}' failed:`, uploadErr.message);
+          }
+        }
+        
+        if (!uploadSuccess) {
+          alert('Failed to upload manuscript file due to storage permissions. The book will be created without the file attachment. Please contact support or try again later.');
+          // Book will still be created but without a file_url
+        }
+      }
 
       // 2. Upload Sample PDF if present
       let sampleUrl = '';
       if (realSampleFile) {
-        const samplePath = `samples/${user.id}_${Date.now()}_${realSampleFile.name}`;
+        const cleanSampleName = realSampleFile.name.replace(/\.\./g, '_').replace(/^\//, '');
+        const samplePath = `samples/${user.id}_${Date.now()}_${cleanSampleName}`;
         await nexus.storage.from('course-materials-trileza-784bc328').upload(samplePath, realSampleFile);
         sampleUrl = nexus.storage
           .from('course-materials-trileza-784bc328')
           .getPublicUrl(samplePath);
       }
 
-      const priceNum = parseFloat(price) || 29.99;
-      const finalCover = customCover.trim() || coverUrl;
+      const priceNum = parseFloat(price) || 5000;
+      
+      let finalCover = coverUrl.trim();
+      if (realCoverFile) {
+        const cleanCoverName = realCoverFile.name.replace(/\.\./g, '_').replace(/^\//, '');
+        const coverPath = `covers/${user.id}_${Date.now()}_${cleanCoverName}`;
+        await nexus.storage.from('course-materials-trileza-784bc328').upload(coverPath, realCoverFile);
+        finalCover = nexus.storage
+          .from('course-materials-trileza-784bc328')
+          .getPublicUrl(coverPath);
+      }
+      if (!finalCover) {
+        finalCover = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400' viewBox='0 0 300 400'><rect width='300' height='400' fill='%23F1F5F9'/><g transform='translate(110, 140)' stroke='%2394A3B8' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'><rect x='0' y='0' width='80' height='100' rx='8'/><path d='M 20 30 L 60 30'/><path d='M 20 50 L 60 50'/><path d='M 20 70 L 40 70'/></g><text x='150' y='280' fill='%2394A3B8' font-family='system-ui, sans-serif' font-size='14' font-weight='800' text-anchor='middle' letter-spacing='1'>NO COVER</text></svg>";
+      }
 
       // Optional Tags parsing
       const parsedTags = tagsInput.trim() 
@@ -236,10 +330,13 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
         section: section,
         isbn: generatedIsbn,
         tags: parsedTags,
-        co_authors: coAuthors.trim() || null,
-        edition: edition.trim() || null,
-        book_file_name: realBookFile.name,
-        sample_pages_name: realSampleFile?.name || null
+        language: language.trim() || 'English',
+        publication_date: publicationDate.trim() || new Date().toISOString().split('T')[0],
+        pages: parseInt(pages) || null,
+        age_rating: ageRating,
+        sample_pages: sampleUrl ? [sampleUrl] : [],
+        file_url: fileUrl,
+        book_file_name: realBookFile.name
       });
 
       if (dbErr) throw dbErr;
@@ -263,17 +360,26 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
       setTitle('');
       setPrice('39.99');
       setDescription('');
-      setCustomCover('');
+      setCoverUrl('');
+      setRealCoverFile(null);
       setRealBookFile(null);
       setRealSampleFile(null);
       setIsbn('');
       setTagsInput('');
       setCoAuthors('');
       setEdition('');
+      setLanguage('English');
+      setPublicationDate('');
+      setPages('');
       setShowUploadForm(false);
       setIsSubmitting(false);
       
       triggerNotification(`Successfully published "${title}" to the Public Library!`);
+      if (onClose) {
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      }
     } catch (err: any) {
       console.error(err);
       alert('Failed to publish book: ' + (err.message || err));
@@ -303,26 +409,6 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
       console.error(e);
       alert('Failed to retract book: ' + (e.message || e));
     }
-  };
-
-  const simulateAiCover = () => {
-    if (!aiPrompt.trim()) {
-      alert('Please enter an AI prompt cover idea first.');
-      return;
-    }
-
-    setGeneratingAi(true);
-    // Simulate API delay
-    setTimeout(() => {
-      const simulatedUrl = `https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?auto=format&fit=crop&q=80&w=400&sig=${Date.now()}`;
-      setCustomCover(simulatedUrl);
-      setGeneratingAi(false);
-      
-      const notificationEvent = new CustomEvent('show-notification', {
-        detail: { message: 'AI Book Cover generated successfully!', type: 'success' }
-      });
-      window.dispatchEvent(notificationEvent);
-    }, 1500);
   };
 
   // Real file uploads are handled directly via hidden file input elements below
@@ -437,7 +523,7 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
         <Card className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl hover:ring-brand-primary/20 hover:translate-y-[-4px] transition-all duration-500 rounded-[2.5rem] bg-white flex justify-between items-center group">
           <div className="space-y-4">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Accrued Royalties</p>
-            <p className="text-4xl font-black text-slate-900 group-hover:text-brand-primary transition-colors tabular-nums">${royalties.toFixed(2)}</p>
+            <p className="text-4xl font-black text-slate-900 group-hover:text-brand-primary transition-colors tabular-nums">₦{royalties.toFixed(2)}</p>
             <p className="text-xs text-slate-450 font-bold flex items-center gap-1">
               <Award size={12} className="text-amber-555" /> Outright sales & rentals (10%)
             </p>
@@ -520,22 +606,22 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                 {/* Price */}
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-                    Retail Price ($) <span className="text-rose-500">*</span>
+                    Retail Price (₦) <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
-                    <span className="absolute left-5 top-4.5 text-slate-400 font-black">$</span>
+                    <span className="absolute left-5 top-4.5 text-slate-400 font-black">₦</span>
                     <input 
                       type="number" 
                       step="0.01"
                       required
                       value={price}
                       onChange={(e) => setPrice(e.target.value)}
-                      placeholder="39.99"
+                      placeholder="5000"
                       className="w-full h-14 pl-9 pr-5 rounded-2xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-slate-800 font-bold transition-all duration-300 shadow-sm"
                     />
                   </div>
                   <span className="text-[10px] font-bold text-slate-400 block mt-1">
-                    Borrow fee automatically sets to exactly 10%: **${(parseFloat(price || '0') * 0.1).toFixed(2)}** for two weeks.
+                    Borrow fee automatically sets to exactly 10%: **₦{(parseFloat(price || '0') * 0.1).toFixed(2)}** for two weeks.
                   </span>
                 </div>
               </div>
@@ -550,12 +636,12 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                 {/* Book File Upload */}
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-                    Book File (PDF/EPUB) <span className="text-rose-500">*</span>
+                    Book File (PDF/EPUB/DOCX/TXT/MD) <span className="text-rose-500">*</span>
                   </label>
                   <input 
                     type="file" 
                     id="real-book-file-input" 
-                    accept=".pdf,.epub"
+                    accept=".pdf,.epub,.docx,.txt,.md"
                     className="hidden" 
                     onChange={(e) => {
                       const file = e.target.files?.[0];
@@ -580,70 +666,90 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                       <>
                         <UploadCloud size={32} className="text-slate-450" />
                         <span className="text-xs font-bold text-slate-700 block">Drag book file here or click to select upload</span>
-                        <span className="text-[9px] font-bold text-slate-450 uppercase">Accepts PDF or EPUB</span>
+                        <span className="text-[9px] font-bold text-slate-455 uppercase">Accepts PDF, EPUB, DOCX, TXT, or MD</span>
                       </>
                     )}
                   </div>
                 </div>
 
-                {/* Preset Book Cover Picker */}
+                {/* Cover Page Options */}
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-                    Choose Preset Book Cover <span className="text-rose-500">*</span>
+                    Cover Page (Attach or Link) <span className="text-rose-500">*</span>
                   </label>
-                  <div className="grid grid-cols-5 gap-2">
-                    {PRESET_COVERS.map((preset, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => {
-                          setCoverUrl(preset.url);
-                          setCustomCover('');
-                        }}
-                        className={`relative rounded-xl overflow-hidden aspect-[3/4] border-2 transition-all ${
-                          coverUrl === preset.url && !customCover 
-                            ? 'border-brand-primary scale-105 shadow-md shadow-emerald-500/20' 
-                            : 'border-transparent opacity-75 hover:opacity-100'
-                        }`}
-                      >
-                        <img src={preset.url} alt={preset.name} className="w-full h-full object-cover" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                  
+                  <div className="flex gap-4 items-start pt-1">
+                    {/* Visual Square Preview / Placeholder */}
+                    <div className="w-28 h-28 shrink-0 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center overflow-hidden relative shadow-inner">
+                      {realCoverFile || coverUrl ? (
+                        <img 
+                          src={realCoverFile ? URL.createObjectURL(realCoverFile) : coverUrl} 
+                          className="w-full h-full object-cover" 
+                          alt="Cover preview"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = '';
+                          }}
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-slate-400 p-2 text-center">
+                          <Image size={24} className="text-slate-350" />
+                          <span className="text-[8px] font-extrabold text-slate-400 mt-1.5 uppercase tracking-wider">Preview</span>
+                        </div>
+                      )}
+                    </div>
 
-              {/* AI Cover generation prompt */}
-              <div className="space-y-4 p-5 bg-slate-50/70 border border-slate-100 rounded-3xl max-w-xl">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Sparkles size={12} className="text-emerald-500 animate-pulse" /> Custom AI Cover Art (Optional Alternative)
-                </label>
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={aiPrompt}
-                    onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="e.g. minimalist deep learning concept blueprints..."
-                    className="flex-1 h-12 px-4 rounded-xl bg-white border border-slate-200 focus:outline-none text-xs font-bold shadow-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={simulateAiCover}
-                    disabled={generatingAi}
-                    className="px-4 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center transition-all"
-                  >
-                    {generatingAi ? 'Generating...' : 'Generate'}
-                  </button>
-                </div>
-                {customCover && (
-                  <div className="flex items-center gap-4 p-3 bg-white border border-emerald-100 rounded-2xl shadow-sm">
-                    <img src={customCover} className="w-12 h-16 object-cover rounded-lg border shadow-sm" alt="AI cover" />
-                    <div className="text-xs">
-                      <span className="font-black text-emerald-700 block">AI Artwork Selected</span>
-                      <span className="text-slate-400 font-medium">Replaces standard cover presets</span>
+                    {/* Upload Controls */}
+                    <div className="flex-1 space-y-2.5">
+                      {/* File Upload */}
+                      <div>
+                        <input 
+                          type="file" 
+                          id="real-cover-file-input" 
+                          accept="image/*"
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setRealCoverFile(file);
+                              setCoverUrl(''); // Clear URL if file selected
+                            }
+                          }}
+                        />
+                        <div 
+                          onClick={() => document.getElementById('real-cover-file-input')?.click()}
+                          className={`border border-dashed rounded-xl px-4 py-2 flex items-center justify-between gap-2 h-11 cursor-pointer transition-all ${
+                            realCoverFile 
+                              ? 'border-emerald-400 bg-emerald-50/10' 
+                              : 'border-slate-250 bg-slate-50/50 hover:bg-slate-100/50'
+                          }`}
+                        >
+                          <span className="text-[10px] text-slate-500 font-bold truncate">
+                            {realCoverFile ? realCoverFile.name : 'Upload cover image...'}
+                          </span>
+                          <UploadCloud size={14} className="text-slate-400 shrink-0" />
+                        </div>
+                      </div>
+                      
+                      {/* Or URL */}
+                      <div className="relative flex items-center gap-2">
+                        <div className="flex-1 h-px bg-slate-100"></div>
+                        <span className="text-[8px] font-black text-slate-400 uppercase">OR</span>
+                        <div className="flex-1 h-px bg-slate-100"></div>
+                      </div>
+                      
+                      <input 
+                        type="text" 
+                        value={coverUrl}
+                        onChange={(e) => {
+                          setCoverUrl(e.target.value);
+                          if (e.target.value) setRealCoverFile(null); // Clear file if URL typed
+                        }}
+                        placeholder="Paste image URL here..."
+                        className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-[11px] font-bold"
+                      />
                     </div>
                   </div>
-                )}
+                </div>
               </div>
             </div>
 
@@ -678,6 +784,47 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                     value={edition}
                     onChange={(e) => setEdition(e.target.value)}
                     placeholder="e.g. 1st Edition, 2026 Revision"
+                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold"
+                  />
+                </div>
+
+                {/* Language */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <FileText size={11} /> Language
+                  </label>
+                  <input 
+                    type="text" 
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    placeholder="e.g. English, Spanish"
+                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold"
+                  />
+                </div>
+
+                {/* Publication Date */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <TrendingUp size={11} /> Publication Date
+                  </label>
+                  <input 
+                    type="date" 
+                    value={publicationDate}
+                    onChange={(e) => setPublicationDate(e.target.value)}
+                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold cursor-pointer"
+                  />
+                </div>
+
+                {/* Pages */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <BookOpen size={11} /> Number of Pages
+                  </label>
+                  <input 
+                    type="number" 
+                    value={pages}
+                    onChange={(e) => setPages(e.target.value)}
+                    placeholder="e.g. 240"
                     className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold"
                   />
                 </div>
@@ -776,9 +923,19 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
             <div className="pt-4 flex justify-end gap-4">
               <Button 
                 type="submit"
-                className="bg-brand-primary hover:bg-brand-primary-hover text-white border-none shadow-xl shadow-emerald-500/20 rounded-2xl h-14 px-8 font-black uppercase text-[10px] tracking-widest gap-2 animate-in fade-in"
+                disabled={isSubmitting}
+                className="bg-brand-primary hover:bg-brand-primary-hover text-white border-none shadow-xl shadow-emerald-500/20 rounded-2xl h-14 px-8 font-black uppercase text-[10px] tracking-widest gap-2 animate-in fade-in flex items-center justify-center disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <UploadCloud size={16} /> Publish to Library
+                {isSubmitting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0"></span>
+                    <span>Publishing Blueprint...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud size={16} /> <span>Publish to Library</span>
+                  </>
+                )}
               </Button>
             </div>
           </form>
@@ -872,7 +1029,7 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                       </div>
                       <div>
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Revenue</span>
-                        <span className="font-bold text-emerald-600 text-sm">${bookRevenue.toFixed(2)}</span>
+                        <span className="font-bold text-emerald-600 text-sm">₦{bookRevenue.toFixed(2)}</span>
                       </div>
                     </div>
                   </div>

@@ -31,6 +31,7 @@ import Assignments from './pages/shared/Assignments';
 import MentorshipAssessment from './pages/shared/MentorshipAssessment';
 import MentorProfile from './pages/mentor/Profile';
 import PublicLibrary from './pages/shared/PublicLibrary';
+import BookDetail from './pages/shared/BookDetail';
 import Vault from './pages/mentor/Vault';
 import Diagnostics from './pages/mentor/Diagnostics';
 import Settings from './pages/shared/Settings';
@@ -86,6 +87,7 @@ const App: React.FC = () => {
             />
             
             <Route path="/library" element={<PublicLibrary />} />
+            <Route path="/library/:bookId" element={<BookDetail />} />
             <Route path="/courses" element={<Courses />} />
             <Route path="/learning" element={<CourseViewer />} />
             <Route path="/assessment" element={<AssessmentEngine />} />
