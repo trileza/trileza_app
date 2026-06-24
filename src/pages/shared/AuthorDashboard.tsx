@@ -203,8 +203,10 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
     }
 
     setIsSubmitting(true);
-
     try {
+      // Proactively ensure the session token is fresh before starting long uploads
+      await nexus.auth.getCurrentUser();
+
       // 1. Upload and convert manuscript to standard compliant EPUB 3 format
       let fileUrl = '';
       try {
@@ -212,7 +214,10 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
         formData.append('file', realBookFile);
         formData.append('userId', user.id);
         
-        const userToken = (nexus as any).tokenManager?.getAccessToken() || '';
+        const headers = nexus.getHttpClient().getHeaders();
+        const authHeader = headers['Authorization'] || headers['authorization'] || '';
+        const rawToken = authHeader.replace(/^Bearer\s+/i, '');
+        const userToken = rawToken === import.meta.env.VITE_INSFORGE_ANON_KEY ? '' : rawToken;
         
         const conversionRes = await fetch('https://25t8cbg8.functions.insforge.app/convert-manuscript', {
           method: 'POST',
@@ -341,6 +346,19 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
 
       if (dbErr) throw dbErr;
 
+      // Submit book for Content Manager review automatically to sync with database reviews
+      const { error: reviewErr } = await nexus.database.from('book_reviews').insert([{
+        book_id: bookId,
+        submitted_by: user.id,
+        status: 'pending',
+        checklist_cover: false,
+        checklist_description: false,
+        checklist_readable: false,
+        checklist_price: false,
+        checklist_no_copyright: false
+      }]);
+      if (reviewErr) throw reviewErr;
+
       // Hot-reload library catalog
       window.dispatchEvent(new Event('trileza-book-published'));
 
@@ -382,7 +400,11 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
       }
     } catch (err: any) {
       console.error(err);
-      alert('Failed to publish book: ' + (err.message || err));
+      if (err?.message?.includes('Invalid token') || err?.message?.includes('JWT expired')) {
+        alert('Your session has expired or the token is invalid. Please log out and log back in to publish your book.');
+      } else {
+        alert('Failed to publish book: ' + (err.message || err));
+      }
       setIsSubmitting(false);
     }
   };

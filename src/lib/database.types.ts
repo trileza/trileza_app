@@ -27,6 +27,7 @@ export interface Database {
           website: string | null;
           mentor_tier: string | null;
           country: string | null;
+          metadata: Record<string, any> | null;
           created_at: string;
           updated_at: string;
         };
@@ -41,6 +42,7 @@ export interface Database {
           expertise?: Array<{ id: number; type: string; desc: string; icon: string }> | null;
           website?: string | null;
           country?: string | null;
+          metadata?: Record<string, any> | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -55,6 +57,7 @@ export interface Database {
           expertise?: Array<{ id: number; type: string; desc: string; icon: string }> | null;
           website?: string | null;
           country?: string | null;
+          metadata?: Record<string, any> | null;
           updated_at?: string;
         };
       };
@@ -199,6 +202,7 @@ export interface Database {
           sponsor_mentor: string | null;
           progress: number;
           completed_lessons: string[];
+          course_id: string | null;
           applied_at: string;
           last_accessed: string;
         };
@@ -215,6 +219,7 @@ export interface Database {
           sponsor_mentor?: string | null;
           progress?: number;
           completed_lessons?: string[];
+          course_id?: string | null;
         };
         Update: Partial<Database['public']['Tables']['enrollments']['Insert']>;
       };
@@ -384,19 +389,27 @@ export interface Database {
       live_sessions: {
         Row: {
           id: string;
-          host_id: string;
-          course_name: string | null;
+          course_id: string | null;
+          tutor_id: string;
+          title: string;
+          dyte_meeting_id: string;
           status: 'scheduled' | 'live' | 'ended';
-          viewer_count: number;
-          started_at: string;
+          scheduled_at: string;
+          started_at: string | null;
           ended_at: string | null;
+          created_at: string;
         };
         Insert: {
           id?: string;
-          host_id: string;
-          course_name?: string | null;
+          course_id?: string | null;
+          tutor_id: string;
+          title: string;
+          dyte_meeting_id: string;
           status?: 'scheduled' | 'live' | 'ended';
-          viewer_count?: number;
+          scheduled_at?: string;
+          started_at?: string | null;
+          ended_at?: string | null;
+          created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['live_sessions']['Insert']>;
       };

@@ -1528,8 +1528,20 @@ const PublicLibraryWrapper: React.FC = () => {
   const fetchData = async () => {
     // 1. Fetch Books
     const { data: booksData } = await nexus.database.from('books').select('*');
+    // 2. Fetch Reviews to filter out unapproved books
+    const { data: reviewsData } = await nexus.database.from('book_reviews').select('book_id, status');
+    
     if (booksData) {
-      setAllBooks(booksData as any);
+      let visibleBooks = booksData;
+      if (reviewsData) {
+        const unapprovedBookIds = new Set(
+          reviewsData
+            .filter(r => r.status === 'rejected' || r.status === 'pending' || r.status === 'needs_changes')
+            .map(r => r.book_id)
+        );
+        visibleBooks = booksData.filter(b => !unapprovedBookIds.has(b.id));
+      }
+      setAllBooks(visibleBooks as any);
     }
     // 2. Fetch User Access
     if (user?.id) {

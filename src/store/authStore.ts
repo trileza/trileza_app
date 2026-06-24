@@ -27,6 +27,46 @@ export interface UserProfile {
   metadata?: any;
 }
 
+/**
+ * Helper to ensure a profile record exists in the public.profiles database table.
+ */
+const ensureProfileInDatabase = async (profile: UserProfile) => {
+  if (!profile || !profile.id) return;
+  try {
+    const { data: existing, error } = await nexus.database
+      .from('profiles')
+      .select('id')
+      .eq('id', profile.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[Auth] Error querying profiles database table:', error);
+      return;
+    }
+
+    const profileData = {
+      id: profile.id,
+      email: profile.email,
+      full_name: profile.full_name,
+      role: profile.role,
+      avatar_url: profile.avatar_url || null,
+      mentor_tier: profile.mentor_tier || null,
+      country: profile.country || null,
+      updated_at: new Date().toISOString()
+    };
+
+    if (!existing) {
+      console.log('[Auth] Profile record not found in database table. Auto-creating for ID:', profile.id);
+      const { error: insertErr } = await nexus.database.from('profiles').insert([profileData]);
+      if (insertErr) {
+        console.error('[Auth] Error auto-creating profile in database table:', insertErr);
+      }
+    }
+  } catch (err) {
+    console.error('[Auth] Exception during profiles database table sync:', err);
+  }
+};
+
 interface AuthState {
   user: UserProfile | null;
   activeRole: UserRole | null;
@@ -103,6 +143,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
           // Fetch full profile from InsForge
           const { data: profile } = await nexus.auth.getProfile(data.user.id);
           const merged = mergeUser(data.user, profile);
+          if (merged) {
+            await ensureProfileInDatabase(merged);
+          }
           set({ 
             user: merged, 
             activeRole: merged ? (merged.metadata?.active_role || merged.role) : null,
@@ -135,6 +178,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
         // Fetch full profile after successful sign-in
         const { data: profile } = await nexus.auth.getProfile(data.user.id);
         const merged = mergeUser(data.user, profile);
+        if (merged) {
+          await ensureProfileInDatabase(merged);
+        }
         set({ 
           user: merged, 
           activeRole: merged ? (merged.metadata?.active_role || merged.role) : null,
@@ -241,6 +287,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
         
         // Merge results using the helper to handle nesting
         const merged = mergeUser(data.user, { ...finalProfile, ...profile });
+        if (merged) {
+          await ensureProfileInDatabase(merged);
+        }
         set({ 
           user: merged, 
           activeRole: merged ? (merged.metadata?.active_role || merged.role) : null,
@@ -282,8 +331,21 @@ export const useAuthStore = create<AuthState>((set, get) => {
       if (!currentUser) return { error: 'Not authenticated' };
 
       set({ loading: true });
+      
+      // Update via auth client
       const { data, error } = await nexus.auth.setProfile(updates);
       
+      // Explicitly sync with profiles database table
+      try {
+        const { id, email, created_at, ...dbUpdates } = updates as any;
+        if (Object.keys(dbUpdates).length > 0) {
+          await ensureProfileInDatabase(currentUser);
+          await nexus.database.from('profiles').update(dbUpdates).eq('id', currentUser.id);
+        }
+      } catch (dbErr) {
+        console.error('[Auth] Failed to sync profile to database table:', dbErr);
+      }
+
       if (error) {
         set({ loading: false });
         return { error: error.message };

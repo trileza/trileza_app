@@ -45,22 +45,24 @@ export default async function(req: Request): Promise<Response> {
 
       // Update the database depending on metadata.type
       if (metadata.type === 'course_purchase') {
-        const { student_id, course_id, mentor_id } = metadata;
-        // Insert into enrollments
-        await insforgeClient.database.from('course_enrollments').insert([{
-          course_id,
-          student_id,
-          status: 'active'
-        }]);
+        const { student_id, course_id } = metadata;
 
-        // Insert into transactions
-        await insforgeClient.database.from('transactions').insert([{
-          user_id: mentor_id,
-          type: 'sale',
-          amount: data.amount / 100,
-          status: 'completed',
-          reference: data.reference,
-          metadata: { student_id, course_id }
+        // Fetch course details
+        const { data: course } = await insforgeClient.database
+          .from('courses')
+          .select('title, thumbnail_url')
+          .eq('id', course_id)
+          .single();
+
+        // Insert into enrollments
+        await insforgeClient.database.from('enrollments').insert([{
+          user_id: student_id,
+          item_id: course_id,
+          item_type: 'course',
+          item_title: course?.title || 'Course Purchase',
+          item_thumbnail: course?.thumbnail_url || '',
+          status: 'enrolled',
+          amount: data.amount / 100
         }]);
       }
     }

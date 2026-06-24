@@ -13,6 +13,7 @@ export const RoleSwitcher: React.FC = () => {
 
   const isMentor = user.metadata?.mentor_onboarded === true;
   const isMentee = user.metadata?.mentee_onboarded === true;
+  const isPendingMentor = user.metadata?.mentor_application_status === 'pending';
   const isDualRole = isMentor && isMentee;
 
   // Determine active state
@@ -83,6 +84,25 @@ export const RoleSwitcher: React.FC = () => {
 
   // ─── SINGLE ROLE MENTEE: MINIMALIST ADD ROLE BUTTON ───
   if (isMentee && !isMentor) {
+    if (isPendingMentor) {
+      return (
+        <button
+          disabled
+          className="relative group overflow-hidden py-2.5 px-5 rounded-2xl bg-orange-50 border border-orange-200 flex items-center gap-2.5 shadow-sm select-none font-bold"
+        >
+          <div className="w-7 h-7 rounded-xl bg-orange-100 border border-orange-200 text-orange-700 flex items-center justify-center shrink-0 shadow-inner">
+            <Shield size={13} />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-orange-700">
+              Mentor App Pending
+            </span>
+          </div>
+        </button>
+      );
+    }
+
     return (
       <button
         onClick={() => navigate('/mentor/onboarding')}

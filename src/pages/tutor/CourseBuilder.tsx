@@ -864,7 +864,18 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
         setLoadingList(true);
         try {
           const list = await courseService.getTutorCourses(user.id);
-          setCoursesList(list);
+          // Fetch course reviews to find their review statuses
+          const { data: reviews } = await nexus.database
+            .from('course_reviews')
+            .select('course_id, status')
+            .eq('submitted_by', user.id);
+            
+          const reviewMap = new Map(reviews?.map(r => [r.course_id, r.status]) || []);
+          const updatedList = list.map(c => ({
+            ...c,
+            reviewStatus: reviewMap.get(c.id) || null
+          }));
+          setCoursesList(updatedList);
         } catch (err) {
           console.error('Error fetching tutor courses:', err);
         } finally {
@@ -924,7 +935,7 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
         refund_policy: refundPolicy,
         tags: tags ? tags.split(',').map(s => s.trim()).filter(s => s) as any : [],
         materials: materials as any,
-        status: publish ? 'published' : 'draft',
+        status: 'draft', // Hardcode to 'draft' so it remains hidden until approved!
       });
 
       // 2. Save Modules (Topics)
@@ -933,6 +944,52 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
         if (topic.id.includes('-') && courseId) {
           await courseService.addModule(courseId, topic.title, i);
         }
+      }
+
+      // 3. Register/Update Review if deploying
+      if (publish) {
+        // Check if review exists
+        const { data: existingReview } = await nexus.database
+          .from('course_reviews')
+          .select('id')
+          .eq('course_id', courseId)
+          .maybeSingle();
+
+        if (existingReview) {
+          await nexus.database
+            .from('course_reviews')
+            .update({
+              status: 'pending',
+              checklist_title: false,
+              checklist_description: false,
+              checklist_curriculum: false,
+              checklist_video: false,
+              checklist_audio: false,
+              checklist_thumbnail: false,
+              checklist_no_copyright: false,
+              notes: null,
+              submitted_at: new Date().toISOString()
+            })
+            .eq('id', existingReview.id);
+        } else {
+          await nexus.database
+            .from('course_reviews')
+            .insert([{
+              course_id: courseId,
+              submitted_by: user.id,
+              status: 'pending',
+              checklist_title: false,
+              checklist_description: false,
+              checklist_curriculum: false,
+              checklist_video: false,
+              checklist_audio: false,
+              checklist_thumbnail: false,
+              checklist_no_copyright: false
+            }]);
+        }
+
+        // Hot-reload course catalogs
+        window.dispatchEvent(new Event('trileza-course-published'));
       }
 
       setShowToast(true);
@@ -1052,11 +1109,17 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
                     </div>
                     <span className={cn(
                       "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
-                      course.status === 'published' 
+                      course.reviewStatus === 'approved' || course.status === 'published'
                         ? "bg-green-100 text-green-800 border-green-200" 
-                        : "bg-amber-100 text-amber-800 border-amber-200"
+                        : course.reviewStatus === 'pending'
+                        ? "bg-blue-100 text-blue-800 border-blue-200"
+                        : course.reviewStatus === 'needs_changes'
+                        ? "bg-amber-100 text-amber-800 border-amber-200"
+                        : course.reviewStatus === 'rejected'
+                        ? "bg-red-105 text-red-800 border-red-200"
+                        : "bg-slate-100 text-slate-800 border-slate-200"
                     )}>
-                      {course.status}
+                      {course.reviewStatus ? `review: ${course.reviewStatus.replace('_', ' ')}` : course.status}
                     </span>
                   </div>
                   <h3 className="font-black text-xl text-slate-900 group-hover:text-green-700 transition-colors leading-tight line-clamp-2">{course.title}</h3>
@@ -1688,9 +1751,9 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
             </div>
 
             <div className="space-y-4 max-w-lg z-10 relative">
-              <span className="text-[11px] font-black uppercase tracking-[0.25em] text-green-700 bg-green-50 px-4 py-1.5 rounded-full border border-green-150">Engine Active</span>
-              <h2 className="text-4xl font-black text-slate-900 tracking-tight leading-tight pt-2">Course Successfully Deployed!</h2>
-              <p className="text-slate-500 font-bold text-base leading-relaxed">Your course blueprint has been successfully compiled and deployed to the Trileza Public Network. Mentees can now discover and enroll in your program.</p>
+              <span className="text-[11px] font-black uppercase tracking-[0.25em] text-amber-700 bg-amber-50 px-4 py-1.5 rounded-full border border-amber-150">Awaiting Review</span>
+              <h2 className="text-4xl font-black text-slate-900 tracking-tight leading-tight pt-2">Submitted for Review!</h2>
+              <p className="text-slate-500 font-bold text-base leading-relaxed">Your course blueprint has been successfully compiled and submitted to Content Managers for review. Mentees will be able to discover and enroll in your program once approved.</p>
             </div>
 
             {/* Deployed Course Miniature Card Preview */}

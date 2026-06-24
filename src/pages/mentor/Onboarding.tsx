@@ -38,6 +38,7 @@ import { Card, Button } from '../../components/ui';
 import { cn } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
 import { motion, AnimatePresence } from 'framer-motion';
+import { nexus } from '../../lib/nexus';
 
 type OnboardingStep = 
   | 'welcome' 
@@ -269,14 +270,28 @@ const Onboarding = () => {
     setStep('finalizing');
     
     try {
+      if (!user) return;
+
+      // Insert into mentor_applications table in database
+      const { error: dbErr } = await nexus.database.from('mentor_applications').insert([{
+        user_id: user.id,
+        status: 'pending',
+        qualifications: `${form.highestEducation || 'Degree'} | ${form.yearsExp || '0 Years'} | Motivation: ${form.teachingMotivation || 'None'}`,
+        video_url: promoVideoUploaded || null,
+        submitted_at: new Date().toISOString()
+      }]);
+
+      if (dbErr) {
+        console.error('Failed to write to mentor_applications table:', dbErr);
+        throw dbErr;
+      }
+
       const result = await updateProfile({
-        mentor_tier: 'provisional', // Gives provisional access pending audit
         metadata: {
           ...user?.metadata,
-          mentor_onboarded: true,
-          active_role: 'mentor',
-          mentor_onboarded_at: new Date().toISOString(),
-          mentor_data: {
+          mentor_application_status: 'pending',
+          mentor_applied_at: new Date().toISOString(),
+          pending_mentor_data: {
             identity: {
               legal_name: form.legalName,
               public_name: form.publicName,
@@ -324,6 +339,7 @@ const Onboarding = () => {
 
       setTimeout(() => navigate('/', { replace: true }), 2000);
     } catch (err) {
+      console.error(err);
       setStep('review');
     }
   };

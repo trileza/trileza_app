@@ -34,6 +34,33 @@ const ManagementDashboard = () => {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuthStore();
   const [applications, setApplications] = useState<AuthorApplicationRecord[]>([]);
+  const [mentorApplications, setMentorApplications] = useState<any[]>([]);
+  const [moderationQueue, setModerationQueue] = useState<any[]>([]);
+
+  const fetchMentorApplications = async () => {
+    try {
+      const { data: apps, error: appErr } = await nexus.database
+        .from('mentor_applications')
+        .select('*')
+        .eq('status', 'pending');
+
+      if (apps && !appErr) {
+        const { data: profiles } = await nexus.database.from('profiles').select('*');
+        setMentorApplications(apps.map((app: any) => {
+          const profile = profiles?.find(p => p.id === app.user_id);
+          return {
+            id: app.id,
+            userId: app.user_id,
+            userEmail: profile?.email || 'Unknown Email',
+            name: profile?.metadata?.pending_mentor_data?.identity?.public_name || profile?.full_name || 'Applicant',
+            category: profile?.metadata?.pending_mentor_data?.course_setup?.category || 'Expert Mentor',
+          };
+        }));
+      }
+    } catch (e) {
+      console.error('[Error fetching mentor applications]:', e);
+    }
+  };
 
   const fetchApplications = async () => {
     try {
@@ -60,8 +87,98 @@ const ManagementDashboard = () => {
     }
   };
 
+  const fetchModerationQueue = async () => {
+    try {
+      // 1. Fetch pending course reviews
+      const { data: crData } = await nexus.database
+        .from('course_reviews')
+        .select('*')
+        .eq('status', 'pending');
+
+      // 2. Fetch pending book reviews
+      const { data: brData } = await nexus.database
+        .from('book_reviews')
+        .select('*')
+        .eq('status', 'pending');
+
+      // 3. Fetch pending flagged content
+      const { data: fcData } = await nexus.database
+        .from('flagged_content')
+        .select('*')
+        .eq('status', 'pending');
+
+      // Fetch supplementary info to resolve names/titles
+      const { data: courses } = await nexus.database.from('courses').select('id, title');
+      const { data: books } = await nexus.database.from('books').select('id, title');
+      const { data: profiles } = await nexus.database.from('profiles').select('id, full_name');
+
+      const items: any[] = [];
+
+      if (crData) {
+        crData.forEach((r: any) => {
+          const course = courses?.find(c => c.id === r.course_id);
+          const profile = profiles?.find(p => p.id === r.submitted_by);
+          items.push({
+            id: r.id,
+            title: course?.title || 'Unknown Course',
+            creator: profile?.full_name || 'Tutor',
+            date: r.submitted_at || new Date().toISOString(),
+            status: 'Review',
+            type: 'course',
+            targetId: r.course_id
+          });
+        });
+      }
+
+      if (brData) {
+        brData.forEach((r: any) => {
+          const book = books?.find(b => b.id === r.book_id);
+          const profile = profiles?.find(p => p.id === r.submitted_by);
+          items.push({
+            id: r.id,
+            title: book?.title || 'Unknown Book',
+            creator: profile?.full_name || 'Author',
+            date: r.submitted_at || new Date().toISOString(),
+            status: 'Review',
+            type: 'book',
+            targetId: r.book_id
+          });
+        });
+      }
+
+      if (fcData) {
+        fcData.forEach((f: any) => {
+          let title = 'Discussion Item / Post';
+          if (f.target_type === 'course') {
+            title = courses?.find(c => c.id === f.target_id)?.title || 'Flagged Course';
+          } else if (f.target_type === 'book') {
+            title = books?.find(b => b.id === f.target_id)?.title || 'Flagged Book';
+          }
+          const reporter = profiles?.find(p => p.id === f.reporter_id);
+          items.push({
+            id: f.id,
+            title,
+            creator: `Reported by: ${reporter?.full_name || 'Anonymous'}`,
+            date: f.created_at || new Date().toISOString(),
+            status: 'Flagged',
+            type: f.target_type,
+            targetId: f.target_id
+          });
+        });
+      }
+
+      // Sort items by date descending
+      items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setModerationQueue(items);
+    } catch (e) {
+      console.error('[Error fetching moderation queue]:', e);
+    }
+  };
+
   useEffect(() => {
     fetchApplications();
+    fetchMentorApplications();
+    fetchModerationQueue();
   }, []);
 
   const handleDecideApplication = async (appId: string, status: 'approved' | 'denied') => {
@@ -156,6 +273,94 @@ const ManagementDashboard = () => {
     }
   };
 
+  const handleDecideMentorApplication = async (appId: string, status: 'approved' | 'denied') => {
+    try {
+      const { data: app } = await nexus.database
+        .from('mentor_applications')
+        .select('*')
+        .eq('id', appId)
+        .single();
+
+      if (!app) return;
+      const userId = app.user_id;
+
+      // Update mentor_applications table
+      const dbStatus = status === 'approved' ? 'approved' : 'rejected';
+      await nexus.database
+        .from('mentor_applications')
+        .update({
+          status: dbStatus,
+          reviewed_at: new Date().toISOString()
+        })
+        .eq('id', appId);
+
+      const { data: userProfile } = await nexus.database
+        .from('profiles')
+        .select('metadata')
+        .eq('id', userId)
+        .single();
+
+      if (userProfile) {
+        const currentMetadata = userProfile.metadata || {};
+        
+        if (status === 'approved') {
+          const { mentor_application_status, pending_mentor_data, ...rest } = currentMetadata;
+          const updatedMetadata = {
+            ...rest,
+            mentor_onboarded: true,
+            active_role: 'mentor',
+            mentor_onboarded_at: new Date().toISOString(),
+            mentor_data: pending_mentor_data
+          };
+
+          await nexus.database
+            .from('profiles')
+            .update({
+              role: 'mentor',
+              metadata: updatedMetadata
+            })
+            .eq('id', userId);
+
+          // If current logged-in user, sync store state
+          if (userId === user?.id) {
+            await updateProfile({
+              role: 'mentor',
+              metadata: updatedMetadata
+            });
+          }
+
+        } else {
+          const { mentor_application_status, pending_mentor_data, ...cleanedMetadata } = currentMetadata;
+          await nexus.database
+            .from('profiles')
+            .update({
+              metadata: cleanedMetadata
+            })
+            .eq('id', userId);
+
+          if (userId === user?.id) {
+            await updateProfile({
+              metadata: cleanedMetadata
+            });
+          }
+        }
+
+        await fetchMentorApplications();
+        
+        const notificationEvent = new CustomEvent('show-notification', {
+          detail: { 
+            message: `Mentor application was ${status}!`, 
+            type: status === 'approved' ? 'success' : 'info' 
+          }
+        });
+        window.dispatchEvent(notificationEvent);
+      }
+    } catch (e: any) {
+      console.error(e);
+      alert('Failed to update mentor application decision: ' + (e.message || e));
+    }
+  };
+
   const pendingApps = applications.filter(app => app.status === 'pending');
 
   return (
@@ -218,29 +423,38 @@ const ManagementDashboard = () => {
                 <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-lg shadow-red-500/50" />
                 <h3 className="text-xl font-black text-slate-900 tracking-tight">Content Moderation Queue</h3>
              </div>
-             <Button variant="outline" size="sm" className="rounded-xl px-4 text-[10px] font-black uppercase border-slate-200">Refresh</Button>
+             <Button variant="outline" size="sm" onClick={fetchModerationQueue} className="rounded-xl px-4 text-[10px] font-black uppercase border-slate-200">Refresh</Button>
           </div>
-          <div className="divide-y divide-slate-50">
-            {[
-              { title: 'Intro to Web3', tutor: 'Sarah Khan', date: '2h ago', status: 'Flagged' },
-              { title: 'Mastering Figma', tutor: 'John Doe', date: '5h ago', status: 'Review' },
-              { title: 'Py-Data Engine', tutor: 'Bisi A.', date: '1d ago', status: 'Review' },
-              { title: 'Social Marketing', tutor: 'Alex R.', date: '2d ago', status: 'Flagged' },
-            ].map((item, i) => (
-              <div key={i} className="p-8 flex items-center justify-between hover:bg-slate-50/50 cursor-pointer transition-all duration-300 group/item" onClick={() => navigate('/audit/courses')}>
-                <div className="flex gap-6">
-                  <div className={cn("w-1.5 h-12 rounded-full transition-all duration-500 group-hover/item:h-14", item.status === 'Flagged' ? 'bg-red-400' : 'bg-brand-primary')} />
-                  <div>
-                    <h4 className="font-bold text-lg tracking-tight text-slate-800 group-hover/item:text-brand-primary transition-colors">{item.title}</h4>
-                    <p className="text-[11px] text-slate-400 mt-1 font-bold uppercase tracking-widest">by {item.tutor} • {item.date}</p>
-                  </div>
+          <div className="divide-y divide-slate-50 min-h-[300px] flex flex-col justify-start">
+            {moderationQueue.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 shadow-inner">
+                  <CheckCircle2 size={28} />
                 </div>
-                <MoreVertical size={18} className="text-slate-200 group-hover/item:text-slate-400 transition-colors" />
+                <div className="space-y-1">
+                  <h4 className="font-bold text-base text-slate-700">Moderation Clear</h4>
+                  <p className="text-xs font-medium text-slate-400 max-w-xs">
+                    No courses, books, or flagged content require active auditing.
+                  </p>
+                </div>
               </div>
-            ))}
+            ) : (
+              moderationQueue.slice(0, 5).map((item, i) => (
+                <div key={i} className="p-8 flex items-center justify-between hover:bg-slate-50/50 cursor-pointer transition-all duration-300 group/item" onClick={() => navigate(item.type === 'course' ? '/audit/courses' : item.type === 'book' ? '/audit/approvals' : '/audit/health')}>
+                  <div className="flex gap-6 min-w-0">
+                    <div className={cn("w-1.5 h-12 rounded-full transition-all duration-500 group-hover/item:h-14", item.status === 'Flagged' ? 'bg-red-400' : 'bg-brand-primary')} />
+                    <div className="min-w-0">
+                      <h4 className="font-bold text-lg tracking-tight text-slate-800 group-hover/item:text-brand-primary transition-colors truncate">{item.title}</h4>
+                      <p className="text-[11px] text-slate-450 mt-1 font-bold uppercase tracking-widest truncate">by {item.creator} • {new Date(item.date).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                  <span className={cn("px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider", item.status === 'Flagged' ? 'bg-red-50 text-red-750' : 'bg-brand-primary/10 text-brand-primary')}>{item.status}</span>
+                </div>
+              ))
+            )}
           </div>
-          <div className="p-8 bg-slate-50/50 text-center border-t border-slate-50 transition-colors hover:bg-slate-100/50">
-            <button className="text-[11px] font-black text-brand-primary uppercase tracking-[0.3em] hover:underline transition-all" onClick={() => navigate('/audit/courses')}>Launch Audit Panel (14)</button>
+          <div className="p-8 bg-slate-50/50 text-center border-t border-slate-50 transition-colors hover:bg-slate-100/50 mt-auto">
+            <button className="text-[11px] font-black text-brand-primary uppercase tracking-[0.3em] hover:underline transition-all" onClick={() => navigate('/audit/courses')}>Launch Audit Panel ({moderationQueue.length})</button>
           </div>
         </Card>
 
@@ -307,6 +521,71 @@ const ManagementDashboard = () => {
           <div className="p-8 bg-slate-50/50 text-center border-t border-slate-50 transition-colors hover:bg-slate-100/50 mt-auto">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em]">
               Trileza Global Publishing Network
+            </span>
+          </div>
+        </Card>
+
+        {/* Card 3: Mentor Applications Requests Queue [NEW] */}
+        <Card className="p-0 overflow-hidden border-none shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] rounded-[3rem] bg-white group/mentor">
+          <div className="p-8 border-b border-slate-50 flex items-center justify-between">
+             <div className="flex items-center gap-4">
+                <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse shadow-lg shadow-blue-500/50" />
+                <h3 className="text-xl font-black text-slate-900 tracking-tight">Mentor Applications</h3>
+             </div>
+             <span className="text-[10px] font-black uppercase tracking-wider px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl">
+               {mentorApplications.length} Pending
+             </span>
+          </div>
+
+          <div className="divide-y divide-slate-50 min-h-[300px] flex flex-col justify-start">
+            {mentorApplications.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-4">
+                <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 shadow-inner">
+                  <UserCheck size={28} />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-base text-slate-700">Queue Synchronized</h4>
+                  <p className="text-xs font-medium text-slate-400 max-w-xs">
+                    All mentor applications are processed.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              mentorApplications.map((app) => (
+                <div key={app.id} className="p-8 flex items-center justify-between hover:bg-slate-50/50 transition-all duration-300 group/app-item">
+                  <div className="flex gap-6 min-w-0">
+                    <div className="w-1.5 h-12 rounded-full bg-blue-400 transition-all duration-500 group-hover/app-item:h-14" />
+                    <div className="min-w-0">
+                      <h4 className="font-bold text-lg tracking-tight text-slate-800 truncate">{app.name}</h4>
+                      <p className="text-[11px] text-slate-450 mt-1 font-bold uppercase tracking-widest truncate">
+                        {app.category} • {app.userEmail}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0 ml-4">
+                    <button
+                      onClick={() => handleDecideMentorApplication(app.id, 'approved')}
+                      className="w-10 h-10 rounded-xl bg-blue-50 hover:bg-blue-500 text-blue-600 hover:text-white flex items-center justify-center transition-all shadow-sm border border-blue-100/50"
+                      title="Approve Mentor"
+                    >
+                      <Check size={16} strokeWidth={3} />
+                    </button>
+                    <button
+                      onClick={() => handleDecideMentorApplication(app.id, 'denied')}
+                      className="w-10 h-10 rounded-xl bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white flex items-center justify-center transition-all shadow-sm border border-rose-100/50"
+                      title="Deny Request"
+                    >
+                      <X size={16} strokeWidth={3} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="p-8 bg-slate-50/50 text-center border-t border-slate-50 transition-colors hover:bg-slate-100/50 mt-auto">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em]">
+              Trileza Global Mentorship Network
             </span>
           </div>
         </Card>

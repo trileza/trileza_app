@@ -50,7 +50,17 @@ const BookDetail: React.FC = () => {
           .single();
         
         if (error) throw error;
-        if (data) {
+
+        // Fetch review status to verify approval
+        const { data: reviewData } = await nexus.database
+          .from('book_reviews')
+          .select('status')
+          .eq('book_id', bookId)
+          .maybeSingle();
+
+        if (reviewData && (reviewData.status === 'pending' || reviewData.status === 'rejected' || reviewData.status === 'needs_changes')) {
+          setBook(null);
+        } else if (data) {
           setBook(data as BookDetailData);
         }
       } catch (err) {

@@ -169,7 +169,7 @@ const Courses: React.FC = () => {
       try {
         setIsLoadingData(true);
         // Fetch courses, profiles, and wallets
-        const { data: coursesRows } = await nexus.database.from('courses').select('*');
+        const { data: coursesRows } = await nexus.database.from('courses').select('*').eq('status', 'published');
         const { data: profilesRows } = await nexus.database.from('profiles').select('*');
         const { data: walletsRows } = await nexus.database.from('wallets').select('*');
         const { data: mentorshipRows } = await nexus.database.from('mentorship_programs').select('*');
@@ -266,6 +266,10 @@ const Courses: React.FC = () => {
       }
     };
     fetchData();
+    window.addEventListener('trileza-course-published', fetchData);
+    return () => {
+      window.removeEventListener('trileza-course-published', fetchData);
+    };
   }, []);
 
   const isMentor = user?.metadata?.mentor_onboarded === true;

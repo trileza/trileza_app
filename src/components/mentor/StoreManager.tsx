@@ -108,6 +108,9 @@ const StoreManager: React.FC = () => {
     e.preventDefault();
     if (!user) return;
 
+    // Proactively ensure the session token is fresh before starting uploads
+    await nexus.auth.getCurrentUser();
+
     if (!formData.title.trim() || !formData.description.trim() || !formData.retail_price) {
       showFeedback('Please fill out all required fields.', 'error');
       return;
@@ -125,7 +128,10 @@ const StoreManager: React.FC = () => {
           conversionFormData.append('file', realBookFile);
           conversionFormData.append('userId', user.id);
           
-          const userToken = (nexus as any).tokenManager?.getAccessToken() || '';
+          const headers = nexus.getHttpClient().getHeaders();
+          const authHeader = headers['Authorization'] || headers['authorization'] || '';
+          const rawToken = authHeader.replace(/^Bearer\s+/i, '');
+          const userToken = rawToken === import.meta.env.VITE_INSFORGE_ANON_KEY ? '' : rawToken;
           
           const conversionRes = await fetch('https://25t8cbg8.functions.insforge.app/convert-manuscript', {
             method: 'POST',
@@ -262,7 +268,20 @@ const StoreManager: React.FC = () => {
       const { error } = await nexus.database.from('books').insert([newItem]);
       if (error) throw error;
 
-      showFeedback('Item published successfully!');
+      // Submit book for Content Manager review automatically to sync with database reviews
+      const { error: reviewErr } = await nexus.database.from('book_reviews').insert([{
+        book_id: newItem.id,
+        submitted_by: user.id,
+        status: 'pending',
+        checklist_cover: false,
+        checklist_description: false,
+        checklist_readable: false,
+        checklist_price: false,
+        checklist_no_copyright: false
+      }]);
+      if (reviewErr) throw reviewErr;
+
+      showFeedback('Item published and submitted for review successfully!');
       setIsAdding(false);
       setFormData({
         title: '',
@@ -290,9 +309,35 @@ const StoreManager: React.FC = () => {
       fetchItems();
     } catch (err: any) {
       console.error('Error creating item:', err);
-      showFeedback('Failed to publish item: ' + (err.message || err), 'error');
+      if (err?.message?.includes('Invalid token') || err?.message?.includes('JWT expired')) {
+        showFeedback('Your session has expired or the token is invalid. Please log out and log back in to publish.', 'error');
+      } else {
+        showFeedback('Failed to publish item: ' + (err.message || err), 'error');
+      }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!confirm('Are you sure you want to retract this item? It will be removed from the library.')) return;
+
+    try {
+      const { error } = await nexus.database
+        .from('books')
+        .delete()
+        .eq('id', itemId);
+
+      if (error) throw error;
+
+      // Hot-reload library catalog
+      window.dispatchEvent(new Event('trileza-book-published'));
+
+      fetchItems();
+      showFeedback('Book retracted from library catalog.');
+    } catch (e: any) {
+      console.error(e);
+      showFeedback('Failed to retract book: ' + (e.message || e), 'error');
     }
   };
 
@@ -406,7 +451,10 @@ const StoreManager: React.FC = () => {
                         <button className="flex-1 py-2 rounded-xl bg-slate-50 text-slate-600 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-colors flex items-center justify-center gap-2">
                           <Eye size={14} /> View Live
                         </button>
-                        <button className="p-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+                        <button 
+                          onClick={() => handleDeleteItem(item.id)}
+                          className="p-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                        >
                           <Trash2 size={16} />
                         </button>
                       </div>

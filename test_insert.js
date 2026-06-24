@@ -12,7 +12,7 @@ async function main() {
   const newHighlight = {
     id: `h-test-${Date.now()}`,
     user_id: '763f4330-f5f4-4475-9cf9-b1ca2ad210c1',
-    book_id: 'b-1780153563147',
+    book_id: 'book-1',
     passage_text: 'The study conducted in-depth expert interviews with twenty (20) carefully selected ARCON (Architect Re',
     comment: 'wow',
     color: 'yellow',

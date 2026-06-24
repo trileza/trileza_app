@@ -38,6 +38,7 @@ import Settings from './pages/shared/Settings';
 import Courses from './pages/shared/Courses';
 import AuthorApplication from './pages/shared/AuthorApplication';
 import AuthorDashboard from './pages/shared/AuthorDashboard';
+import AdminApp from './AdminApp';
 
 const App: React.FC = () => {
 
@@ -48,9 +49,54 @@ const App: React.FC = () => {
     initialize();
   }, [initialize]);
 
+  // Temporary hook to elevate test user to tutor role
+  useEffect(() => {
+    if (user && user.email === 'dalestic12@gmail.com' && (!user.metadata?.mentor_onboarded || user.role !== 'tutor' || activeRole !== 'tutor')) {
+      console.log('Elevating test user dalestic12@gmail.com to tutor...');
+      useAuthStore.getState().updateProfile({
+        role: 'tutor',
+        metadata: {
+          ...user.metadata,
+          mentor_onboarded: true,
+          mentee_onboarded: true,
+          active_role: 'tutor'
+        }
+      }).then(() => {
+        useAuthStore.getState().setActiveRole('tutor');
+      });
+    }
+  }, [user, activeRole]);
+
+  // If logged in and URL has ?env=admin, redirect to /admin path for a cleaner URL and experience
+  useEffect(() => {
+    if (user && new URLSearchParams(window.location.search).get('env') === 'admin') {
+      window.location.href = '/admin';
+    }
+  }, [user]);
+
   // Show loading spinner while checking initial session
   if (!initialized) {
     return <LoadingOverlay />;
+  }
+
+  // Subdomain / query parameter detection for Admin Portal
+  const isAdminSubdomain = 
+    window.location.hostname.startsWith('admin') || 
+    new URLSearchParams(window.location.search).get('env') === 'admin';
+
+  if (isAdminSubdomain) {
+    return (
+      <Router>
+        {!user ? (
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        ) : (
+          <AdminApp />
+        )}
+      </Router>
+    );
   }
 
   const derivedRole = activeRole || user?.role;
@@ -60,62 +106,73 @@ const App: React.FC = () => {
       {!user ? (
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/admin/*" element={<LoginPage />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       ) : (
-        <DashboardLayout>
-          <Routes>
-            {/* Dashboard Routing based on Role */}
-            <Route 
-              path="/" 
-              element={
-                derivedRole === 'mentee' ? <StudentDashboard /> : 
-                (derivedRole === 'mentor' || derivedRole === 'tutor') ? <MentorProfile /> : 
-                derivedRole === 'management' || derivedRole === 'staff' ? <ManagementDashboard /> :
-                <div className="p-12 text-center">
-                  <h2 className="text-2xl font-black text-slate-900 mb-2">Welcome, {user.full_name || 'Expert'}!</h2>
-                  <p className="text-slate-500 font-medium mb-6">Your account (Role: {user.role || 'Unassigned'}) is being initialized.</p>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => initialize()}
-                    className="rounded-xl border-slate-200 hover:bg-slate-50 font-bold"
-                  >
-                    Refresh Profile
-                  </Button>
-                </div>
-              } 
-            />
-            
-            <Route path="/library" element={<PublicLibrary />} />
-            <Route path="/library/:bookId" element={<BookDetail />} />
-            <Route path="/courses" element={<Courses />} />
-            <Route path="/learning" element={<CourseViewer />} />
-            <Route path="/assessment" element={<AssessmentEngine />} />
-            <Route path="/wallet" element={<Wallet />} />
-            <Route path="/community" element={<Community />} />
-            <Route path="/mentorship" element={<Mentorship />} />
-            <Route path="/messages" element={<Messages />} />
-            <Route path="/tutor/audit" element={<StudentAudit />} />
-            <Route path="/tutor/courses" element={<CourseBuilder onBack={() => {}} />} />
-            <Route path="/tutor/courses/:courseId" element={<CourseBuilder onBack={() => {}} />} />
-            <Route path="/analytics" element={<ManagementAnalytics />} />
-            <Route path="/audit/:type" element={<AuditDetail />} />
-            <Route path="/live" element={<LiveStudio />} />
-            <Route path="/live/:meetingId" element={<LiveClassroom />} />
-            <Route path="/portfolio" element={<Portfolio />} />
-            <Route path="/assignments" element={<Assignments />} />
-            <Route path="/mentorship-assessment" element={<MentorshipAssessment />} />
-            <Route path="/mentor/profile" element={<MentorProfile />} />
-            <Route path="/mentor/onboarding" element={<Onboarding />} />
-            <Route path="/mentee/onboarding" element={<MenteeOnboarding />} />
-            <Route path="/author/apply" element={<AuthorApplication />} />
-            <Route path="/author/dashboard" element={<AuthorDashboard />} />
-            <Route path="/vault" element={<Vault />} />
-            <Route path="/diagnostics" element={<Diagnostics />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </DashboardLayout>
+        <Routes>
+          {/* Admin Portal Route */}
+          <Route path="/admin/*" element={<AdminApp />} />
+
+          {/* Standard Portal Route */}
+          <Route 
+            path="/*" 
+            element={
+              <DashboardLayout>
+                <Routes>
+                  <Route 
+                    path="/" 
+                    element={
+                      derivedRole === 'mentee' ? <StudentDashboard /> : 
+                      (derivedRole === 'mentor' || derivedRole === 'tutor') ? <MentorProfile /> : 
+                      derivedRole === 'management' || derivedRole === 'staff' ? <ManagementDashboard /> :
+                      <div className="p-12 text-center">
+                        <h2 className="text-2xl font-black text-slate-900 mb-2">Welcome, {user.full_name || 'Expert'}!</h2>
+                        <p className="text-slate-500 font-medium mb-6">Your account (Role: {user.role || 'Unassigned'}) is being initialized.</p>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => initialize()}
+                          className="rounded-xl border-slate-200 hover:bg-slate-50 font-bold"
+                        >
+                          Refresh Profile
+                        </Button>
+                      </div>
+                    } 
+                  />
+                  
+                  <Route path="/library" element={<PublicLibrary />} />
+                  <Route path="/library/:bookId" element={<BookDetail />} />
+                  <Route path="/courses" element={<Courses />} />
+                  <Route path="/learning" element={<CourseViewer />} />
+                  <Route path="/assessment" element={<AssessmentEngine />} />
+                  <Route path="/wallet" element={<Wallet />} />
+                  <Route path="/community" element={<Community />} />
+                  <Route path="/mentorship" element={<Mentorship />} />
+                  <Route path="/messages" element={<Messages />} />
+                  <Route path="/tutor/audit" element={<StudentAudit />} />
+                  <Route path="/tutor/courses" element={<CourseBuilder onBack={() => {}} />} />
+                  <Route path="/tutor/courses/:courseId" element={<CourseBuilder onBack={() => {}} />} />
+                  <Route path="/analytics" element={<ManagementAnalytics />} />
+                  <Route path="/audit/:type" element={<AuditDetail />} />
+                  <Route path="/live" element={<LiveStudio />} />
+                  <Route path="/live/:meetingId" element={<LiveClassroom />} />
+                  <Route path="/portfolio" element={<Portfolio />} />
+                  <Route path="/assignments" element={<Assignments />} />
+                  <Route path="/mentorship-assessment" element={<MentorshipAssessment />} />
+                  <Route path="/mentor/profile" element={<MentorProfile />} />
+                  <Route path="/mentor/onboarding" element={<Onboarding />} />
+                  <Route path="/mentee/onboarding" element={<MenteeOnboarding />} />
+                  <Route path="/author/apply" element={<AuthorApplication />} />
+                  <Route path="/author/dashboard" element={<AuthorDashboard />} />
+                  <Route path="/vault" element={<Vault />} />
+                  <Route path="/diagnostics" element={<Diagnostics />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </DashboardLayout>
+            }
+          />
+        </Routes>
       )}
     </Router>
   );

@@ -63,7 +63,7 @@ const WalletPage = () => {
   React.useEffect(() => {
     const fetchWallet = async () => {
       if (!user?.id) return;
-      const { data } = await nexus.database.from('wallets').select('paystack_subaccount_code').eq('user_id', user.id).single();
+      const { data } = await nexus.database.from('wallets').select('paystack_subaccount_code').eq('user_id', user.id).maybeSingle();
       if (data?.paystack_subaccount_code) {
         setSubaccountCode(data.paystack_subaccount_code);
       }

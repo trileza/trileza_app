@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import { Settings as SettingsIcon, Bell, Lock, User, Globe, Moon, Monitor, Sun, CreditCard, Shield, Key, ChevronRight, Camera, Save } from 'lucide-react';
@@ -8,6 +9,7 @@ import { cn } from '../../utils';
 
 const Settings = () => {
   const { user, updateProfile } = useAuthStore();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'notifications'>('profile');
   
   // Toast state
@@ -89,12 +91,14 @@ const Settings = () => {
       full_name: fullName,
       bio: bio,
       website: website,
+      country: country,
       metadata: updatedMetadata
     });
     
     setLoading(false);
     if (!error) {
       setToast({ message: 'Profile settings saved successfully.', type: 'success' });
+      setTimeout(() => navigate('/'), 1000);
     } else {
       setToast({ message: 'Failed to save profile settings.', type: 'info' });
     }

@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { DyteProvider, useDyteClient } from '@dytesdk/react-web-core';
-import { DyteMeeting, provideDyteDesignSystem } from '@dytesdk/react-ui-kit';
+import { DyteMeeting } from '@dytesdk/react-ui-kit';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { liveService } from '../../lib/services/live';
 import { AlertCircle, ChevronLeft } from 'lucide-react';
 import { LoadingOverlay } from '../../components/shared';
+import { applyDyteTheme } from '../../utils/dyteTheme';
 
 const LiveClassroomContent = ({ authToken }: { authToken: string }) => {
   const [meeting, initMeeting] = useDyteClient();
@@ -23,23 +24,18 @@ const LiveClassroomContent = ({ authToken }: { authToken: string }) => {
     }
   }, [authToken]);
 
+  // Apply premium styling to Dyte panels
   useEffect(() => {
-    if (containerRef.current) {
-      provideDyteDesignSystem(containerRef.current, {
-        theme: 'dark',
-        colors: {
-          brand: {
-            500: '#2E7D32', // Agro-green
-            600: '#1B5E20',
-            700: '#1B5E20',
-          },
-          background: {
-            1000: 'rgba(51, 65, 85, 0.7)', // Slate-grey with Glassmorphism
-            900: 'rgba(30, 41, 59, 0.7)',
-            800: 'rgba(15, 23, 42, 0.7)',
-          },
-        },
-        borderRadius: 'extra-rounded',
+    if (containerRef.current && meeting) {
+      applyDyteTheme(containerRef.current);
+    }
+  }, [meeting]);
+
+  // Auto-join meeting room programmatically once initialized
+  useEffect(() => {
+    if (meeting) {
+      meeting.joinRoom().catch((err: any) => {
+        console.error('Failed to automatically join the classroom:', err);
       });
     }
   }, [meeting]);
@@ -59,6 +55,7 @@ const LiveClassroomContent = ({ authToken }: { authToken: string }) => {
       <DyteMeeting 
         meeting={meeting} 
         mode="fill" 
+        showSetupScreen={false}
         className="h-full w-full backdrop-blur-md"
       />
 

@@ -5,12 +5,16 @@ export const enrollmentService = {
   /**
    * Enroll a student in a course
    */
-  async enroll(studentId: string, courseId: string) {
+  async enroll(userId: string, itemId: string, itemType: string, itemTitle: string, itemThumbnail: string = '', status: string = 'enrolled') {
     const { data, error } = await nexus.database
       .from('enrollments')
       .insert({
-        student_id: studentId,
-        course_id: courseId,
+        user_id: userId,
+        item_id: itemId,
+        item_type: itemType,
+        item_title: itemTitle,
+        item_thumbnail: itemThumbnail,
+        status: status,
         progress: 0,
       })
       .select()
@@ -27,7 +31,7 @@ export const enrollmentService = {
     const { data, error } = await nexus.database
       .from('enrollments')
       .select('*')
-      .eq('student_id', studentId)
+      .eq('user_id', studentId)
       .order('last_accessed', { ascending: false });
 
     if (error) throw error;
@@ -41,7 +45,7 @@ export const enrollmentService = {
     const { data, error } = await nexus.database
       .from('enrollments')
       .select('*')
-      .eq('student_id', studentId)
+      .eq('user_id', studentId)
       .order('last_accessed', { ascending: false });
 
     if (error) throw error;
