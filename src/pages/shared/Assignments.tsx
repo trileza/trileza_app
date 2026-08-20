@@ -9,7 +9,7 @@ const Assignments = () => {
   const showFeedback = (msg: string, type: 'success' | 'info' = 'success') => setToast({ message: msg, type });
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20 max-w-7xl mx-auto">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-20 w-full">
       <PageHeader 
         title="My Assignments"
         description="Track your learning milestones, complete assigned tasks, and review your graded assessments."

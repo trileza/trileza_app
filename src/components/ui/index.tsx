@@ -16,25 +16,25 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const variants = {
-    primary: 'bg-brand-primary text-white hover:bg-brand-primary-hover shadow-md shadow-emerald-500/20',
-    secondary: 'bg-brand-slate text-white hover:bg-slate-900',
-    outline: 'border-2 border-slate-200 bg-transparent hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-900',
-    ghost: 'bg-transparent hover:bg-slate-100 text-slate-600 dark:text-slate-400 dark:hover:bg-slate-800',
-    danger: 'bg-red-500 text-white hover:bg-red-600 shadow-md shadow-red-500/20',
-    success: 'bg-brand-accent text-white hover:opacity-90 shadow-md shadow-emerald-500/20',
+    primary: 'bg-[linear-gradient(145deg,#22C55E,#16A34A)] text-[#06170C] hover:brightness-110 active:scale-95 shadow-lg shadow-emerald-500/10 focus-visible:ring-2 focus-visible:ring-[#4ADE80] focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+    secondary: 'bg-surface-2 border border-border text-foreground hover:bg-surface-2-hover focus-visible:ring-2 focus-visible:ring-[#4ADE80]',
+    outline: 'border border-border bg-transparent text-foreground hover:bg-surface focus-visible:ring-2 focus-visible:ring-[#4ADE80]',
+    ghost: 'bg-transparent text-text-secondary hover:text-foreground hover:bg-surface focus-visible:ring-2 focus-visible:ring-[#4ADE80]',
+    danger: 'bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-200 hover:bg-red-500/20 focus-visible:ring-2 focus-visible:ring-red-500',
+    success: 'bg-[linear-gradient(145deg,#22C55E,#16A34A)] text-[#06170C] hover:brightness-110 shadow-lg shadow-emerald-500/10 focus-visible:ring-2 focus-visible:ring-[#4ADE80]',
   };
 
   const sizes = {
-    sm: 'px-3 py-1.5 text-xs rounded-lg',
-    md: 'px-5 py-2.5 text-sm rounded-xl',
-    lg: 'px-7 py-3.5 text-base rounded-2xl',
-    icon: 'p-2.5 rounded-xl',
+    sm: 'px-3 py-1.5 text-xs rounded-[10px]',
+    md: 'px-5 py-2.5 text-sm rounded-[10px]',
+    lg: 'px-7 py-3.5 text-base rounded-[10px]',
+    icon: 'p-2.5 rounded-[10px]',
   };
 
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center font-semibold transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none',
+        'inline-flex items-center justify-center font-semibold transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none focus:outline-none',
         variants[variant],
         sizes[size],
         className
@@ -43,7 +43,7 @@ export const Button: React.FC<ButtonProps> = ({
       {...props}
     >
       {loading ? (
-        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-[#06170C] border-t-transparent" />
       ) : null}
       {children}
     </button>
@@ -58,7 +58,7 @@ export const Card: React.FC<CardProps> = ({ className, glass, children, ...props
   return (
     <div
       className={cn(
-        'rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900',
+        'rounded-2xl border-none bg-surface p-6 shadow-sm text-foreground transition-all duration-300',
         glass && 'glass',
         className
       )}
@@ -68,3 +68,5 @@ export const Card: React.FC<CardProps> = ({ className, glass, children, ...props
     </div>
   );
 };
+
+export * from './Toast';

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Trileza</string>
+    <string name="title_activity_main">Trileza</string>
+    <string name="package_name">com.trileza.app</string>
+    <string name="custom_url_scheme">com.trileza.app</string>
+</resources>

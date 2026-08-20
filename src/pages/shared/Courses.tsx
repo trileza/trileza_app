@@ -1,16 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, Button } from '../../components/ui';
 import { LoadingOverlay, PageHeader } from '../../components/shared';
 import { useAuthStore } from '../../store/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useCheckout } from '../../lib/services/paystack';
 import { nexus } from '../../lib/nexus';
+import { tenantService } from '../../lib/services/tenants';
+import type { Tenant } from '../../types';
 import {
   Search, Star, BookOpen, Users, Clock, Award, Filter,
-  ChevronRight, X, CheckCircle2, XCircle, Heart,
+  ChevronRight, X, CheckCircle2, XCircle, Heart, ChevronDown,
   GraduationCap, Sparkles, TrendingUp, Play, Shield,
   CreditCard, Send, AlertCircle, Calendar, Globe,
-  Layers, Zap, ArrowRight, BadgeCheck, Lock
+  Layers, Zap, ArrowRight, BadgeCheck, Lock, Building2
 } from 'lucide-react';
 import { cn, formatCurrency } from '../../utils';
 import { Toast } from '../../components/ui/Toast';
@@ -72,6 +74,7 @@ interface MentorshipProgram {
 
 interface ApplicationRecord {
   id: string;
+  itemId: string;
   type: 'course' | 'mentorship';
   itemTitle: string;
   itemThumbnail: string;
@@ -165,9 +168,14 @@ const Courses: React.FC = () => {
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   React.useEffect(() => {
-    const fetchData = async () => {
+    let realtimeSubscribed = false;
+    const realtimeChannel = 'catalog-updates';
+
+    const fetchData = async (isFirstLoad = false) => {
       try {
-        setIsLoadingData(true);
+        if (isFirstLoad) {
+          setIsLoadingData(true);
+        }
         // Fetch courses, profiles, and wallets
         const { data: coursesRows } = await nexus.database.from('courses').select('*').eq('status', 'published');
         const { data: profilesRows } = await nexus.database.from('profiles').select('*');
@@ -262,13 +270,59 @@ const Courses: React.FC = () => {
       } catch (e) {
         console.error('Failed to fetch data', e);
       } finally {
-        setIsLoadingData(false);
+        if (isFirstLoad) {
+          setIsLoadingData(false);
+        }
       }
     };
-    fetchData();
-    window.addEventListener('trileza-course-published', fetchData);
+
+    fetchData(true);
+
+    const handleRealtimeUpdate = (payload: any) => {
+      console.log('[Realtime] Catalog change event received:', payload);
+      fetchData(false);
+    };
+
+    const subscribeToUpdates = async () => {
+      try {
+        await nexus.realtime.connect();
+        const res = await nexus.realtime.subscribe(realtimeChannel);
+        if (res.ok) {
+          realtimeSubscribed = true;
+          nexus.realtime.on('course_updated', handleRealtimeUpdate);
+          nexus.realtime.on('book_updated', handleRealtimeUpdate);
+        }
+      } catch (err) {
+        console.error('[Realtime] Subscription failed:', err);
+      }
+    };
+
+    subscribeToUpdates();
+
+    const triggerCoursePublished = () => fetchData(false);
+    window.addEventListener('trileza-course-published', triggerCoursePublished);
+
+    // Deep sync fallback (window focus, visibility change, and periodic polling)
+    const triggerSyncFocus = () => fetchData(false);
+    window.addEventListener('focus', triggerSyncFocus);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchData(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const intervalId = setInterval(() => fetchData(false), 30000);
+
     return () => {
-      window.removeEventListener('trileza-course-published', fetchData);
+      window.removeEventListener('trileza-course-published', triggerCoursePublished);
+      window.removeEventListener('focus', triggerSyncFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(intervalId);
+      if (realtimeSubscribed) {
+        nexus.realtime.off('course_updated', handleRealtimeUpdate);
+        nexus.realtime.off('book_updated', handleRealtimeUpdate);
+        nexus.realtime.unsubscribe(realtimeChannel);
+      }
     };
   }, []);
 
@@ -310,7 +364,21 @@ const Courses: React.FC = () => {
 
   // UI State
   const [activeCategory, setActiveCategory] = useState('All');
+  const [selectedInstitution, setSelectedInstitution] = useState('All');
+  const [institutionsList, setInstitutionsList] = useState<Tenant[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+
+  useEffect(() => {
+    tenantService.getInstitutions().then(setInstitutionsList).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
   const [selectedLevel, setSelectedLevel] = useState<string>('All');
   const [showFreeOnly, setShowFreeOnly] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
@@ -320,10 +388,18 @@ const Courses: React.FC = () => {
   const [selectedProgram, setSelectedProgram] = useState<MentorshipProgram | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showSponsorshipModal, setShowSponsorshipModal] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [activeModuleIndex, setActiveModuleIndex] = useState<number | null>(0);
 
   // Sponsorship State
   const [sponsorMentorId, setSponsorMentorId] = useState('');
   const [sponsorMessage, setSponsorMessage] = useState('');
+
+  // Reset detail states when selected course changes
+  React.useEffect(() => {
+    setDescExpanded(false);
+    setActiveModuleIndex(0);
+  }, [selectedCourse?.id]);
 
   // Application records
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
@@ -339,6 +415,7 @@ const Courses: React.FC = () => {
       if (enrolls) {
         setApplications(enrolls.map((e: any) => ({
           id: e.id,
+          itemId: e.item_id,
           type: e.item_type,
           itemTitle: e.item_title,
           itemThumbnail: e.item_thumbnail || '',
@@ -392,23 +469,26 @@ const Courses: React.FC = () => {
   // Filter Logic
   const filteredCourses = useMemo(() => {
     return coursesData.filter(course => {
-      const matchesSearch = course.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            course.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            course.tutorName.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = course.title.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) || 
+                            course.description.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+                            course.tutorName.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
       const matchesCategory = activeCategory === 'All' || course.category === activeCategory;
-      return matchesSearch && matchesCategory;
+      const matchesInstitution = selectedInstitution === 'All' || 
+                                  (course as any).tenant_id === selectedInstitution ||
+                                  (course as any).institution_name === selectedInstitution;
+      return matchesSearch && matchesCategory && matchesInstitution;
     });
-  }, [searchQuery, activeCategory, coursesData]);
+  }, [debouncedSearchQuery, activeCategory, selectedInstitution, coursesData]);
 
   const filteredMentorships = useMemo(() => {
     return mentorshipData.filter(program => {
-      const matchesSearch = program.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            program.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            program.mentorName.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = program.title.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) || 
+                            program.description.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+                            program.mentorName.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
       const matchesCategory = activeCategory === 'All' || program.category === activeCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [searchQuery, activeCategory, mentorshipData]);
+  }, [debouncedSearchQuery, activeCategory, mentorshipData]);
 
   const pendingSponsorships = sponsorshipRequests.filter(r => r.status === 'pending').length;
 
@@ -481,7 +561,7 @@ const Courses: React.FC = () => {
     await fetchUserSpecificData();
     setShowPaymentModal(false);
     setPaymentTarget(null);
-    showFeedback(`Payment confirmed! You're now enrolled in "${paymentTarget.title}" 🎉`);
+    showFeedback(`Payment confirmed! You're now enrolled in "${paymentTarget.title}"`);
   };
 
   const handleRequestSponsorship = async () => {
@@ -538,7 +618,7 @@ const Courses: React.FC = () => {
 
     await fetchUserSpecificData();
     if (action === 'accepted') {
-      showFeedback(`Sponsorship approved for ${request.menteeName}! They can now access "${request.courseTitle}" 🎉`);
+      showFeedback(`Sponsorship approved for ${request.menteeName}! They can now access "${request.courseTitle}"`);
     } else {
       showFeedback(`Sponsorship request from ${request.menteeName} declined.`, 'info');
     }
@@ -558,8 +638,46 @@ const Courses: React.FC = () => {
   const totalEnrolled = coursesData.reduce((sum, c) => sum + c.enrolledCount, 0);
   const totalMentors = new Set([...coursesData.map(c => c.tutorName), ...mentorshipData.map(p => p.mentorName)]).size;
 
+  if (isLoadingData) {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500 pb-20 w-full font-sans course-page-container">
+        <PageHeader 
+          title={
+            <>Level Up Your <span className="bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">Skills</span></>
+          }
+          description="Explore world-class courses and mentorship programs. Learn from verified industry experts, apply for free or paid tracks, and even request sponsorship from your mentors."
+          tag="Courses & Programs"
+          icon={Sparkles}
+        />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((n) => (
+            <Card key={n} className="p-0 overflow-hidden border border-slate-100 dark:border-slate-850 rounded-2xl bg-white dark:bg-slate-900/50 animate-pulse">
+              <div className="h-40 bg-slate-200 dark:bg-slate-800" />
+              <div className="p-5 space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-1/4" />
+                  <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-1/6" />
+                </div>
+                <div className="h-5 bg-slate-200 dark:bg-slate-800 rounded w-3/4" />
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800" />
+                  <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded w-1/3" />
+                </div>
+                <div className="h-px bg-slate-150 dark:bg-slate-805" />
+                <div className="flex justify-between">
+                  <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded w-1/3" />
+                  <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded w-1/4" />
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20 max-w-7xl mx-auto font-sans">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-20 max-w-7xl mx-auto font-sans course-page-container">
 
       {/* ═══════════ HERO BANNER ═══════════ */}
       <PageHeader 
@@ -569,28 +687,11 @@ const Courses: React.FC = () => {
         description="Explore world-class courses and mentorship programs. Learn from verified industry experts, apply for free or paid tracks, and even request sponsorship from your mentors."
         tag="Courses & Programs"
         icon={Sparkles}
-        rightContent={
-          <div className="grid grid-cols-3 gap-4 lg:gap-6 w-full lg:w-auto shrink-0 mt-6 lg:mt-0">
-            {[
-              { label: 'Programs', value: totalCourses, icon: BookOpen, color: 'text-emerald-400 bg-emerald-500/10' },
-              { label: 'Enrolled', value: `${(totalEnrolled / 1000).toFixed(1)}K`, icon: Users, color: 'text-indigo-400 bg-indigo-500/10' },
-              { label: 'Mentors', value: totalMentors, icon: Award, color: 'text-amber-400 bg-amber-500/10' },
-            ].map((stat, i) => (
-              <div key={i} className="text-center lg:text-left bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-4 lg:p-5">
-                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mx-auto lg:mx-0 mb-2", stat.color)}>
-                  <stat.icon size={18} />
-                </div>
-                <p className="text-2xl font-black text-white">{stat.value}</p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-        }
       />
 
       {/* ═══════════ SEARCH & FILTER BAR ═══════════ */}
-      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-        <div className="relative flex-1 max-w-lg w-full">
+      <div className="flex flex-col gap-4 items-start md:items-center justify-between">
+        <div className="relative flex-1 w-full md:max-w-lg">
           <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -601,11 +702,41 @@ const Courses: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:items-center gap-3 w-full md:w-auto">
+          {/* Institution Dropdown Menu */}
+          <select
+            aria-label="Filter by Institution"
+            value={selectedInstitution}
+            onChange={(e) => setSelectedInstitution(e.target.value)}
+            className="h-11 px-4 w-full md:w-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-bold text-xs text-indigo-600 dark:text-indigo-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer shadow-sm"
+          >
+            <option value="All">All Institutions</option>
+            {institutionsList.map(inst => (
+              <option key={inst.id} value={inst.id}>
+                {inst.name} ({inst.subdomain}.trileza.com)
+              </option>
+            ))}
+          </select>
+
+          {/* Category Dropdown Menu */}
+          <select
+            aria-label="Filter by Category"
+            value={activeCategory}
+            onChange={(e) => setActiveCategory(e.target.value)}
+            className="h-11 px-4 w-full md:w-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-extrabold text-xs text-emerald-700 dark:text-emerald-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all cursor-pointer shadow-sm"
+          >
+            <option value="All">All Categories</option>
+            {CATEGORIES.filter(c => c !== 'All').map(cat => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
+
           <button
             onClick={() => setShowFreeOnly(!showFreeOnly)}
             className={cn(
-              "px-4 py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-2",
+              "px-4 h-11 w-full md:w-auto rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2",
               showFreeOnly
                 ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-400"
                 : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -615,9 +746,10 @@ const Courses: React.FC = () => {
           </button>
 
           <select
+            aria-label="Filter by Level"
             value={selectedLevel}
             onChange={(e) => setSelectedLevel(e.target.value)}
-            className="h-11 px-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-bold text-xs text-slate-600 dark:text-slate-400 focus:ring-2 focus:ring-emerald-500/20 transition-all"
+            className="h-11 px-4 w-full sm:col-span-2 md:w-auto rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-bold text-xs text-slate-600 dark:text-slate-400 focus:ring-2 focus:ring-emerald-500/20 transition-all cursor-pointer shadow-sm"
           >
             <option value="All">All Levels</option>
             <option value="Beginner">Beginner</option>
@@ -647,12 +779,29 @@ const Courses: React.FC = () => {
       )}
 
 
-      {/* ═══════════ TAB NAVIGATION ═══════════ */}
-      <div className="flex gap-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar pb-2">
+      {/* ═══════════ MOBILE CREATIVE TAB DROPDOWN ═══════════ */}
+      <div className="sm:hidden space-y-2">
+        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Select Section View:</label>
+        <div className="relative">
+          <select
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value as any)}
+            className="w-full h-12 px-4 rounded-2xl bg-white dark:bg-slate-900 border-2 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 font-extrabold text-xs shadow-md focus:ring-2 focus:ring-emerald-500 cursor-pointer appearance-none pr-10"
+          >
+            <option value="courses">All Courses ({filteredCourses.length})</option>
+            <option value="mentorship">Mentorship Programs ({filteredMentorships.length})</option>
+            <option value="applications">My Applications ({applications.length})</option>
+          </select>
+          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500 pointer-events-none" size={18} />
+        </div>
+      </div>
+
+      {/* ═══════════ DESKTOP TAB NAVIGATION ═══════════ */}
+      <div className="hidden sm:flex gap-4 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar pb-2">
         {([
-          { id: 'courses', label: '📚 All Courses', count: filteredCourses.length },
-          { id: 'mentorship', label: '🧑‍🏫 Mentorship Programs', count: filteredMentorships.length },
-          { id: 'applications', label: '📋 My Applications', count: applications.length },
+          { id: 'courses', label: 'All Courses', count: filteredCourses.length },
+          { id: 'mentorship', label: 'Mentorship Programs', count: filteredMentorships.length },
+          { id: 'applications', label: 'My Applications', count: applications.length },
         ] as const).map(tab => (
           <button
             key={tab.id}
@@ -727,9 +876,9 @@ const Courses: React.FC = () => {
                       </div>
                       <h4 className="font-black text-lg text-slate-900 dark:text-white leading-snug group-hover:text-emerald-600 transition-colors">{course.title}</h4>
                       <p className="text-slate-500 dark:text-slate-400 text-xs font-medium leading-relaxed line-clamp-2">{course.description}</p>
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex flex-col sm:flex-row justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
                         <StarRating rating={course.rating} count={course.reviewCount} />
-                        <div className="flex items-center gap-4 text-[10px] text-slate-500 font-bold">
+                        <div className="flex flex-wrap items-center gap-3 text-xs sm:text-[10px] text-slate-500 font-bold">
                           <span className="flex items-center gap-1"><Users size={12} className="text-emerald-500" /> {course.enrolledCount.toLocaleString()}</span>
                           <span className="flex items-center gap-1"><Clock size={12} /> {course.duration}</span>
                           <span className="flex items-center gap-1"><Layers size={12} /> {course.modules} modules</span>
@@ -791,9 +940,9 @@ const Courses: React.FC = () => {
                           {course.tutorVerified && <BadgeCheck size={10} className="text-emerald-500" />}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                         <StarRating rating={course.rating} count={course.reviewCount} />
-                        <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1"><Users size={10} /> {course.enrolledCount.toLocaleString()}</span>
+                        <span className="text-xs sm:text-[10px] text-slate-400 font-bold flex items-center gap-1"><Users size={10} /> {course.enrolledCount.toLocaleString()}</span>
                       </div>
                     </div>
                   </Card>
@@ -1006,45 +1155,72 @@ const Courses: React.FC = () => {
               </Card>
             ) : (
               <div className="space-y-3">
-                {applications.map(app => (
-                  <Card key={app.id} className="p-0 overflow-hidden border border-slate-100 dark:border-slate-850 shadow-sm hover:shadow-md rounded-2xl transition-all bg-white dark:bg-slate-900/50">
-                    <div className="flex items-center gap-4 p-4 md:p-5">
-                      {app.itemThumbnail && (
-                        <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-slate-100">
-                          <img src={app.itemThumbnail} alt={app.itemTitle} className="w-full h-full object-cover" />
-                        </div>
+                {applications.map(app => {
+                  const isEnrolledCourse = app.type === 'course' && (app.status === 'enrolled' || app.status === 'sponsorship_approved');
+                  return (
+                    <Card 
+                      key={app.id} 
+                      className={cn(
+                        "p-0 overflow-hidden border border-slate-100 dark:border-slate-850 shadow-sm hover:shadow-md rounded-2xl transition-all bg-white dark:bg-slate-900/50",
+                        isEnrolledCourse && "cursor-pointer hover:border-emerald-400"
                       )}
-                      <div className="flex-1 min-w-0 text-left">
-                        <h4 className="font-bold text-slate-900 dark:text-white text-sm truncate">{app.itemTitle}</h4>
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{app.type === 'course' ? '📚 Course' : '🧑‍🏫 Program'}</span>
-                          {app.tier && <span className="text-[10px] text-slate-400 font-bold">• {app.tier}</span>}
-                          {app.amount && <span className="text-[10px] text-slate-500 font-bold">• {formatCurrency(app.amount)}</span>}
-                          <span className="text-[10px] text-slate-400">• Applied {app.appliedAt}</span>
+                      onClick={() => {
+                        if (isEnrolledCourse) {
+                          navigate(`/learning?courseId=${app.itemId}`);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-4 p-4 md:p-5">
+                        {app.itemThumbnail && (
+                          <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-slate-100">
+                            <img src={app.itemThumbnail} alt={app.itemTitle} className="w-full h-full object-cover" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0 text-left">
+                          <h4 className="font-bold text-slate-900 dark:text-white text-sm truncate">{app.itemTitle}</h4>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{app.type === 'course' ? 'Course' : 'Program'}</span>
+                            {app.tier && <span className="text-[10px] text-slate-400 font-bold">• {app.tier}</span>}
+                            {app.amount && <span className="text-[10px] text-slate-500 font-bold">• {formatCurrency(app.amount)}</span>}
+                            <span className="text-[10px] text-slate-400">• Applied {app.appliedAt}</span>
+                          </div>
+                          {app.sponsorMentor && (
+                            <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold mt-1 flex items-center gap-1">
+                              <Shield size={10} /> Sponsor: {app.sponsorMentor}
+                            </p>
+                          )}
                         </div>
-                        {app.sponsorMentor && (
-                          <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold mt-1 flex items-center gap-1">
-                            <Shield size={10} /> Sponsor: {app.sponsorMentor}
-                          </p>
+                        {isEnrolledCourse ? (
+                          <Button
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/learning?courseId=${app.itemId}`);
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs uppercase tracking-wider px-5 border-none shadow-sm hover:scale-[1.02] active:scale-95 transition-all shrink-0 cursor-pointer"
+                          >
+                            Watch Course
+                          </Button>
+                        ) : (
+                          <span className={cn(
+                            "px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest whitespace-nowrap shrink-0",
+                            app.status === 'enrolled' ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30' :
+                            app.status === 'pending_payment' ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/30' :
+                            app.status === 'sponsorship_pending' ? 'bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900/30' :
+                            app.status === 'sponsorship_approved' ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30' :
+                            'bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/30'
+                          )}>
+                            {app.status === 'enrolled' ? 'Enrolled' :
+                             app.status === 'pending_payment' ? 'Pending Payment' :
+                             app.status === 'sponsorship_pending' ? 'Awaiting Sponsor' :
+                             app.status === 'sponsorship_approved' ? 'Sponsored' :
+                             'Rejected'}
+                          </span>
                         )}
                       </div>
-                      <span className={cn(
-                        "px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest whitespace-nowrap shrink-0",
-                        app.status === 'enrolled' ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30' :
-                        app.status === 'pending_payment' ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/30' :
-                        app.status === 'sponsorship_pending' ? 'bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900/30' :
-                        app.status === 'sponsorship_approved' ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30' :
-                        'bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/30'
-                      )}>
-                        {app.status === 'enrolled' ? '✅ Enrolled' :
-                         app.status === 'pending_payment' ? '⏳ Pending Payment' :
-                         app.status === 'sponsorship_pending' ? '🙏 Awaiting Sponsor' :
-                         app.status === 'sponsorship_approved' ? '✅ Sponsored' :
-                         '❌ Rejected'}
-                      </span>
-                    </div>
-                  </Card>
-                ))}
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1053,10 +1229,10 @@ const Courses: React.FC = () => {
 
       {/* ═══════════ COURSE DETAIL MODAL ═══════════ */}
       {selectedCourse && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <Card className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl w-full max-w-3xl border border-slate-100 dark:border-slate-800 overflow-hidden max-h-[90vh] flex flex-col text-left">
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+          <Card className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl w-full max-w-3xl border border-slate-100 dark:border-slate-800 overflow-hidden max-h-[90vh] flex flex-col text-left mobile-bottom-sheet">
             {/* Modal Header with Image */}
-            <div className="relative h-56 shrink-0 overflow-hidden">
+            <div className="relative h-48 sm:h-56 shrink-0 overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/30 to-transparent z-10" />
               <img src={selectedCourse.thumbnail} alt={selectedCourse.title} className="w-full h-full object-cover" />
               <button
@@ -1070,64 +1246,77 @@ const Courses: React.FC = () => {
                   <LevelBadge level={selectedCourse.level} />
                   <span className="text-[9px] font-bold text-white/70 uppercase tracking-wider bg-white/10 backdrop-blur-sm px-2 py-1 rounded-md">{selectedCourse.category}</span>
                 </div>
-                <h2 className="text-2xl font-black text-white">{selectedCourse.title}</h2>
+                <h2 className="text-xl sm:text-2xl font-black text-white leading-tight">{selectedCourse.title}</h2>
               </div>
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6">
               {/* Tutor Info */}
-              <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-850/40 rounded-2xl border border-slate-100 dark:border-slate-800">
-                <img src={selectedCourse.tutorAvatar} alt={selectedCourse.tutorName} className="w-12 h-12 rounded-xl bg-slate-200 shadow-md" />
-                <div className="flex-1">
-                  <p className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-1.5">
-                    {selectedCourse.tutorName}
-                    {selectedCourse.tutorVerified && <BadgeCheck size={14} className="text-emerald-500" />}
-                  </p>
-                  <p className="text-[11px] text-slate-500 font-medium">Course Instructor</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-850/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <img src={selectedCourse.tutorAvatar} alt={selectedCourse.tutorName} className="w-10 h-10 rounded-xl bg-slate-200 shadow-md shrink-0" />
+                  <div>
+                    <p className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-1.5">
+                      {selectedCourse.tutorName}
+                      {selectedCourse.tutorVerified && <BadgeCheck size={14} className="text-emerald-500 shrink-0" />}
+                    </p>
+                    <p className="text-xs text-slate-500 font-medium">Course Instructor</p>
+                  </div>
                 </div>
-                <div className="text-right">
+                <div className="flex items-center justify-between sm:justify-end gap-4 border-t border-slate-100/80 dark:border-slate-800 sm:border-t-0 pt-3 sm:pt-0">
+                  {selectedCourse.tutorId && selectedCourse.tutorId !== user?.id && (
+                    <button
+                      onClick={() => {
+                        setSelectedCourse(null);
+                        navigate(`/messages?chat=${selectedCourse.tutorId}`);
+                      }}
+                      className="flex items-center gap-1 px-4 py-2 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-650 text-xs font-black uppercase tracking-wider hover:bg-emerald-100 transition-all cursor-pointer touch-target"
+                    >
+                      Message
+                    </button>
+                  )}
                   <StarRating rating={selectedCourse.rating} count={selectedCourse.reviewCount} />
                 </div>
               </div>
 
               {/* Stats Row */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-3 gap-2 sm:gap-4">
                 {[
                   { icon: Users, label: 'Enrolled', value: selectedCourse.enrolledCount.toLocaleString(), color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30' },
                   { icon: Layers, label: 'Modules', value: selectedCourse.modules.toString(), color: 'text-indigo-500 bg-indigo-50 dark:bg-indigo-950/30' },
                   { icon: Clock, label: 'Duration', value: selectedCourse.duration, color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/30' },
                 ].map((stat, i) => (
-                  <div key={i} className="text-center p-4 rounded-2xl bg-slate-50 dark:bg-slate-850/40 border border-slate-100 dark:border-slate-800">
-                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-2", stat.color)}>
-                      <stat.icon size={16} />
+                  <div key={i} className="text-center p-2.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-slate-850/40 border border-slate-100 dark:border-slate-800">
+                    <div className={cn("w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center mx-auto mb-2", stat.color)}>
+                      <stat.icon size={14} className="sm:size-4" />
                     </div>
-                    <p className="text-sm font-black text-slate-900 dark:text-white">{stat.value}</p>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{stat.label}</p>
+                    <p className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">{stat.value}</p>
+                    <p className="text-[8px] sm:text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">{stat.label}</p>
                   </div>
                 ))}
               </div>
 
               {/* Course Metadata Row */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-850/40 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 bg-slate-50 dark:bg-slate-850/40 p-3 sm:p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Language</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">{selectedCourse.language}</p>
+                  <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Language</p>
+                  <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white mt-0.5">{selectedCourse.language}</p>
                 </div>
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Access</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">{selectedCourse.accessPeriod}</p>
+                  <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Access</p>
+                  <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white mt-0.5">{selectedCourse.accessPeriod}</p>
                 </div>
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Certificate</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-1 flex items-center gap-1">
-                    {selectedCourse.certificationAvailable ? <><CheckCircle2 size={14} className="text-emerald-500" /> Yes</> : <><X size={14} className="text-slate-400" /> No</>}
+                  <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Certificate</p>
+                  <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white mt-0.5 flex items-center gap-1">
+                    {selectedCourse.certificationAvailable ? <><CheckCircle2 size={12} className="text-emerald-500" /> Yes</> : <><X size={12} className="text-slate-400" /> No</>}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Borrow Option</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-1 flex items-center gap-1">
-                    {selectedCourse.borrowEnabled ? <><CheckCircle2 size={14} className="text-emerald-500" /> Yes</> : <><X size={14} className="text-slate-400" /> No</>}
+                  <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Borrow Option</p>
+                  <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white mt-0.5 flex items-center gap-1">
+                    {selectedCourse.borrowEnabled ? <><CheckCircle2 size={12} className="text-emerald-500" /> Yes</> : <><X size={12} className="text-slate-400" /> No</>}
                   </p>
                 </div>
               </div>
@@ -1135,7 +1324,23 @@ const Courses: React.FC = () => {
               {/* Description */}
               <div className="space-y-2">
                 <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">About this Course</h4>
-                <p className="text-sm text-slate-600 dark:text-slate-300 font-medium leading-relaxed">{selectedCourse.description}</p>
+                <div className="relative">
+                  <p className={cn(
+                    "text-sm text-slate-650 dark:text-slate-300 font-medium leading-relaxed transition-all duration-300",
+                    !descExpanded && "max-sm:line-clamp-3"
+                  )}>
+                    {selectedCourse.description}
+                  </p>
+                  {selectedCourse.description && selectedCourse.description.length > 150 && (
+                    <button
+                      type="button"
+                      onClick={() => setDescExpanded(!descExpanded)}
+                      className="sm:hidden text-xs font-black text-emerald-600 dark:text-emerald-450 mt-1 hover:underline focus:outline-none"
+                    >
+                      {descExpanded ? "Show Less" : "Read More"}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Learning Objectives */}
@@ -1145,9 +1350,66 @@ const Courses: React.FC = () => {
                   {selectedCourse.learningObjectives.map((obj, i) => (
                     <div key={i} className="flex items-start gap-2.5 p-3 bg-emerald-50/50 dark:bg-emerald-950/10 rounded-xl border border-emerald-100/50 dark:border-emerald-900/20">
                       <CheckCircle2 size={14} className="text-emerald-500 mt-0.5 shrink-0" />
-                      <span className="text-xs text-slate-700 dark:text-slate-300 font-medium">{obj}</span>
+                      <span className="text-xs text-slate-750 dark:text-slate-300 font-medium">{obj}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Course Curriculum Accordion */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Course Curriculum</h4>
+                <div className="space-y-1.5 border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50/30 dark:bg-slate-950/10">
+                  {Array.from({ length: selectedCourse.modules || 3 }).map((_, idx) => {
+                    const moduleNum = idx + 1;
+                    const isOpen = activeModuleIndex === idx;
+                    const moduleTitles = [
+                      "Introduction & Core Frameworks",
+                      "Methodology & Core Structure",
+                      "Advanced Application Atelier",
+                      "Practical Sandboxing & Sandbox Execution",
+                      "Industry Integration & Capstone Review"
+                    ];
+                    const title = moduleTitles[idx % moduleTitles.length];
+                    const lectures = [
+                      "1.1 Foundations and History",
+                      `1.2 Essential Terms and Core Structure`,
+                      `1.3 Case Analysis and Sandbox Setup`,
+                    ];
+                    
+                    return (
+                      <div key={idx} className="border-b border-slate-150 last:border-0 dark:border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setActiveModuleIndex(isOpen ? null : idx)}
+                          className="w-full flex items-center justify-between p-3.5 font-bold text-left hover:bg-slate-50 dark:hover:bg-slate-850 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-100 dark:border-slate-800">
+                              M {moduleNum.toString().padStart(2, '0')}
+                            </span>
+                            <span className="text-xs text-slate-850 dark:text-slate-200">{title}</span>
+                          </div>
+                          <ChevronRight
+                            size={16}
+                            className={cn("text-slate-400 transition-transform duration-200", isOpen && "rotate-90")}
+                          />
+                        </button>
+                        {isOpen && (
+                          <div className="px-4 pb-4 pt-1 space-y-2 animate-in fade-in duration-200">
+                            {lectures.map((lec, lIdx) => (
+                              <div key={lIdx} className="flex items-center justify-between text-xs text-slate-650 dark:text-slate-400 font-medium hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
+                                <span className="flex items-center gap-2">
+                                  <Play size={10} className="text-slate-400 shrink-0" /> {lec}
+                                </span>
+                                <span className="text-[10px] text-slate-400">12:30</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1155,7 +1417,7 @@ const Courses: React.FC = () => {
               {selectedCourse.prerequisites && selectedCourse.prerequisites.length > 0 && (
                 <div className="space-y-3">
                   <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Requirements</h4>
-                  <ul className="list-disc list-inside text-sm text-slate-600 dark:text-slate-300 font-medium space-y-1">
+                  <ul className="list-disc list-inside text-sm text-slate-650 dark:text-slate-300 font-medium space-y-1">
                     {selectedCourse.prerequisites.map((req, i) => (
                       <li key={i}>{req}</li>
                     ))}
@@ -1234,30 +1496,35 @@ const Courses: React.FC = () => {
             </div>
 
             {/* Action Buttons */}
-            <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 shrink-0">
-              <div className="flex gap-3">
+            <div className="p-4 md:p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-950/85 backdrop-blur-md shrink-0 z-20">
+              <div className="flex gap-2">
                 <Button
                   variant="outline"
                   onClick={() => setSelectedCourse(null)}
-                  className="flex-none rounded-2xl h-13 px-6 text-xs font-black uppercase tracking-widest border-slate-200 dark:border-slate-700"
+                  className="flex-none rounded-2xl h-12 px-4 text-xs font-black uppercase tracking-widest border-slate-200 dark:border-slate-700 flex items-center justify-center"
                 >
-                  Close
+                  <X size={14} className="sm:hidden" />
+                  <span className="max-sm:hidden">Close</span>
                 </Button>
 
                 {selectedCourse.pricing.free ? (
                   <Button
                     onClick={() => handleEnrollFree(selectedCourse)}
-                    className="flex-1 rounded-2xl h-13 font-black uppercase tracking-widest text-xs bg-emerald-600 text-white hover:bg-emerald-700 border-none shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2"
+                    className="flex-1 rounded-2xl h-12 font-black uppercase tracking-widest text-xs bg-emerald-600 text-white hover:bg-emerald-700 border-none shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2"
                   >
-                    <Play size={14} /> Enroll for Free
+                    <Play size={14} />
+                    <span className="max-sm:hidden">Enroll for Free</span>
+                    <span className="sm:hidden text-[10px]">Enroll</span>
                   </Button>
                 ) : (
                   <>
                     <Button
                       onClick={() => handlePayCourse(paymentTier)}
-                      className="flex-1 rounded-2xl h-13 font-black uppercase tracking-widest text-xs bg-emerald-600 text-white hover:bg-emerald-700 border-none shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2"
+                      className="flex-1 rounded-2xl h-12 font-black uppercase tracking-widest text-xs bg-emerald-600 text-white hover:bg-emerald-700 border-none shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2"
                     >
-                      <CreditCard size={14} /> Pay & Enroll
+                      <CreditCard size={14} />
+                      <span className="max-sm:hidden">Pay & Enroll</span>
+                      <span className="sm:hidden text-[10px]">Pay</span>
                     </Button>
                     {!isMentor && (
                       <Button
@@ -1265,9 +1532,11 @@ const Courses: React.FC = () => {
                           setShowSponsorshipModal(true);
                         }}
                         variant="outline"
-                        className="flex-none rounded-2xl h-13 px-5 text-xs font-black uppercase tracking-widest border-indigo-200 dark:border-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 flex items-center gap-2"
+                        className="flex-none rounded-2xl h-12 px-4 text-xs font-black uppercase tracking-widest border-indigo-200 dark:border-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 flex items-center justify-center gap-2"
                       >
-                        <Shield size={14} /> Request Sponsor
+                        <Shield size={14} />
+                        <span className="max-sm:hidden">Request Sponsor</span>
+                        <span className="sm:hidden text-[10px]">Sponsor</span>
                       </Button>
                     )}
                   </>
@@ -1306,14 +1575,25 @@ const Courses: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-850/40 rounded-2xl border border-slate-100 dark:border-slate-800">
-                <img src={selectedProgram.mentorAvatar} alt={selectedProgram.mentorName} className="w-12 h-12 rounded-xl bg-slate-200 shadow-md" />
-                <div>
+                <img src={selectedProgram.mentorAvatar} alt={selectedProgram.mentorName} className="w-12 h-12 rounded-xl bg-slate-200 shadow-md shrink-0" />
+                <div className="flex-1 min-w-0 text-left">
                   <p className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-1.5">
                     {selectedProgram.mentorName}
                     {selectedProgram.mentorVerified && <BadgeCheck size={14} className="text-emerald-500" />}
                   </p>
                   <p className="text-[11px] text-slate-500 font-medium">{selectedProgram.mentorBio}</p>
                 </div>
+                {selectedProgram.mentorId && selectedProgram.mentorId !== user?.id && (
+                  <button
+                    onClick={() => {
+                      setSelectedProgram(null);
+                      navigate(`/messages?chat=${selectedProgram.mentorId}`);
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-650 text-[10px] font-black uppercase tracking-wider hover:bg-emerald-100 transition-all cursor-pointer shrink-0"
+                  >
+                    Message
+                  </button>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -1346,7 +1626,7 @@ const Courses: React.FC = () => {
                   onClick={() => handleEnrollProgram(selectedProgram)}
                   className="flex-1 rounded-2xl h-13 font-black uppercase tracking-widest text-xs bg-emerald-600 text-white hover:bg-emerald-700 border-none shadow-lg shadow-emerald-500/10"
                 >
-                  {selectedProgram.pricing.free ? '🎉 Join for Free' : `💳 Pay ${formatCurrency(selectedProgram.pricing.price)} & Join`}
+                  {selectedProgram.pricing.free ? 'Join for Free' : `Pay ${formatCurrency(selectedProgram.pricing.price)} & Join`}
                 </Button>
               </div>
             </div>
@@ -1388,8 +1668,8 @@ const Courses: React.FC = () => {
               <Button variant="outline" onClick={() => { setShowPaymentModal(false); setPaymentTarget(null); }} className="flex-1 rounded-2xl h-13 text-xs font-black uppercase tracking-widest border-slate-200 dark:border-slate-700">
                 Cancel
               </Button>
-              <Button onClick={handleConfirmPayment} className="flex-1 rounded-2xl h-13 font-black uppercase tracking-widest text-xs bg-emerald-600 text-white hover:bg-emerald-700 border-none shadow-lg shadow-emerald-500/10">
-                Confirm Payment 🔒
+              <Button onClick={handleConfirmPayment} className="flex-1 rounded-2xl h-13 font-black uppercase tracking-widest text-xs bg-emerald-600 text-white hover:bg-emerald-700 border-none shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2">
+                <Lock size={14} /> Confirm Payment
               </Button>
             </div>
           </Card>

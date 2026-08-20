@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Lantern Keeper — A Digital Reading Experience</title>
+  <meta name="description" content="An immersive digital book reader replicating the look and feel of a physical book." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Spectral:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap" rel="stylesheet" />
+  <style>
+    /* ═══════════════════════════════════════════════
+       RESET & FOUNDATIONS
+       ═══════════════════════════════════════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --paper: #f5f0e8;
+      --paper-dark: #e8e0d0;
+      --ink: #2c1810;
+      --ink-light: #5a4a3a;
+      --ink-muted: #8a7a6a;
+      --accent: #8b4513;
+      --accent-light: #c4956a;
+      --highlight-yellow: rgba(255, 235, 59, 0.45);
+      --highlight-green: rgba(76, 175, 80, 0.3);
+      --highlight-blue: rgba(100, 181, 246, 0.3);
+      --highlight-rose: rgba(239, 83, 80, 0.25);
+      --shadow-page: 0 2px 20px rgba(44, 24, 16, 0.12), 0 8px 40px rgba(44, 24, 16, 0.08);
+      --shadow-spine: inset 6px 0 16px -4px rgba(44, 24, 16, 0.15);
+      --font-body: 'EB Garamond', 'Cormorant Garamond', 'Georgia', serif;
+      --font-heading: 'Playfair Display', 'Georgia', serif;
+      --font-meta: 'Spectral', serif;
+      --page-max: 680px;
+      --transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html {
+      font-size: 18px;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-body);
+      color: var(--ink);
+      background: #3a2f28;
+      min-height: 100vh;
+      line-height: 1.0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    ::selection {
+      background: var(--highlight-yellow);
+      color: var(--ink);
+    }
+
+    /* ═══════════════════════════════════════════════
+       DESK / BACKGROUND TEXTURE
+       ═══════════════════════════════════════════════ */
+    .desk {
+      min-height: 100vh;
+      background:
+        radial-gradient(ellipse at 30% 20%, rgba(139, 69, 19, 0.08) 0%, transparent 60%),
+        radial-gradient(ellipse at 70% 80%, rgba(44, 24, 16, 0.06) 0%, transparent 50%),
+        linear-gradient(180deg, #3a2f28 0%, #2c2420 50%, #342a24 100%);
+      background-attachment: fixed;
+      padding: 1rem 1rem 4rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ═══════════════════════════════════════════════
+       TOOLBAR
+       ═══════════════════════════════════════════════ */
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      width: 100%;
+      max-width: 1100px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 1.2rem;
+      background: rgba(44, 24, 16, 0.85);
+      backdrop-filter: blur(16px) saturate(1.4);
+      -webkit-backdrop-filter: blur(16px) saturate(1.4);
+      border-bottom: 1px solid rgba(196, 149, 106, 0.2);
+      border-radius: 0 0 1rem 1rem;
+      margin-bottom: 2rem;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .toolbar-title {
+      font-family: var(--font-heading);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent-light);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .toolbar-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .orientation-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.7rem;
+      background: rgba(196, 149, 106, 0.15);
+      border: 1px solid rgba(196, 149, 106, 0.25);
+      border-radius: 2rem;
+      font-family: var(--font-meta);
+      font-size: 0.6rem;
+      font-weight: 500;
+      color: var(--accent-light);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      user-select: none;
+      transition: all var(--transition);
+    }
+
+    .orientation-badge .icon {
+      width: 14px;
+      height: 14px;
+      transition: transform 0.3s ease;
+    }
+
+    .orientation-badge.landscape .icon {
+      transform: rotate(90deg);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.8rem;
+      border: 1px solid rgba(196, 149, 106, 0.3);
+      border-radius: 0.5rem;
+      background: rgba(196, 149, 106, 0.1);
+      color: var(--paper-dark);
+      font-family: var(--font-meta);
+      font-size: 0.6rem;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: rgba(196, 149, 106, 0.25);
+      border-color: rgba(196, 149, 106, 0.5);
+      color: #fff;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .btn.highlight-btn {
+      border-color: rgba(255, 235, 59, 0.35);
+      background: rgba(255, 235, 59, 0.08);
+    }
+
+    .btn.highlight-btn:hover {
+      background: rgba(255, 235, 59, 0.2);
+      border-color: rgba(255, 235, 59, 0.5);
+    }
+
+    .highlight-palette {
+      display: none;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.25rem 0.5rem;
+      background: rgba(44, 24, 16, 0.9);
+      border: 1px solid rgba(196, 149, 106, 0.2);
+      border-radius: 2rem;
+    }
+
+    .highlight-palette.visible {
+      display: inline-flex;
+    }
+
+    .color-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .color-dot:hover {
+      transform: scale(1.2);
+      border-color: rgba(255,255,255,0.5);
+    }
+
+    .color-dot.active {
+      border-color: #fff;
+      box-shadow: 0 0 6px rgba(255,255,255,0.3);
+    }
+
+    .color-dot.yellow  { background: rgba(255, 235, 59, 0.8); }
+    .color-dot.green   { background: rgba(76, 175, 80, 0.7); }
+    .color-dot.blue    { background: rgba(100, 181, 246, 0.7); }
+    .color-dot.rose    { background: rgba(239, 83, 80, 0.6); }
+
+    /* ═══════════════════════════════════════════════
+       BOOK CONTAINER
+       ═══════════════════════════════════════════════ */
+    .book {
+      width: 100%;
+      max-width: var(--page-max);
+      transition: max-width var(--transition);
+    }
+
+    .book.landscape {
+      max-width: 1100px;
+    }
+
+    /* ═══════════════════════════════════════════════
+       PAGE
+       ═══════════════════════════════════════════════ */
+    .page {
+      position: relative;
+      background: var(--paper);
+      border-radius: 3px 8px 8px 3px;
+      box-shadow: var(--shadow-page);
+      padding: 3.5rem 3rem 3rem;
+      margin-bottom: 0.25rem;
+      overflow: hidden;
+      transition: all var(--transition);
+    }
+
+    .page::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 1.75rem,
+          rgba(44, 24, 16, 0.018) 1.75rem,
+          rgba(44, 24, 16, 0.018) 1.78rem
+        );
+      z-index: 1;
+    }
+
+    /* Spine shadow */
+    .page::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 28px; height: 100%;
+      background: linear-gradient(90deg, rgba(44, 24, 16, 0.08) 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* Page edge effect */
+    .page-edge {
+      position: absolute;
+      top: 4px; right: -3px;
+      width: 6px; height: calc(100% - 8px);
+      background: linear-gradient(90deg, var(--paper-dark) 0%, #d4cec2 50%, var(--paper-dark) 100%);
+      border-radius: 0 2px 2px 0;
+      box-shadow: 2px 0 4px rgba(44, 24, 16, 0.1);
+    }
+
+    /* ═══════════════════════════════════════════════
+       LANDSCAPE SPREAD
+       ═══════════════════════════════════════════════ */
+    .spread {
+      display: block;
+    }
+
+    .book.landscape .spread {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+    }
+
+    .book.landscape .page {
+      border-radius: 0;
+    }
+
+    .book.landscape .spread .page:first-child {
+      border-radius: 8px 0 0 8px;
+      border-right: 1px solid rgba(44, 24, 16, 0.08);
+    }
+
+    .book.landscape .spread .page:first-child::after {
+      left: auto;
+      right: 0;
+      background: linear-gradient(270deg, rgba(44, 24, 16, 0.1) 0%, transparent 100%);
+    }
+
+    .book.landscape .spread .page:last-child {
+      border-radius: 0 8px 8px 0;
+    }
+
+    .book.landscape .spread .page:last-child::after {
+      display: block;
+    }
+
+    /* ═══════════════════════════════════════════════
+       TYPOGRAPHY
+       ═══════════════════════════════════════════════ */
+    .page-content {
+      position: relative;
+      z-index: 3;
+    }
+
+    .chapter-number {
+      font-family: var(--font-meta);
+      font-size: 0.65rem;
+      font-weight: 300;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+      text-align: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .chapter-title {
+      font-family: var(--font-heading);
+      font-size: 2.2rem;
+      font-weight: 900;
+      color: var(--ink);
+      text-align: center;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    .chapter-subtitle {
+      font-family: var(--font-meta);
+      font-size: 0.8rem;
+      font-weight: 300;
+      font-style: italic;
+      color: var(--ink-muted);
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .ornament {
+      text-align: center;
+      margin: 1.8rem 0;
+      color: var(--accent);
+      font-size: 1.2rem;
+      letter-spacing: 0.3em;
+      user-select: none;
+      opacity: 0.5;
+    }
+
+    p {
+      font-size: 1rem;
+      line-height: 1.78;
+      text-align: justify;
+      hyphens: auto;
+      margin-bottom: 0.9rem;
+      color: var(--ink);
+      text-indent: 1.5em;
+    }
+
+    p:first-of-type,
+    .ornament + p,
+    .illustration + p,
+    h2 + p,
+    h3 + p {
+      text-indent: 0;
+    }
+
+    /* Drop Cap */
+    .drop-cap::first-letter {
+      float: left;
+      font-family: var(--font-heading);
+      font-size: 4.2em;
+      line-height: 0.8;
+      padding-right: 0.08em;
+      margin-top: 0.05em;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    h2 {
+      font-family: var(--font-heading);
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--ink);
+      margin: 2rem 0 0.75rem;
+      letter-spacing: 0.02em;
+    }
+
+    h3 {
+      font-family: var(--font-meta);
+      font-size: 0.9rem;
+      font-weight: 500;
+      font-style: italic;
+      color: var(--ink-light);
+      margin: 1.5rem 0 0.5rem;
+    }
+
+    blockquote {
+      margin: 1.5rem 0 1.5rem 1.5rem;
+      padding-left: 1.2rem;
+      border-left: 2px solid var(--accent-light);
+      font-style: italic;
+      color: var(--ink-light);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    blockquote p { text-indent: 0; margin-bottom: 0; }
+
+    .author-note {
+      margin-top: 2.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(44, 24, 16, 0.12);
+    }
+
+    .signature {
+      font-family: var(--font-heading);
+      font-style: italic;
+      font-size: 1.1rem;
+      color: var(--accent);
+      text-align: right;
+      margin-top: 1rem;
+    }
+
+    .page-number {
+      font-family: var(--font-meta);
+      font-size: 0.65rem;
+      color: var(--ink-muted);
+      text-align: center;
+      margin-top: 2.5rem;
+      letter-spacing: 0.15em;
+      user-select: none;
+    }
+
+    .running-header {
+      font-family: var(--font-meta);
+      font-size: 0.55rem;
+      font-weight: 300;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+      text-align: center;
+      margin-bottom: 2rem;
+      opacity: 0.6;
+      user-select: none;
+    }
+
+    /* ═══════════════════════════════════════════════
+       ILLUSTRATIONS
+       ═══════════════════════════════════════════════ */
+    .illustration {
+      margin: 2rem auto;
+      text-align: center;
+      max-width: 100%;
+    }
+
+    .illustration svg {
+      max-width: 100%;
+      height: auto;
+      filter: sepia(0.15) contrast(0.95);
+    }
+
+    .illustration-caption {
+      font-family: var(--font-meta);
+      font-size: 0.65rem;
+      font-style: italic;
+      color: var(--ink-muted);
+      margin-top: 0.5rem;
+      letter-spacing: 0.04em;
+    }
+
+    .illustration-full {
+      margin: 2.5rem -1.5rem;
+    }
+
+    .illustration-float-right {
+      float: right;
+      margin: 0.5rem 0 1rem 1.5rem;
+      max-width: 45%;
+    }
+
+    .illustration-float-left {
+      float: left;
+      margin: 0.5rem 1.5rem 1rem 0;
+      max-width: 45%;
+    }
+
+    /* ═══════════════════════════════════════════════
+       HIGHLIGHT MARKS
+       ═══════════════════════════════════════════════ */
+    mark.highlight {
+      background: var(--highlight-yellow);
+      color: inherit;
+      padding: 0.05em 0.1em;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    mark.highlight.green  { background: var(--highlight-green); }
+    mark.highlight.blue   { background: var(--highlight-blue); }
+    mark.highlight.rose   { background: var(--highlight-rose); }
+
+    mark.highlight:hover {
+      filter: brightness(0.92);
+    }
+
+    /* ═══════════════════════════════════════════════
+       COVER PAGE
+       ═══════════════════════════════════════════════ */
+    .cover-page {
+      background:
+        radial-gradient(ellipse at 50% 30%, rgba(139, 69, 19, 0.06) 0%, transparent 70%),
+        var(--paper);
+      text-align: center;
+      padding: 5rem 3rem 4rem;
+    }
+
+    .cover-ornament-top {
+      color: var(--accent);
+      font-size: 0.7rem;
+      letter-spacing: 0.5em;
+      margin-bottom: 3rem;
+      opacity: 0.4;
+    }
+
+    .cover-title {
+      font-family: var(--font-heading);
+      font-size: 3rem;
+      font-weight: 900;
+      color: var(--ink);
+      line-height: 1.1;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.02em;
+    }
+
+    .cover-author {
+      font-family: var(--font-meta);
+      font-size: 0.8rem;
+      font-weight: 300;
+      color: var(--ink-muted);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      margin-bottom: 3rem;
+    }
+
+    .cover-year {
+      font-family: var(--font-meta);
+      font-size: 0.7rem;
+      font-weight: 300;
+      color: var(--ink-muted);
+      letter-spacing: 0.1em;
+      margin-top: 3rem;
+    }
+
+    /* ═══════════════════════════════════════════════
+       TOAST NOTIFICATIONS
+       ═══════════════════════════════════════════════ */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      padding: 0.6rem 1.2rem;
+      background: rgba(44, 24, 16, 0.92);
+      backdrop-filter: blur(8px);
+      color: var(--paper);
+      font-family: var(--font-meta);
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+      border-radius: 2rem;
+      border: 1px solid rgba(196, 149, 106, 0.25);
+      z-index: 200;
+      opacity: 0;
+      transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      pointer-events: none;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ═══════════════════════════════════════════════
+       RESPONSIVE
+       ═══════════════════════════════════════════════ */
+    @media (max-width: 768px) {
+      html { font-size: 16px; }
+
+      .desk { padding: 0.5rem 0.5rem 3rem; }
+
+      .toolbar { 
+        border-radius: 0;
+        margin-bottom: 1rem;
+        padding: 0.5rem 0.8rem;
+      }
+
+      .page { padding: 2rem 1.5rem 2rem; }
+
+      .cover-page { padding: 3rem 1.5rem 2.5rem; }
+      .cover-title { font-size: 2.2rem; }
+
+      .chapter-title { font-size: 1.6rem; }
+
+      .illustration-float-right,
+      .illustration-float-left {
+        float: none;
+        max-width: 100%;
+        margin: 1.5rem auto;
+      }
+
+      .book.landscape .spread {
+        grid-template-columns: 1fr;
+      }
+
+      .book.landscape .spread .page:first-child {
+        border-radius: 3px 8px 0 0;
+        border-right: none;
+        border-bottom: 1px solid rgba(44, 24, 16, 0.08);
+      }
+
+      .book.landscape .spread .page:last-child {
+        border-radius: 0 0 8px 3px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      html { font-size: 15px; }
+      .page { padding: 1.5rem 1.2rem; }
+      .cover-title { font-size: 1.8rem; }
+      .chapter-title { font-size: 1.4rem; }
+      .drop-cap::first-letter { font-size: 3.2em; }
+      .toolbar-title { font-size: 0.65rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="desk">
+
+    <!-- ═══════════ TOOLBAR ═══════════ -->
+    <div class="toolbar" role="toolbar" aria-label="Book reader controls">
+      <span class="toolbar-title">The Lantern Keeper</span>
+
+      <div class="toolbar-controls">
+        <!-- Orientation Badge -->
+        <div class="orientation-badge" id="orientationBadge" title="Current reading orientation">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="2" width="16" height="20" rx="2" />
+            <line x1="8" y1="6" x2="16" y2="6" />
+            <line x1="8" y1="10" x2="16" y2="10" />
+            <line x1="8" y1="14" x2="12" y2="14" />
+          </svg>
+          <span id="orientationLabel">Portrait</span>
+        </div>
+
+        <!-- Orientation Toggle -->
+        <button class="btn" id="orientationToggle" title="Switch between portrait and landscape (Ctrl+L)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 14h6m0 0v6m0-6L3 21" />
+            <path d="M20 10h-6m0 0V4m0 6l7-7" />
+          </svg>
+          Toggle Layout
+        </button>
+
+        <!-- Highlight Colors -->
+        <div class="highlight-palette" id="highlightPalette">
+          <div class="color-dot yellow active" data-color="yellow" title="Yellow highlight"></div>
+          <div class="color-dot green" data-color="green" title="Green highlight"></div>
+          <div class="color-dot blue" data-color="blue" title="Blue highlight"></div>
+          <div class="color-dot rose" data-color="rose" title="Rose highlight"></div>
+        </div>
+
+        <!-- Highlight Button -->
+        <button class="btn highlight-btn" id="highlightBtn" title="Highlight selected text (Ctrl+H)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z" />
+          </svg>
+          Highlight
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══════════ BOOK ═══════════ -->
+    <div class="book" id="book">
+
+      <!-- ───── COVER PAGE ───── -->
+      <div class="page cover-page">
+        <div class="page-edge"></div>
+        <div class="page-content">
+          <div class="cover-ornament-top">✦ ✦ ✦ ✦ ✦</div>
+
+          <!-- Cover Illustration: Lantern -->
+          <div class="illustration" style="margin-bottom: 2rem;">
+            <svg viewBox="0 0 200 260" width="160" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#f5c842" stop-opacity="0.6" />
+                  <stop offset="60%" stop-color="#d4a230" stop-opacity="0.2" />
+                  <stop offset="100%" stop-color="#8b4513" stop-opacity="0" />
+                </radialGradient>
+                <linearGradient id="metal" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#8b7355" />
+                  <stop offset="50%" stop-color="#a0896e" />
+                  <stop offset="100%" stop-color="#6b5b45" />
+                </linearGradient>
+              </defs>
+              <!-- Glow -->
+              <ellipse cx="100" cy="140" rx="70" ry="80" fill="url(#glow)" />
+              <!-- Handle -->
+              <path d="M85 50 Q100 25 115 50" fill="none" stroke="url(#metal)" stroke-width="4" stroke-linecap="round" />
+              <!-- Top cap -->
+              <rect x="78" y="48" width="44" height="10" rx="3" fill="url(#metal)" />
+              <!-- Glass body -->
+              <path d="M82 58 L78 195 Q78 205 100 205 Q122 205 122 195 L118 58 Z" fill="rgba(245,200,66,0.12)" stroke="url(#metal)" stroke-width="2.5" />
+              <!-- Cross bars -->
+              <line x1="82" y1="90" x2="118" y2="90" stroke="url(#metal)" stroke-width="2" />
+              <line x1="80" y1="165" x2="120" y2="165" stroke="url(#metal)" stroke-width="2" />
+              <!-- Flame -->
+              <ellipse cx="100" cy="138" rx="8" ry="5" fill="#f5c842" opacity="0.7" />
+              <path d="M100 145 Q95 125 100 110 Q105 125 100 145" fill="#f5c842" opacity="0.8" />
+              <path d="M100 140 Q97 128 100 118 Q103 128 100 140" fill="#ffe082" opacity="0.9" />
+              <!-- Base -->
+              <rect x="74" y="203" width="52" height="8" rx="3" fill="url(#metal)" />
+              <rect x="80" y="210" width="40" height="5" rx="2" fill="url(#metal)" opacity="0.8" />
+            </svg>
+          </div>
+
+          <h1 class="cover-title">The Lantern<br/>Keeper</h1>
+          <p class="cover-author">E l e a n o r &nbsp; V a n c e</p>
+          <div class="ornament" style="margin:1.5rem 0">— ❦ —</div>
+          <p style="font-family: var(--font-meta); font-size: 0.75rem; color: var(--ink-muted); font-style: italic; text-indent: 0; text-align: center; line-height: 1.6; max-width: 380px; margin: 0 auto;">
+            "Some lights are kept not to guide the living,<br/>but to honour those who walked before us."
+          </p>
+          <p class="cover-year">— MCMXLVIII —</p>
+        </div>
+      </div>
+
+      <!-- ───── CHAPTER I — SINGLE PAGE ───── -->
+      <div class="page">
+        <div class="page-edge"></div>
+        <div class="page-content">
+          <div class="running-header">The Lantern Keeper · Chapter I</div>
+          <div class="chapter-number">Chapter One</div>
+          <h1 class="chapter-title">The Keeper's Cottage</h1>
+          <div class="chapter-subtitle">In which we arrive at the edge of Thornfield Moor</div>
+          <div class="ornament">✦ ✦ ✦</div>
+
+          <p class="drop-cap">The cottage stood at the far edge of Thornfield Moor, where the grass surrendered to heather and the wind carried the salt taste of the distant sea. It was a humble structure — whitewashed stone, a slate roof thick with moss, and a single chimney that drew the eye upward like a finger pointing to heaven. Around it, the moor stretched in every direction: vast, undulant, and the colour of old bronze in the late autumn light.</p>
+
+          <p>Marguerite Ashford arrived on the afternoon coach from Exeter, her travelling case balanced on her knees and a letter folded precisely into thirds within her breast pocket. The letter bore no return address, only a wax seal impressed with the image of a lantern, and inside, a single line written in an elegant, antiquated hand:</p>
+
+          <blockquote>
+            <p>"The light must not go out."</p>
+          </blockquote>
+
+          <p>She had read it thirty-seven times during the journey. Each reading offered no further clarity, yet each somehow deepened her conviction that she must come.</p>
+
+          <!-- Illustration: The Moor Landscape -->
+          <div class="illustration illustration-full">
+            <svg viewBox="0 0 600 200" width="100%" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#c4a882" stop-opacity="0.3" />
+                  <stop offset="100%" stop-color="#e8dcc8" stop-opacity="0.15" />
+                </linearGradient>
+              </defs>
+              <!-- Sky -->
+              <rect width="600" height="120" fill="url(#sky)" />
+              <!-- Distant hills -->
+              <path d="M0 120 Q80 85 160 105 Q240 80 320 100 Q400 75 480 95 Q540 82 600 90 L600 120 Z" fill="#b8a890" opacity="0.3" />
+              <!-- Midground moor -->
+              <path d="M0 130 Q50 110 120 122 Q200 108 280 118 Q360 105 440 115 Q520 108 600 112 L600 145 Z" fill="#9a8a72" opacity="0.35" />
+              <!-- Foreground -->
+              <path d="M0 145 Q100 130 200 138 Q300 125 400 135 Q500 128 600 132 L600 200 L0 200 Z" fill="#7a6a52" opacity="0.25" />
+              <!-- Cottage silhouette -->
+              <rect x="430" y="100" width="28" height="22" fill="#5a4a3a" opacity="0.5" rx="1" />
+              <polygon points="425,100 458,100 444,86" fill="#5a4a3a" opacity="0.5" />
+              <!-- Chimney -->
+              <rect x="448" y="84" width="5" height="12" fill="#5a4a3a" opacity="0.5" />
+              <!-- Path -->
+              <path d="M300 200 Q320 170 350 155 Q380 145 420 130 Q435 125 444 122" fill="none" stroke="#a09080" stroke-width="1.5" opacity="0.3" stroke-dasharray="4,3" />
+              <!-- Birds -->
+              <path d="M180 55 Q183 50 186 55" fill="none" stroke="#8a7a6a" stroke-width="1" opacity="0.4" />
+              <path d="M195 48 Q198 43 201 48" fill="none" stroke="#8a7a6a" stroke-width="1" opacity="0.35" />
+              <path d="M170 60 Q172 56 174 60" fill="none" stroke="#8a7a6a" stroke-width="0.8" opacity="0.3" />
+            </svg>
+            <p class="illustration-caption">Fig. I — The approach to the Keeper's cottage across Thornfield Moor</p>
+          </div>
+
+          <p>The coachman refused to take her further than the crossroads at Wychburne. "Nothing good past those stones," he said, jerking his chin toward a pair of granite posts marking a track that wound into the heather. He did not elaborate, and the set of his jaw discouraged questions. Marguerite thanked him, collected her case, and stepped down into mud and drizzle.</p>
+
+          <p>The walk took forty minutes. The track was narrow and uncertain — more suggestion than path — weaving between thickets of gorse and stands of wind-bent hawthorn. Twice she lost her way entirely and had to orient herself by the distant chimney smoke, a thin grey thread that rose and dissolved into the low ceiling of cloud. By the time she reached the cottage door, her boots were ruined, her hair had escaped its pins, and she possessed the wild, windswept appearance of someone who had walked not merely across a moor but through a century.</p>
+
+          <p>The door opened before she knocked.</p>
+
+          <div class="page-number">— 1 —</div>
+        </div>
+      </div>
+
+      <!-- ───── CHAPTER II — LANDSCAPE SPREAD ───── -->
+      <div class="spread">
+        <div class="page">
+          <div class="page-content">
+            <div class="running-header">The Lantern Keeper · Chapter II</div>
+            <div class="chapter-number">Chapter Two</div>
+            <h1 class="chapter-title">The Old Man & the Flame</h1>
+            <div class="chapter-subtitle">In which the lantern is revealed and a bargain is struck</div>
+            <div class="ornament">✦ ✦ ✦</div>
+
+            <p class="drop-cap">He was ancient. Not merely old in the way that people become old — the slow accretion of years that bends the spine and whitens the hair — but ancient in a manner that seemed geological. His face was the colour of walnut shell, creased with a thousand fine lines that mapped some unreadable territory. His eyes, set deep beneath brows like hedgerows, were the startling blue of a winter sky seen through ice.</p>
+
+            <p>"You received my letter," he said. It was not a question.</p>
+
+            <p>"I did." Marguerite stood on the threshold, rain dripping from her hat brim onto the flagstones. "Though I confess I don't understand it."</p>
+
+            <p>"Understanding comes later," the old man replied. "First comes the seeing." He stepped aside with a gesture that was less invitation than inevitability, and Marguerite crossed into the cottage.</p>
+
+            <!-- Illustration: The Lantern on the Table -->
+            <div class="illustration" style="margin: 1.5rem auto;">
+              <svg viewBox="0 0 280 180" width="240" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <radialGradient id="tableGlow" cx="50%" cy="40%" r="50%">
+                    <stop offset="0%" stop-color="#f5c842" stop-opacity="0.25" />
+                    <stop offset="100%" stop-color="#8b4513" stop-opacity="0" />
+                  </radialGradient>
+                </defs>
+                <!-- Table -->
+                <rect x="30" y="120" width="220" height="8" rx="2" fill="#7a6a52" opacity="0.5" />
+                <line x1="50" y1="128" x2="50" y2="175" stroke="#7a6a52" stroke-width="4" opacity="0.4" />
+                <line x1="230" y1="128" x2="230" y2="175" stroke="#7a6a52" stroke-width="4" opacity="0.4" />
+                <!-- Warm glow on table -->
+                <ellipse cx="140" cy="115" rx="60" ry="40" fill="url(#tableGlow)" />
+                <!-- Small lantern -->
+                <rect x="130" y="75" width="20" height="5" rx="2" fill="#8b7355" />
+                <path d="M133 80 L131 117 Q131 122 140 122 Q149 122 149 117 L147 80 Z" fill="rgba(245,200,66,0.1)" stroke="#8b7355" stroke-width="1.5" />
+                <path d="M136 80 Q140 68 144 80" fill="none" stroke="#8b7355" stroke-width="2" stroke-linecap="round" />
+                <!-- Flame -->
+                <path d="M140 105 Q137 95 140 85 Q143 95 140 105" fill="#f5c842" opacity="0.7" />
+                <path d="M140 102 Q138 96 140 90 Q142 96 140 102" fill="#ffe082" opacity="0.8" />
+                <!-- Book on table -->
+                <rect x="65" y="108" width="35" height="12" rx="1.5" fill="#8b7355" opacity="0.35" transform="rotate(-5, 82, 114)" />
+                <rect x="66" y="109" width="33" height="10" rx="1" fill="#a0896e" opacity="0.25" transform="rotate(-5, 82, 114)" />
+                <!-- Quill -->
+                <line x1="180" y1="85" x2="195" y2="118" stroke="#6b5b45" stroke-width="1.5" opacity="0.4" />
+                <path d="M178 85 Q180 78 183 85" fill="#6b5b45" opacity="0.35" />
+              </svg>
+              <p class="illustration-caption">Fig. II — The lantern upon the oak table, beside the Keeper's journal</p>
+            </div>
+
+            <p>The interior was a single room of surprising warmth. A fire burned in a hearth wide enough to roast a sheep, and above it hung a mantle crowded with curious objects: a compass with no markings on its dial, a bell without a clapper, three glass bottles containing what appeared to be different densities of darkness. The ceiling was low, the beams blackened by centuries of smoke, and from the central beam hung bundles of dried herbs whose names Marguerite could not guess.</p>
+
+            <div class="page-number">— 2 —</div>
+          </div>
+        </div>
+
+        <div class="page">
+          <div class="page-content">
+            <div class="running-header">The Lantern Keeper · Chapter II (continued)</div>
+
+            <p>But the room's true centre was the table. It was ancient oak, scarred and ring-stained, and upon it sat a lantern unlike any Marguerite had ever seen. It was perhaps eighteen inches tall, wrought of a dark metal that seemed to absorb light rather than reflect it. Its glass panels were faintly amber, and through them burned a flame of remarkable character: perfectly still, despite the draughts that crept through the cottage walls, and of a colour that shifted between gold and copper and, in certain moments, a deep and living blue.</p>
+
+            <p>"How long has it been burning?" Marguerite asked, drawn to the lantern as if by magnetism.</p>
+
+            <p>"Longer than this cottage. Longer than the moor. Longer than the name of the place where you now stand." The old man lowered himself into a chair by the fire with the careful deliberation of someone for whom each movement is a negotiation. "I have kept it for seventy-three years. My predecessor kept it for sixty-one. Before her, a man named Aubrey who lasted ninety years, though accounts suggest he was somewhat unusual."</p>
+
+            <h2>The Compact</h2>
+
+            <p>He explained it simply, as one might explain the rules of a card game. The lantern had been burning since before recorded history. No one knew who lit it or why, only that it must never be allowed to go out. It required no fuel — no oil, no wick, no tending in the conventional sense. What it required was a keeper: someone who would remain within sight of it, who would watch over its flame, and who would, when the time came, pass the duty to a successor.</p>
+
+            <blockquote>
+              <p>"The flame asks for nothing but witness. It burns for those who remember what light means in the darkness."</p>
+            </blockquote>
+
+            <p>"And if the flame goes out?" Marguerite heard herself ask.</p>
+
+            <p>The old man looked at her with those ice-blue eyes, and for the first time she saw in them something that might have been fear, or might have been reverence — the two emotions, she would later learn, being closer cousins than most people suppose.</p>
+
+            <p>"Then the darkness remembers what it was before the light."</p>
+
+            <div class="page-number">— 3 —</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ───── CHAPTER III — SINGLE PAGE ───── -->
+      <div class="page">
+        <div class="page-edge"></div>
+        <div class="page-content">
+          <div class="running-header">The Lantern Keeper · Chapter III</div>
+          <div class="chapter-number">Chapter Three</div>
+          <h1 class="chapter-title">The First Night's Watch</h1>
+          <div class="chapter-subtitle">In which the new keeper learns the weight of stillness</div>
+          <div class="ornament">✦ ✦ ✦</div>
+
+          <!-- Illustration: Night Window -->
+          <div class="illustration illustration-float-right">
+            <svg viewBox="0 0 160 200" width="140" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="nightSky" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#2c1810" stop-opacity="0.4" />
+                  <stop offset="100%" stop-color="#3a2f28" stop-opacity="0.2" />
+                </linearGradient>
+              </defs>
+              <!-- Window frame -->
+              <rect x="20" y="20" width="120" height="160" rx="3" fill="none" stroke="#8b7355" stroke-width="3" />
+              <line x1="80" y1="20" x2="80" y2="180" stroke="#8b7355" stroke-width="2" />
+              <line x1="20" y1="100" x2="140" y2="100" stroke="#8b7355" stroke-width="2" />
+              <!-- Night sky through window -->
+              <rect x="22" y="22" width="56" height="76" fill="url(#nightSky)" />
+              <rect x="82" y="22" width="56" height="76" fill="url(#nightSky)" />
+              <rect x="22" y="102" width="56" height="76" fill="url(#nightSky)" opacity="0.7" />
+              <rect x="82" y="102" width="56" height="76" fill="url(#nightSky)" opacity="0.7" />
+              <!-- Stars -->
+              <circle cx="40" cy="40" r="1.2" fill="#c4a882" opacity="0.6" />
+              <circle cx="65" cy="55" r="0.8" fill="#c4a882" opacity="0.4" />
+              <circle cx="50" cy="70" r="1" fill="#c4a882" opacity="0.5" />
+              <circle cx="100" cy="35" r="1.3" fill="#c4a882" opacity="0.7" />
+              <circle cx="120" cy="60" r="0.9" fill="#c4a882" opacity="0.45" />
+              <circle cx="110" cy="45" r="0.7" fill="#c4a882" opacity="0.35" />
+              <!-- Moon -->
+              <circle cx="125" cy="38" r="6" fill="#e8dcc8" opacity="0.3" />
+              <circle cx="127" cy="37" r="5" fill="url(#nightSky)" opacity="0.5" />
+              <!-- Warm glow on lower panes (reflected lantern light) -->
+              <rect x="22" y="102" width="56" height="76" fill="#f5c842" opacity="0.05" />
+              <rect x="82" y="102" width="56" height="76" fill="#f5c842" opacity="0.05" />
+              <!-- Curtain hints -->
+              <path d="M22 22 Q30 30 22 50" fill="none" stroke="#a0896e" stroke-width="1" opacity="0.3" />
+              <path d="M138 22 Q130 30 138 50" fill="none" stroke="#a0896e" stroke-width="1" opacity="0.3" />
+            </svg>
+            <p class="illustration-caption">Fig. III — The cottage window<br/>at the midnight hour</p>
+          </div>
+
+          <p class="drop-cap">Marguerite agreed. She could not have said precisely why, only that refusing felt impossible — not in the way of coercion, but in the way that breathing is impossible to refuse. Some things are simply what one does.</p>
+
+          <p>The old man departed the following morning, walking into the mist with the unhurried gait of someone who has finally set down a very heavy thing. He did not say goodbye. He simply was there, and then he was not, and the moor closed behind him like a curtain.</p>
+
+          <p>That first night alone with the lantern, Marguerite understood something that no explanation could have conveyed. The flame was alive. Not alive in the way of animals or plants, but alive in the way of music, or grief, or the memory of someone deeply loved. It shifted and breathed and, in the deep silence of the moor at midnight, it seemed almost to pulse in rhythm with her heartbeat.</p>
+
+          <p>She sat in the old man's chair — her chair now — and watched the flame, and the flame watched her, and the cottage held them both in its ancient, creaking arms, and outside the wind sang across the heather in a language older than words.</p>
+
+          <h3>The Hours Between Midnight and Dawn</h3>
+
+          <p>In the weeks that followed, Marguerite established a routine that would have seemed intolerable to her former self. She rose at dawn, tended the small garden behind the cottage (potatoes, kale, herbs whose names she learned from a hand-drawn guide left in the kitchen drawer), and spent the daylight hours reading from the Keeper's library — a collection of extraordinary breadth, ranging from astronomical treatises to volumes of poetry in languages she did not recognise.</p>
+
+          <p>But the nights belonged to the lantern. Each evening as darkness gathered, she would draw her chair close to the oak table, light a tallow candle for her own reading, and settle into what she came to think of as "the watch." Nothing happened during these vigils. That was precisely the point. She was learning the discipline of attention, the art of being present to something that asked nothing of her except presence itself.</p>
+
+          <p>And slowly, in that silence and stillness, she began to hear what the flame was saying.</p>
+
+          <div class="ornament">— ❦ —</div>
+
+          <!-- Author's Note -->
+          <div class="author-note">
+            <h3>A Note from the Author</h3>
+            <p style="text-indent: 0;">This excerpt is drawn from a longer work that took shape over several years, much of it written in a small cottage not entirely unlike the one described in these pages. The Lantern Keeper began as a meditation on solitude and became, as stories often do, something else entirely — a reflection on what it means to tend a light that was not ours to kindle and will not be ours to extinguish.</p>
+            <p style="text-indent: 0;">I am indebted to the moorlands of Devon and Cornwall, which lent their weather and their silence to these pages, and to the memory of my grandmother, who understood better than anyone the sacred work of keeping watch.</p>
+            <p class="signature">— Eleanor Vance, Dartmoor, 1948</p>
+          </div>
+
+          <div class="page-number">— 4 —</div>
+        </div>
+      </div>
+
+    </div><!-- end .book -->
+  </div><!-- end .desk -->
+
+  <!-- Toast notification -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    /* ═══════════════════════════════════════════════
+       STATE
+       ═══════════════════════════════════════════════ */
+    let isLandscape = false;
+    let highlightColor = 'yellow';
+
+    const book = document.getElementById('book');
+    const badge = document.getElementById('orientationBadge');
+    const label = document.getElementById('orientationLabel');
+    const toggleBtn = document.getElementById('orientationToggle');
+    const highlightBtn = document.getElementById('highlightBtn');
+    const palette = document.getElementById('highlightPalette');
+    const toast = document.getElementById('toast');
+    const colorDots = document.querySelectorAll('.color-dot');
+
+    /* ═══════════════════════════════════════════════
+       ORIENTATION
+       ═══════════════════════════════════════════════ */
+    function setOrientation(landscape) {
+      isLandscape = landscape;
+      book.classList.toggle('landscape', isLandscape);
+      badge.classList.toggle('landscape', isLandscape);
+      label.textContent = isLandscape ? 'Landscape' : 'Portrait';
+      showToast(isLandscape ? '📖 Landscape spread view' : '📄 Portrait page view');
+    }
+
+    toggleBtn.addEventListener('click', () => setOrientation(!isLandscape));
+
+    /* ═══════════════════════════════════════════════
+       HIGHLIGHT PALETTE
+       ═══════════════════════════════════════════════ */
+    highlightBtn.addEventListener('click', () => {
+      palette.classList.toggle('visible');
+      applyHighlight();
+    });
+
+    colorDots.forEach(dot => {
+      dot.addEventListener('click', () => {
+        highlightColor = dot.dataset.color;
+        colorDots.forEach(d => d.classList.remove('active'));
+        dot.classList.add('active');
+        showToast(`🎨 Highlight color: ${highlightColor}`);
+      });
+    });
+
+    /* ═══════════════════════════════════════════════
+       TEXT HIGHLIGHTING
+       ═══════════════════════════════════════════════ */
+    function applyHighlight() {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || !selection.rangeCount) {
+        showToast('✏️ Select some text first, then click Highlight');
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const selectedText = selection.toString().trim();
+
+      if (!selectedText) {
+        showToast('✏️ Select some text first');
+        return;
+      }
+
+      // Check if selection is within the book
+      const bookEl = document.getElementById('book');
+      if (!bookEl.contains(range.commonAncestorContainer)) {
+        showToast('⚠️ Please select text within the book pages');
+        return;
+      }
+
+      // Check if already highlighted — toggle off
+      const parentMark = range.commonAncestorContainer.parentElement;
+      if (parentMark && parentMark.tagName === 'MARK' && parentMark.classList.contains('highlight')) {
+        const textNode = document.createTextNode(parentMark.textContent);
+        parentMark.parentNode.replaceChild(textNode, parentMark);
+        selection.removeAllRanges();
+        showToast('🧹 Highlight removed');
+        return;
+      }
+
+      try {
+        const mark = document.createElement('mark');
+        mark.classList.add('highlight');
+        if (highlightColor !== 'yellow') {
+          mark.classList.add(highlightColor);
+        }
+        mark.title = 'Click to remove highlight';
+        mark.addEventListener('click', function () {
+          const txt = document.createTextNode(this.textContent);
+          this.parentNode.replaceChild(txt, this);
+          showToast('🧹 Highlight removed');
+        });
+        range.surroundContents(mark);
+        selection.removeAllRanges();
+        showToast(`✨ Text highlighted in ${highlightColor}`);
+      } catch (e) {
+        // surroundContents fails on partial element selections
+        // Fallback: wrap text nodes individually
+        const fragment = range.cloneContents();
+        const mark = document.createElement('mark');
+        mark.classList.add('highlight');
+        if (highlightColor !== 'yellow') mark.classList.add(highlightColor);
+        mark.title = 'Click to remove highlight';
+        mark.appendChild(fragment);
+        mark.addEventListener('click', function () {
+          const txt = document.createTextNode(this.textContent);
+          this.parentNode.replaceChild(txt, this);
+          showToast('🧹 Highlight removed');
+        });
+        range.deleteContents();
+        range.insertNode(mark);
+        selection.removeAllRanges();
+        showToast(`✨ Text highlighted in ${highlightColor}`);
+      }
+    }
+
+    /* ═══════════════════════════════════════════════
+       KEYBOARD SHORTCUTS
+       ═══════════════════════════════════════════════ */
+    document.addEventListener('keydown', (e) => {
+      // Ctrl/Cmd + H — Highlight
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        applyHighlight();
+      }
+      // Ctrl/Cmd + L — Toggle layout
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        setOrientation(!isLandscape);
+      }
+    });
+
+    /* ═══════════════════════════════════════════════
+       TOAST
+       ═══════════════════════════════════════════════ */
+    let toastTimer;
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('visible');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('visible');
+      }, 2200);
+    }
+
+    /* ═══════════════════════════════════════════════
+       AUTO-DETECT ORIENTATION (optional: based on window aspect ratio)
+       ═══════════════════════════════════════════════ */
+    function detectOrientation() {
+      const isWide = window.innerWidth > 1000;
+      if (isWide !== isLandscape) {
+        setOrientation(isWide);
+      }
+    }
+
+    // Initial detection
+    detectOrientation();
+
+    // Re-detect on resize (debounced)
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(detectOrientation, 300);
+    });
+  </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { adminService } from '../../lib/services/admin';
 import type { PayoutRequest } from '../../types/admin';
-import { Card, Button } from '../ui';
+import { Card, Button, Toast } from '../ui';
 import { useAuthStore } from '../../store/authStore';
 import { nexus } from '../../lib/nexus';
 import { 
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { formatCurrency, formatDate } from '../../utils';
+import PageHeader from '../shared/PageHeader';
 import { format } from 'date-fns';
 
 const FinanceAdminDashboard: React.FC = () => {
@@ -60,6 +61,11 @@ const FinanceAdminDashboard: React.FC = () => {
   // Letterhead report modal preview state
   const [showReportModal, setShowReportModal] = useState(false);
 
+  const [toast, setToast] = useState<{ message: string; type?: 'success' | 'error' | 'info' } | null>(null);
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -84,7 +90,7 @@ const FinanceAdminDashboard: React.FC = () => {
     if (!selectedPayout || !user?.id) return;
     const requiresAuditNote = Number(selectedPayout.amount) > 500000;
     if (requiresAuditNote && !payoutNotes.trim()) {
-      alert('Detailed auditor ledger notes are required to approve payouts exceeding ₦500,000.');
+      showToast('Detailed auditor ledger notes are required to approve payouts exceeding ₦500,000.', 'info');
       return;
     }
     setSubmitting(true);
@@ -98,9 +104,9 @@ const FinanceAdminDashboard: React.FC = () => {
       setSelectedPayout(null);
       setPayoutNotes('');
       await fetchData();
-      alert(`Payout request successfully marked as ${status}!`);
+      showToast(`Payout request successfully marked as ${status}!`, 'success');
     } catch (err) {
-      alert('Failed to process payout decision: ' + err);
+      showToast('Failed to process payout decision: ' + err, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -109,7 +115,7 @@ const FinanceAdminDashboard: React.FC = () => {
   const handleRefundTx = async () => {
     if (!selectedTx || !user?.id) return;
     if (!refundReason.trim()) {
-      alert('Please state a reason for this refund.');
+      showToast('Please state a reason for this refund.', 'info');
       return;
     }
     setSubmitting(true);
@@ -127,15 +133,15 @@ const FinanceAdminDashboard: React.FC = () => {
           setSelectedTx(null);
           setRefundReason('');
           await fetchData();
-          alert('Refund issued successfully via Paystack integration! Wallet balances adjusted.');
+          showToast('Refund issued successfully via Paystack integration! Wallet balances adjusted.', 'success');
         } catch (err) {
-          alert('Failed to issue refund: ' + err);
+          showToast('Failed to issue refund: ' + err, 'error');
         } finally {
           setSubmitting(false);
         }
       }, 1000);
     } catch (err) {
-      alert('Failed to connect to payment gateway: ' + err);
+      showToast('Failed to connect to payment gateway: ' + err, 'error');
       setSubmitting(false);
     }
   };
@@ -190,45 +196,66 @@ const FinanceAdminDashboard: React.FC = () => {
     return t.description?.toLowerCase().includes(searchTxQuery.toLowerCase()) ||
            t.id?.toLowerCase().includes(searchTxQuery.toLowerCase()) ||
            t.type?.toLowerCase().includes(searchTxQuery.toLowerCase());
-  });
+  });  const isPayoutAudit = !!(selectedPayout && activeTab === 'payouts');
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 text-left">
       
-      {/* ── Header ── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Double-Entry Financial Engine</h2>
-          <p className="text-slate-550 font-bold text-xs mt-1">Audit platform transactions, verify accounting standards, process vendor payouts, and issue refunds.</p>
-        </div>
-        <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm flex items-center gap-2">
-          <RefreshCcw size={14} className="text-green-600 animate-spin-slow" /> Sync Ledgers
-        </Button>
-      </div>
+      {isPayoutAudit ? (
+        <PageHeader 
+          title={`Payout Audit: ${selectedPayout.vendor_name}`} 
+          description={`Reconcile fee splits, bank details, and transfer amount for ${selectedPayout.vendor_name}.`}
+          tag="Payout Verification"
+          icon={DollarSign}
+          rightContent={
+            <Button 
+              onClick={() => setSelectedPayout(null)}
+              variant="outline"
+              className="h-10 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs"
+            >
+              ← Back to Queue
+            </Button>
+          }
+        />
+      ) : (
+        <PageHeader
+          title="Double-Entry Financial Engine"
+          description="Audit platform transactions, verify accounting standards, process vendor payouts, and issue refunds."
+          tag="Finance Admin"
+          icon={DollarSign}
+          rightContent={
+            <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white/15 hover:bg-white/20 border-white/20 text-white shadow-sm flex items-center gap-2 font-bold">
+              <RefreshCcw size={14} className="text-emerald-450 animate-spin-slow" /> Sync Ledgers
+            </Button>
+          }
+        />
+      )}
 
       {/* ── Tabs Navigation ── */}
-      <div className="flex gap-4 border-b border-slate-200 pb-2">
-        {([
-          { key: 'overview', label: '📊 Dashboard Overview' },
-          { key: 'transactions', label: '💸 Transaction Log' },
-          { key: 'payouts', label: '🏦 Payouts Section' },
-          { key: 'refunds', label: '🔄 Refunds Queue' },
-          { key: 'invoices', label: '📄 Invoices Ledger' },
-          { key: 'reports', label: '📈 Accounting Reports' }
-        ] as const).map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => { setActiveTab(tab.key); setSelectedPayout(null); setSelectedTx(null); }}
-            className={`px-4 py-2.5 rounded-t-xl font-bold text-xs tracking-wider uppercase transition-all flex items-center gap-2 ${
-              activeTab === tab.key
-                ? 'text-green-700 border-b-4 border-green-600 bg-green-50/40'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {!isPayoutAudit && (
+        <div className="flex gap-4 border-b border-slate-200 pb-2">
+          {([
+            { key: 'overview', label: '📊 Dashboard Overview' },
+            { key: 'transactions', label: '💸 Transaction Log' },
+            { key: 'payouts', label: '🏦 Payouts Section' },
+            { key: 'refunds', label: '🔄 Refunds Queue' },
+            { key: 'invoices', label: '📄 Invoices Ledger' },
+            { key: 'reports', label: '📈 Accounting Reports' }
+          ] as const).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => { setActiveTab(tab.key); setSelectedPayout(null); setSelectedTx(null); }}
+              className={`px-4 py-2.5 rounded-t-xl font-bold text-xs tracking-wider uppercase transition-all flex items-center gap-2 ${
+                activeTab === tab.key
+                  ? 'text-green-700 border-b-4 border-green-600 bg-green-50/40'
+                  : 'text-slate-550 hover:text-slate-800'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── TAB 1: OVERVIEW ── */}
       {activeTab === 'overview' && (
@@ -350,8 +377,8 @@ const FinanceAdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full text-left border-collapse min-w-[800px]">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-550 bg-slate-50/50 text-[9px] uppercase font-black tracking-widest">
                   <th className="p-4">Date & Time</th>
@@ -408,10 +435,10 @@ const FinanceAdminDashboard: React.FC = () => {
 
       {/* ── TAB 3: PAYOUTS SECTION ── */}
       {activeTab === 'payouts' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className={selectedPayout ? "grid grid-cols-1 lg:grid-cols-3 gap-8" : "w-full"}>
           
           {/* Payout Config & Queue */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className={selectedPayout ? "lg:col-span-2 space-y-6" : "w-full space-y-6"}>
             
             {/* Payout properties */}
             <Card className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-sm space-y-4">
@@ -452,8 +479,8 @@ const FinanceAdminDashboard: React.FC = () => {
                 <h4 className="font-black text-sm text-slate-900 uppercase">Settlement Requests Queue</h4>
               </div>
 
-              <div className="overflow-x-auto text-left">
-                <table className="w-full text-left border-collapse">
+              <div className="overflow-x-auto text-left no-scrollbar">
+                <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-550 bg-slate-50/50 text-[9px] uppercase font-black tracking-widest">
                       <th className="p-4">Vendor</th>
@@ -500,28 +527,28 @@ const FinanceAdminDashboard: React.FC = () => {
           </div>
 
           {/* Right Column: Payout audit panel */}
-          <div className="space-y-6">
-            {selectedPayout ? (
+          {selectedPayout && (
+            <div className="space-y-6">
               <Card className="bg-white border border-slate-200/80 p-6 rounded-3xl space-y-4 shadow-sm text-left">
-                <h3 className="text-xs font-black text-slate-550 uppercase tracking-widest flex items-center gap-1.5"><Clock size={13} className="text-green-600" /> Payout Audit Desk</h3>
+                <h3 className="text-xs font-black text-slate-555 uppercase tracking-widest flex items-center gap-1.5"><Clock size={13} className="text-green-600" /> Payout Audit Desk</h3>
                 
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/60 text-xs space-y-2 leading-relaxed text-slate-700 shadow-inner font-bold">
                   <div className="flex justify-between">
-                    <span className="text-slate-450 font-black">Vendor Name:</span>
+                    <span className="text-slate-455 font-black">Vendor Name:</span>
                     <span className="text-slate-900">{selectedPayout.vendor_name}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-450 font-black">Transfer Amount:</span>
+                    <span className="text-slate-455 font-black">Transfer Amount:</span>
                     <span className="text-green-700">{formatCurrency(selectedPayout.amount)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-450 font-black">Bank / Account:</span>
+                    <span className="text-slate-455 font-black">Bank / Account:</span>
                     <span className="text-slate-700 font-semibold">{selectedPayout.bank_details.bank_name} ({selectedPayout.bank_details.account_number})</span>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-550 uppercase">Auditor justification Notes</label>
+                  <label className="text-[10px] font-black text-slate-555 uppercase">Auditor justification Notes</label>
                   <textarea
                     placeholder="Provide audit signoff description to approve payout..."
                     value={payoutNotes}
@@ -547,14 +574,8 @@ const FinanceAdminDashboard: React.FC = () => {
                   </Button>
                 </div>
               </Card>
-            ) : (
-              <Card className="p-8 text-center bg-slate-50 border border-slate-200/60 rounded-3xl shadow-inner min-h-[250px] flex flex-col justify-center items-center">
-                <Clock size={32} className="text-slate-400 mb-3" />
-                <h5 className="font-extrabold text-slate-700 text-sm">Select request</h5>
-                <p className="text-xs text-slate-400 mt-1 max-w-[180px] mx-auto leading-relaxed">Select a payout transfer record from the queue to start checking credentials.</p>
-              </Card>
-            )}
-          </div>
+            </div>
+          )}
 
         </div>
       )}
@@ -567,8 +588,8 @@ const FinanceAdminDashboard: React.FC = () => {
             <p className="text-xs text-slate-500 font-bold mt-0.5">Approve and reverse buyer payments via integrated gateway API checks.</p>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full text-left border-collapse min-w-[800px]">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-550 bg-slate-50/50 text-[9px] uppercase font-black tracking-widest">
                   <th className="p-4">Purchase Transaction</th>
@@ -614,8 +635,8 @@ const FinanceAdminDashboard: React.FC = () => {
             <p className="text-xs text-slate-500 font-bold mt-0.5">Verify buyer and creator invoices generated dynamically for every ledger event.</p>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full text-left border-collapse min-w-[800px]">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-550 bg-slate-50/50 text-[9px] uppercase font-black tracking-widest">
                   <th className="p-4">Invoice ID</th>
@@ -635,7 +656,7 @@ const FinanceAdminDashboard: React.FC = () => {
                     <td className="p-4">
                       <button
                         onClick={() => {
-                          alert(`Printing invoice INV-${tx.id.substring(0, 8).toUpperCase()}...`);
+                          showToast(`Printing invoice INV-${tx.id.substring(0, 8).toUpperCase()}...`, 'info');
                         }}
                         className="p-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 hover:text-slate-900 shadow-sm"
                         title="Print Invoice"
@@ -685,7 +706,7 @@ const FinanceAdminDashboard: React.FC = () => {
             <div className="absolute top-6 right-6 flex gap-2">
               <Button
                 onClick={() => {
-                  alert(`Exporting ${selectedReport.toUpperCase()} report with Trileza official company letterhead...`);
+                  showToast(`Exporting ${selectedReport.toUpperCase()} report with Trileza official company letterhead...`, 'success');
                 }}
                 className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black uppercase py-2 px-3 rounded-xl border-none shadow-sm flex items-center gap-1.5"
               >
@@ -699,8 +720,8 @@ const FinanceAdminDashboard: React.FC = () => {
               {/* Letterhead Header Banner */}
               <div className="flex justify-between items-start border-b-2 border-green-600 pb-6">
                 <div>
-                  <h1 className="font-black text-xl tracking-wider uppercase text-slate-900">TRILEZA LMS SYSTEMS LTD</h1>
-                  <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-1">Operational Audit and Platforms Finance Node</p>
+                  <h1 className="font-black text-xl tracking-wider text-slate-900">Trileza LMS systems Ltd</h1>
+                  <p className="text-[9px] text-slate-500 font-bold mt-1">Operational audit and platforms finance portal</p>
                   <p className="text-[9px] text-slate-400 font-medium mt-0.5">RC 8812903 • RC_INSPECT_LAGOS</p>
                 </div>
                 <div className="text-right text-[9px] text-slate-500 space-y-0.5 leading-relaxed font-bold">
@@ -844,10 +865,9 @@ const FinanceAdminDashboard: React.FC = () => {
                 )}
               </div>
 
-              {/* Letterhead Footer */}
-              <div className="pt-12 border-t border-slate-200 flex justify-between items-center text-[8px] text-slate-400 font-bold uppercase tracking-widest">
-                <span>Trileza Finance Audit Trail Node</span>
-                <span>Authorized Signatory: CFO Office</span>
+              <div className="pt-12 border-t border-slate-200 flex justify-between items-center text-[8px] text-slate-400 font-bold tracking-widest">
+                <span>Trileza finance audit trail</span>
+                <span>Authorized signatory: cfo office</span>
               </div>
 
             </div>
@@ -902,6 +922,14 @@ const FinanceAdminDashboard: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
       )}
 
     </div>

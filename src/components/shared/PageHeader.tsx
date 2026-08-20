@@ -1,6 +1,7 @@
 import React from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../utils';
+import { useAuthStore, resolveActiveRole } from '../../store/authStore';
 
 interface PageHeaderProps {
   title: React.ReactNode;
@@ -9,6 +10,7 @@ interface PageHeaderProps {
   icon: LucideIcon;
   className?: string;
   rightContent?: React.ReactNode;
+  variant?: 'mentor' | 'mentee' | 'default';
 }
 
 const PageHeader: React.FC<PageHeaderProps> = ({ 
@@ -17,26 +19,40 @@ const PageHeader: React.FC<PageHeaderProps> = ({
   tag, 
   icon: Icon,
   className,
-  rightContent
+  rightContent,
+  variant
 }) => {
+  const { activeRole, user } = useAuthStore();
+  
+  const currentRole = activeRole || resolveActiveRole(user) || 'mentee';
+  const currentRoleLower = currentRole?.toLowerCase() || '';
+  const isMentor = currentRoleLower === 'mentor' || currentRoleLower === 'tutor';
+  const isMentorSection = variant === 'mentor' || (!variant && isMentor);
+
   return (
-    <div className={cn("flex flex-col md:flex-row md:items-center justify-between gap-6 bg-slate-950 dark:bg-slate-900 p-8 md:p-12 rounded-[2.5rem] text-white shadow-2xl shadow-emerald-900/20 relative overflow-hidden mb-8", className)}>
-      <div className="absolute -top-32 -left-32 w-80 h-80 bg-emerald-500 rounded-full blur-[100px] opacity-30 animate-pulse" />
-      <div className="absolute right-0 bottom-0 w-80 h-80 bg-brand-primary rounded-full blur-[100px] opacity-20 translate-y-1/2 translate-x-1/3" />
-      
-      <div className="relative z-10 space-y-2 max-w-3xl">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-lg">
-             <Icon className="text-emerald-400" size={20} />
+    <div 
+      className={cn(
+        isMentorSection ? "mentor-hero" : "mentee-hero",
+        "flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 p-4 sm:p-8 md:p-12 rounded-2xl sm:rounded-[20px] text-white shadow-2xl relative overflow-hidden mb-4 sm:mb-6",
+        className
+      )}
+    >
+      {/* Dark scrim/overlay behind the text content for AA contrast */}
+      <div className="absolute inset-0 bg-gradient-to-r from-[rgba(8,20,14,0.75)] to-transparent pointer-events-none z-0" />
+
+      <div className="relative z-10 space-y-1 sm:space-y-1.5 max-w-3xl">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-lg">
+             <Icon className="text-[#4ADE80]" size={14} />
           </div>
-          <span className="text-emerald-400 font-black tracking-[0.2em] uppercase text-xs">{tag}</span>
+          <span className="section-eyebrow text-[10px] sm:text-xs">{tag}</span>
         </div>
-        <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white">{title}</h1>
-        <p className="text-slate-300 dark:text-slate-400 font-medium text-lg mt-2 leading-relaxed">{description}</p>
+        <h1 className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-black tracking-tight text-[#EAF2EA]">{title}</h1>
+        <p className="text-xs sm:text-sm md:text-lg text-[#EAF2EA] font-medium leading-relaxed">{description}</p>
       </div>
 
       {rightContent && (
-        <div className="relative z-10 shrink-0">
+        <div className="relative z-10 shrink-0 mt-1 sm:mt-2 md:mt-0">
           {rightContent}
         </div>
       )}

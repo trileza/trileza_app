@@ -529,6 +529,71 @@ export interface Database {
           description: string;
         };
       };
+      admin_users: {
+        Row: {
+          id: string;
+          user_id: string;
+          roles: string[];
+          onboarded: boolean;
+          suspended: boolean;
+          created_at: string;
+          last_login: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          roles?: string[];
+          onboarded?: boolean;
+          suspended?: boolean;
+          created_at?: string;
+          last_login?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['admin_users']['Insert']>;
+      };
+      admin_invites: {
+        Row: {
+          id: string;
+          email: string;
+          roles: string[];
+          invited_by: string | null;
+          token: string;
+          expires_at: string;
+          status: 'pending' | 'accepted' | 'expired';
+          created_at: string;
+          accepted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          email: string;
+          roles?: string[];
+          invited_by?: string | null;
+          token?: string;
+          expires_at?: string;
+          status?: 'pending' | 'accepted' | 'expired';
+          created_at?: string;
+          accepted_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['admin_invites']['Insert']>;
+      };
+      admin_audit_log: {
+        Row: {
+          id: string;
+          admin_user_id: string | null;
+          action: string;
+          details: Record<string, any>;
+          ip: string | null;
+          timestamp: string;
+        };
+        Insert: {
+          id?: string;
+          admin_user_id?: string | null;
+          action: string;
+          details?: Record<string, any>;
+          ip?: string | null;
+          timestamp?: string;
+        };
+        Update: Partial<Database['public']['Tables']['admin_audit_log']['Insert']>;
+      };
     };
     Views: {};
     Functions: {};

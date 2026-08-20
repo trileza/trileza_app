@@ -31,6 +31,7 @@ import {
   Link2
 } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
+import { PageHeader } from '../../components/shared';
 import { cn } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -135,12 +136,12 @@ const FREE_COURSES = [
   { id: 'aac-101', title: 'Advanced Agentic Coding', level: 'Intermediate', duration: '4 weeks', desc: 'Master agentic AI systems design using micro-agents and high-fidelity routing.' },
   { id: 'ais-202', title: 'AI Systems Architecture', level: 'Advanced', duration: '6 weeks', desc: 'Design scalable neural grid systems and secure backend vector databases.' },
   { id: 'hfd-303', title: 'High-Fidelity UI Design', level: 'Beginner', duration: '3 weeks', desc: 'Craft high-end premium web experiences with custom micro-animations and typography.' },
-  { id: 'py-051', title: 'Introduction to Python & Automation', level: 'Beginner', duration: '2 weeks', desc: 'Learn core scripting, automation hooks, and local API management.' }
+  { id: 'py-051', title: 'Introduction to Python & Automation', level: 'Beginner', duration: '2 weeks', desc: 'Learn core scripting, automation hooks, and local integration management.' }
 ];
 
 const MenteeOnboarding = () => {
   const navigate = useNavigate();
-  const { user, updateProfile } = useAuthStore();
+  const { user, updateProfile, logout } = useAuthStore();
   
   // Check for pre-selected course from query params (e.g. from Mentor-to-Mentee enrollment intercept)
   useEffect(() => {
@@ -445,11 +446,13 @@ const MenteeOnboarding = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex justify-center items-start p-4 relative py-12 md:py-24 overflow-y-auto font-sans selection:bg-emerald-500/20">
+
+
       {/* Premium Dynamic Neon Backdrops */}
       <div className="absolute top-[-10%] right-[-10%] w-[60%] h-[60%] bg-gradient-to-tr from-emerald-500/15 to-teal-500/10 rounded-full blur-[130px] pointer-events-none animate-pulse duration-[8000ms]" />
       <div className="absolute bottom-[-10%] left-[-10%] w-[60%] h-[60%] bg-gradient-to-tr from-indigo-500/15 to-purple-500/10 rounded-full blur-[130px] pointer-events-none animate-pulse duration-[10000ms]" />
 
-      <div className="max-w-3xl w-full relative z-10 mx-auto">
+      <div className="max-w-5xl w-full relative z-10 mx-auto">
         <AnimatePresence custom={direction} mode="wait">
           
           {/* ── WELCOME STEP ── */}
@@ -518,13 +521,13 @@ const MenteeOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={1} total={6} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 1</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Account Security</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Verify credentials and configure social single-sign-on overlays.</p>
-              </div>
+              <PageHeader 
+                title="Account Security"
+                description="Verify credentials and configure social single-sign-on overlays."
+                tag="SECTION 1"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-12 bg-white/70 dark:bg-slate-900/50 backdrop-blur-2xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] shadow-xl space-y-10">
                 {/* Email and Optional Fields */}
@@ -566,15 +569,13 @@ const MenteeOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={2} total={6} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-black uppercase tracking-wider">Section 2</span>
-                  <h2 className="text-3xl font-black text-slate-900 dark:text-white">Personal Profile</h2>
-                </div>
-                <p className="text-slate-800 dark:text-slate-200 font-extrabold text-sm leading-relaxed">
-                  Establish your personal identifiers, custom birth selectors, and optional professional credentials.
-                </p>
-              </div>
+              <PageHeader 
+                title="Personal Profile"
+                description="Establish your personal identifiers, custom birth selectors, and optional professional credentials."
+                tag="SECTION 2"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-12 bg-white/95 dark:bg-slate-950/90 backdrop-blur-2xl border-2 border-emerald-500/25 shadow-[0_20px_50px_rgba(16,185,129,0.15)] rounded-[3rem] space-y-8 ring-1 ring-black/[0.03]">
                 {/* Upload or Generated Avatar */}
@@ -858,13 +859,13 @@ const MenteeOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={isFastTrack ? 1 : 3} total={isFastTrack ? 4 : 6} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 3</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Learning Background</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Establish your professional footprint to customize course recommendations.</p>
-              </div>
+              <PageHeader 
+                title="Learning Background"
+                description="Establish your professional footprint to customize course recommendations."
+                tag="SECTION 3"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-12 bg-white/70 dark:bg-slate-900/50 backdrop-blur-2xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] shadow-xl space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1060,13 +1061,13 @@ const MenteeOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={isFastTrack ? 2 : 4} total={isFastTrack ? 4 : 6} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 4</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Certificate Policy</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Review parameters for earning verified Trileza graduation certificates.</p>
-              </div>
+              <PageHeader 
+                title="Certificate Policy"
+                description="Review parameters for earning verified Trileza graduation certificates."
+                tag="SECTION 4"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-12 bg-white/70 dark:bg-slate-900/50 backdrop-blur-2xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] shadow-xl space-y-6">
                 
@@ -1093,7 +1094,7 @@ const MenteeOnboarding = () => {
                     placeholder="e.g. David Ileza Adamu"
                     className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all"
                   />
-                  <span className="text-[10px] text-slate-400 font-medium ml-2 block leading-normal">Must match your government identity document. This legal name is stamped into the public blockchain vector nodes for certificate verifications.</span>
+                  <span className="text-[10px] text-slate-400 font-medium ml-2 block leading-normal">Must match your government identity document. This legal name is stamped into the verification system for certificate verifications.</span>
                 </div>
 
                 {/* Navigation Buttons */}
@@ -1118,13 +1119,13 @@ const MenteeOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={isFastTrack ? 3 : 5} total={isFastTrack ? 4 : 6} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 5</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Privacy & Alerts</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Control data sharing configurations and automated messaging alerts.</p>
-              </div>
+              <PageHeader 
+                title="Privacy & Alerts"
+                description="Control data sharing configurations and automated messaging alerts."
+                tag="SECTION 5"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-12 bg-white/70 dark:bg-slate-900/50 backdrop-blur-2xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] shadow-xl space-y-6">
                 
@@ -1166,7 +1167,7 @@ const MenteeOnboarding = () => {
                   />
                   <div>
                     <h4 className="font-bold text-sm text-slate-800 dark:text-white">Corporate Recruiting Sharing Pool</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed mt-1">Allow Trileza to list my verified coding badges, resume/CV files, and contact nodes in directories shared with official organizational recruiters.</p>
+                    <p className="text-xs text-slate-400 leading-relaxed mt-1">Allow Trileza to list my verified coding badges, resume/CV files, and contact details in directories shared with official organizational recruiters.</p>
                   </div>
                 </label>
 
@@ -1205,13 +1206,13 @@ const MenteeOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={isFastTrack ? 4 : 6} total={isFastTrack ? 4 : 6} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 6</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Terms & Submission</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Verify COPPA compliance and submit your customized academy dashboard.</p>
-              </div>
+              <PageHeader 
+                title="Terms & Submission"
+                description="Verify COPPA compliance and submit your customized academy dashboard."
+                tag="SECTION 6"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-12 bg-white/70 dark:bg-slate-900/50 backdrop-blur-2xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] shadow-xl space-y-6">
                 

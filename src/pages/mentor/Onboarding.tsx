@@ -32,9 +32,12 @@ import {
   Chrome,
   Facebook,
   Apple,
-  Link2
+  Link2,
+  X,
+  Search
 } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
+import { PageHeader } from '../../components/shared';
 import { cn } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -45,10 +48,6 @@ type OnboardingStep =
   | 'account' 
   | 'identity' 
   | 'qualifications' 
-  | 'training' 
-  | 'course_setup' 
-  | 'curriculum' 
-  | 'pricing' 
   | 'preferences' 
   | 'review' 
   | 'finalizing';
@@ -64,13 +63,20 @@ const EDUCATION_LEVELS = [
 const EXPERIENCE_YEARS = ['0-2 Years', '2-5 Years', '5-10 Years', '10+ Years'];
 
 const COURSE_CATEGORIES = [
-  'Software Development',
-  'Creative Coding',
-  'UI/UX Design',
-  'Sustainable Architecture',
-  'AI & Machine Learning',
-  'Executive Leadership'
+  'Software Development', 'Web Development', 'Mobile Development', 
+  'Data Science', 'Machine Learning', 'AI & Deep Learning', 
+  'Cloud Computing', 'Cybersecurity', 'DevOps', 'Blockchain', 
+  'UI/UX Design', 'Digital Marketing', 'Product Management', 
+  'Creative Coding', 'Sustainable Architecture', 'Executive Leadership', 
+  'Graphic Design', 'Game Development', 'Entrepreneurship', 'Financial Literacy'
 ];
+
+type CredentialEntry = {
+  id: string;
+  type: 'file' | 'text';
+  value: string; // file name or text description
+  fileObj?: File; // the actual file to upload later if needed
+};
 
 const PRICE_TIERS = [
   { tier: 'Free', price: '$0.00' },
@@ -105,7 +111,7 @@ const COUNTRY_OPTIONS = [
 
 const Onboarding = () => {
   const navigate = useNavigate();
-  const { user, updateProfile } = useAuthStore();
+  const { user, updateProfile, logout } = useAuthStore();
   
   const isFastTrack = user?.metadata?.mentee_onboarded === true;
   
@@ -119,29 +125,6 @@ const Onboarding = () => {
   const [emailVerified, setEmailVerified] = useState(false);
   const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
   const [idFileUploaded, setIdFileUploaded] = useState<string | null>(null);
-  const [certUploaded, setCertUploaded] = useState<string | null>(null);
-  const [promoVideoUploaded, setPromoVideoUploaded] = useState<string | null>(null);
-  const [thumbnailUploaded, setThumbnailUploaded] = useState<string | null>(null);
-
-  // Custom Date of Birth Selector States
-  const [dobDay, setDobDay] = useState('');
-  const [dobMonth, setDobMonth] = useState('');
-  const [dobYear, setDobYear] = useState('');
-
-  // CV / LinkedIn States
-  const [cvFileName, setCvFileName] = useState<string | null>(null);
-  const [linkedinError, setLinkedinError] = useState(false);
-
-  // Dynamic learning objectives state
-  const [objectives, setObjectives] = useState<string[]>(['', '', '']);
-  
-  // Orientation Checklist
-  const [orientationModules, setOrientationModules] = useState({
-    videoStandards: false,
-    pedagogy: false,
-    copyright: false
-  });
-
   // State for forms
   const [form, setForm] = useState({
     // Section 2: Personal Profile & Verification
@@ -164,28 +147,6 @@ const Onboarding = () => {
     teachingMotivation: '',
     expertiseAreas: [] as string[],
     
-    // Section 5: Course Setup
-    courseTitle: '',
-    courseSubtitle: '',
-    courseCategory: '',
-    courseTarget: '',
-    courseLevel: 'All Levels',
-    coursePrereqs: '',
-    courseDescription: '',
-    courseLanguage: 'English',
-    hasPracticeTests: false,
-    hasCodingEx: false,
-    
-    // Section 6: Curriculum Copyright Check
-    curriculumConfirmedOriginal: false,
-    
-    // Section 7: Pricing & Distribution
-    courseFreeTrack: 'paid', // free, paid
-    selectedPriceTier: 'Tier A',
-    couponCode: '',
-    couponDiscount: '20',
-    distributionOption: 'marketplace', // marketplace, enterprise-only
-    
     // Section 8: Communications
     optInNewsletters: true,
     optInFeedback: true,
@@ -195,6 +156,21 @@ const Onboarding = () => {
     meetsQualityCheck: false,
     hasFullRightsCheck: false
   });
+
+  // Credentials State
+  const [credentials, setCredentials] = useState<CredentialEntry[]>([]);
+  const [expertiseSearch, setExpertiseSearch] = useState('');
+  const [showExpertiseSuggestions, setShowExpertiseSuggestions] = useState(false);
+  const filteredExpertise = COURSE_CATEGORIES.filter(c => c.toLowerCase().includes(expertiseSearch.toLowerCase()) && !form.expertiseAreas.includes(c));
+
+  // Custom Date of Birth Selector States
+  const [dobDay, setDobDay] = useState('');
+  const [dobMonth, setDobMonth] = useState('');
+  const [dobYear, setDobYear] = useState('');
+
+  // CV / LinkedIn States
+  const [cvFileName, setCvFileName] = useState<string | null>(null);
+  const [linkedinError, setLinkedinError] = useState(false);
 
   // Sync custom DOB selectors to form.dob
   useEffect(() => {
@@ -277,7 +253,7 @@ const Onboarding = () => {
         user_id: user.id,
         status: 'pending',
         qualifications: `${form.highestEducation || 'Degree'} | ${form.yearsExp || '0 Years'} | Motivation: ${form.teachingMotivation || 'None'}`,
-        video_url: promoVideoUploaded || null,
+        video_url: null,
         submitted_at: new Date().toISOString()
       }]);
 
@@ -290,6 +266,7 @@ const Onboarding = () => {
         metadata: {
           ...user?.metadata,
           mentor_application_status: 'pending',
+          rejection_reason: null,
           mentor_applied_at: new Date().toISOString(),
           pending_mentor_data: {
             identity: {
@@ -304,24 +281,8 @@ const Onboarding = () => {
               years_exp: form.yearsExp,
               education: form.highestEducation,
               motivation: form.teachingMotivation,
-              skills: form.expertiseAreas
-            },
-            course_setup: {
-              title: form.courseTitle,
-              subtitle: form.courseSubtitle,
-              category: form.courseCategory,
-              level: form.courseLevel,
-              target: form.courseTarget,
-              objectives: objectives.filter(Boolean),
-              prerequisites: form.coursePrereqs,
-              description: form.courseDescription,
-              language: form.courseLanguage
-            },
-            pricing: {
-              track: form.courseFreeTrack,
-              tier: form.selectedPriceTier,
-              coupon: form.couponCode ? { code: form.couponCode, discount: form.couponDiscount } : null,
-              distribution: form.distributionOption
+              skills: form.expertiseAreas,
+              credentials: credentials.map(c => ({ type: c.type, value: c.value }))
             },
             preferences: {
               newsletters: form.optInNewsletters,
@@ -378,28 +339,16 @@ const Onboarding = () => {
     })
   };
 
-  const StepIndicator = ({ current, total }: { current: number, total: number }) => (
-    <div className="flex gap-1.5 mb-8 justify-center">
-      {Array.from({ length: total }).map((_, i) => (
-        <div 
-          key={i} 
-          className={cn(
-            "h-1.5 rounded-full transition-all duration-500",
-            i < current ? "w-5 bg-emerald-500" : i === current ? "w-8 bg-emerald-600 animate-pulse" : "w-2.5 bg-slate-200 dark:bg-slate-800"
-          )} 
-          title={`Step ${i + 1}`}
-        />
-      ))}
-    </div>
-  );
+  const StepIndicator = ({ current, total }: { current: number, total: number }) => null;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex justify-center items-start p-4 relative py-12 md:py-20 overflow-y-auto">
+
       {/* Premium Dynamic Neon Backdrops */}
       <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-gradient-to-tr from-emerald-500/15 to-teal-500/10 rounded-full blur-[130px] pointer-events-none animate-pulse duration-[8000ms]" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-gradient-to-tr from-indigo-500/15 to-purple-500/10 rounded-full blur-[130px] pointer-events-none animate-pulse duration-[10000ms]" />
 
-      <div className="max-w-3xl w-full relative z-10 mx-auto">
+      <div className="max-w-5xl w-full relative z-10 mx-auto">
         <AnimatePresence custom={direction} mode="wait">
 
           {/* ── WELCOME ── */}
@@ -414,15 +363,15 @@ const Onboarding = () => {
                 </div>
                 <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">
                   {isFastTrack ? (
-                    <>Fast-Track to Mentor Onboarding & <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-emerald-400">Course Launch</span></>
+                    <>Fast-Track to Mentor Onboarding & <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-emerald-400">Profile Creation</span></>
                   ) : (
-                    <>Mentor Onboarding & <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-emerald-400">Course Launch</span>.</>
+                    <>Mentor Onboarding & <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-emerald-400">Profile Creation</span>.</>
                   )}
                 </h1>
                 <p className="text-lg text-slate-500 dark:text-slate-400 font-medium max-w-xl mx-auto leading-relaxed">
                   {isFastTrack
-                    ? "As an approved Trileza Mentee, your personal credentials are pre-verified! Answer a few coaching qualifications, complete training, and let's publish your first course blueprint."
-                    : "Join Trileza as an Elite Mentor. Let's verify your identity, qualify your professional certifications, complete orientation, and set up your debut course curriculum!"
+                    ? "As an approved Trileza Mentee, your personal credentials are pre-verified! Answer a few coaching qualifications, complete training, and let's set up your Mentor profile."
+                    : "Join Trileza as an Elite Mentor. Let's verify your identity, qualify your professional certifications, complete orientation, and set up your mentor profile!"
                   }
                 </p>
               </div>
@@ -437,17 +386,17 @@ const Onboarding = () => {
                 </div>
                 <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800 rounded-3xl text-center space-y-3 shadow-md">
                   <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center mx-auto">
-                    <BookOpen size={20} />
+                    <Award size={20} />
                   </div>
-                  <h3 className="font-bold text-slate-800 dark:text-white text-sm">Curriculum Builder</h3>
-                  <p className="text-xs text-slate-400">Organize high-resolution video lectures and downloadable coding units.</p>
+                  <h3 className="font-bold text-slate-800 dark:text-white text-sm">Expertise Mentoring</h3>
+                  <p className="text-xs text-slate-400">Guide mentees using your specific domain knowledge and experience.</p>
                 </div>
                 <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800 rounded-3xl text-center space-y-3 shadow-md">
                   <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center mx-auto">
-                    <DollarSign size={20} />
+                    <Globe size={20} />
                   </div>
-                  <h3 className="font-bold text-slate-800 dark:text-white text-sm">Sovereign Earnings</h3>
-                  <p className="text-xs text-slate-400">Receive 70% revenue share on premium tiers or set free marketplace hooks.</p>
+                  <h3 className="font-bold text-slate-800 dark:text-white text-sm">Global Reach</h3>
+                  <p className="text-xs text-slate-400">Connect with students and professionals from all over the world.</p>
                 </div>
               </div>
 
@@ -468,13 +417,13 @@ const Onboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={1} total={9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 1</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Account Creation</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Verify your active mentor identity and link optional social credentials.</p>
-              </div>
+              <PageHeader 
+                title="Account Creation"
+                description="Verify your active mentor identity and link optional social credentials."
+                tag="SECTION 1"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
                 {/* Social Login Options */}
@@ -505,7 +454,7 @@ const Onboarding = () => {
                     <Info size={14} className="text-emerald-500" /> Unified Profile Structure
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-                    At Trileza, **separate student and instructor accounts are the same.** You use one unified profile; your role credentials determine whether you have access to the Mentor command center or the Mentee dashboard. Progress variables remain seamlessly mapped.
+                    At Trileza, **separate student and instructor accounts are the same.** You use one unified profile; your role credentials determine whether you have access to the Mentor Profile or the Mentee Profile. Progress variables remain seamlessly mapped.
                   </p>
                 </div>
 
@@ -530,15 +479,13 @@ const Onboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={isFastTrack ? 1 : 2} total={isFastTrack ? 8 : 9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-black uppercase tracking-wider">Section 2</span>
-                  <h2 className="text-3xl font-black text-slate-900 dark:text-white">Profile & Identity (KYC)</h2>
-                </div>
-                <p className="text-slate-800 dark:text-slate-200 font-extrabold text-sm leading-relaxed">
-                  Declare your payout-eligible legal details, residence parameters, and credentials to establish verified course publishing.
-                </p>
-              </div>
+              <PageHeader 
+                title="Profile & Identity (KYC)"
+                description="Declare your payout-eligible legal details, residence parameters, and credentials to establish verified course publishing."
+                tag="SECTION 2"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-12 bg-white/95 dark:bg-slate-950/90 backdrop-blur-2xl border-2 border-emerald-500/25 shadow-[0_20px_50px_rgba(16,185,129,0.15)] rounded-[3rem] space-y-8 ring-1 ring-black/[0.03]">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -806,13 +753,13 @@ const Onboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={isFastTrack ? 2 : 3} total={isFastTrack ? 8 : 9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 3</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Expertise & Qualifications</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Verify your background, education, and specific subject specialties.</p>
-              </div>
+              <PageHeader 
+                title="Expertise & Qualifications"
+                description="Verify your background, education, and specific subject specialties."
+                tag="SECTION 3"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -842,61 +789,158 @@ const Onboarding = () => {
                   </div>
                 </div>
 
-                {/* Upload Degree Certificate */}
-                {form.highestEducation && (
-                  <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl flex items-center justify-between">
+                {/* Multiple Credentials Upload / Entry */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-bold text-xs text-slate-800 dark:text-white">Credentials / Certificates Upload</h4>
-                      <p className="text-[10px] text-slate-400">Upload degrees, diplomas, or recognized vendor certifications.</p>
+                      <h4 className="font-bold text-xs text-slate-800 dark:text-white">Credentials / Certificates</h4>
+                      <p className="text-[10px] text-slate-400">Upload degrees or enter notable achievements.</p>
                     </div>
-                    <label className="px-5 py-2.5 bg-slate-950 dark:bg-slate-800 hover:bg-black text-white text-[10px] font-black uppercase tracking-wider rounded-xl cursor-pointer shadow-sm">
-                      {certUploaded ? 'Change Document' : 'Upload File'}
-                      <input 
-                        type="file" 
-                        accept=".pdf,image/*" 
-                        className="hidden" 
-                        onChange={(e) => {
-                          if (e.target.files?.[0]) setCertUploaded(e.target.files[0].name);
-                        }}
-                      />
-                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setCredentials([...credentials, { id: Math.random().toString(36).substr(2, 9), type: 'text', value: '' }])}
+                      className="h-8 text-[10px] font-bold uppercase tracking-wider border-slate-200 dark:border-slate-800"
+                    >
+                      <Plus size={14} className="mr-1" /> Add Credential
+                    </Button>
                   </div>
-                )}
+                  
+                  {credentials.map((cred, idx) => (
+                    <div key={cred.id} className="p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-start gap-4">
+                      <div className="flex-1 space-y-3">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newCreds = [...credentials];
+                              newCreds[idx].type = 'text';
+                              setCredentials(newCreds);
+                            }}
+                            className={cn("px-3 py-1 text-[10px] font-bold rounded-lg transition-all", cred.type === 'text' ? "bg-emerald-100 text-emerald-700" : "bg-white text-slate-500 border border-slate-200")}
+                          >
+                            Text Entry
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newCreds = [...credentials];
+                              newCreds[idx].type = 'file';
+                              setCredentials(newCreds);
+                            }}
+                            className={cn("px-3 py-1 text-[10px] font-bold rounded-lg transition-all", cred.type === 'file' ? "bg-emerald-100 text-emerald-700" : "bg-white text-slate-500 border border-slate-200")}
+                          >
+                            File Upload
+                          </button>
+                        </div>
+                        
+                        {cred.type === 'text' ? (
+                          <input
+                            type="text"
+                            value={cred.value}
+                            onChange={(e) => {
+                              const newCreds = [...credentials];
+                              newCreds[idx].value = e.target.value;
+                              setCredentials(newCreds);
+                            }}
+                            placeholder="e.g., AWS Solutions Architect (2024)"
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-xs outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-3">
+                            <label className="px-4 py-2 bg-slate-950 hover:bg-black text-white text-[10px] font-black uppercase tracking-wider rounded-xl cursor-pointer">
+                              Choose File
+                              <input 
+                                type="file" 
+                                accept=".pdf,image/*" 
+                                className="hidden" 
+                                onChange={(e) => {
+                                  if (e.target.files?.[0]) {
+                                    const newCreds = [...credentials];
+                                    newCreds[idx].value = e.target.files[0].name;
+                                    newCreds[idx].fileObj = e.target.files[0];
+                                    setCredentials(newCreds);
+                                  }
+                                }}
+                              />
+                            </label>
+                            <span className="text-xs text-slate-500 truncate max-w-[200px]">{cred.value || 'No file chosen'}</span>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCredentials(credentials.filter(c => c.id !== cred.id))}
+                        className="text-slate-400 hover:text-rose-500 transition-colors p-2"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                  {credentials.length === 0 && (
+                    <div className="text-center py-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                      <p className="text-xs text-slate-400 font-medium">No credentials added yet.</p>
+                    </div>
+                  )}
+                </div>
 
                 {/* Motivation to teach */}
                 <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Why do you want to teach on Trileza? (Required)</label>
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Why is mentorship important to you? (Required)</label>
                   <textarea 
                     value={form.teachingMotivation}
                     onChange={e => setForm({...form, teachingMotivation: e.target.value})}
-                    placeholder="Describe your passion for mentorship, your course architecture objectives, and what sets your curriculum apart..."
+                    placeholder="Describe your passion for mentorship and what drives you to help others..."
                     className="w-full h-24 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-[1.5rem] px-6 py-4 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all resize-none"
                   />
                 </div>
 
                 {/* Expertise Specialties Choose list */}
-                <div className="space-y-4">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Choose Subject Expertise Areas (Pick at least 1)</label>
-                  <div className="flex flex-wrap gap-2.5">
-                    {COURSE_CATEGORIES.map(skill => {
-                      const selected = form.expertiseAreas.includes(skill);
-                      return (
+                <div className="space-y-4 relative">
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Course Expertise (Pick at least 1)</label>
+                  
+                  {/* Selected Chips */}
+                  {form.expertiseAreas.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {form.expertiseAreas.map(skill => (
+                        <span key={skill} className="px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-xs font-bold rounded-lg flex items-center gap-2">
+                          {skill}
+                          <button type="button" onClick={() => toggleExpertise(skill)} className="hover:text-emerald-900 dark:hover:text-emerald-200">
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input 
+                      type="text"
+                      value={expertiseSearch}
+                      onChange={(e) => { setExpertiseSearch(e.target.value); setShowExpertiseSuggestions(true); }}
+                      onFocus={() => setShowExpertiseSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowExpertiseSuggestions(false), 200)}
+                      placeholder="Type to search and add expertise areas..."
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                  
+                  {showExpertiseSuggestions && expertiseSearch && filteredExpertise.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-h-48 overflow-y-auto">
+                      {filteredExpertise.slice(0, 6).map(skill => (
                         <button
                           key={skill}
                           type="button"
-                          onClick={() => toggleExpertise(skill)}
-                          className={cn(
-                            "px-4 py-2 text-xs font-bold rounded-xl border-2 transition-all",
-                            selected
-                              ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
-                              : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-800 text-slate-500"
-                          )}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => { toggleExpertise(skill); setExpertiseSearch(''); setShowExpertiseSuggestions(false); }}
+                          className="w-full text-left px-5 py-3 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors first:rounded-t-2xl last:rounded-b-2xl"
                         >
                           {skill}
                         </button>
-                      );
-                    })}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Navigation Buttons */}
@@ -904,608 +948,8 @@ const Onboarding = () => {
                   <Button variant="outline" onClick={() => handleBack('identity')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
                   <Button 
                     disabled={!form.highestEducation || !form.teachingMotivation || form.expertiseAreas.length === 0}
-                    onClick={() => handleNext('training')} 
-                    className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl disabled:opacity-50"
-                  >
-                    Continue
-                  </Button>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* ── SECTION 4: PLATFORM ONBOARDING & TRAINING ── */}
-          {step === 'training' && (
-            <motion.div 
-              key="training" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
-              className="space-y-6"
-            >
-              <StepIndicator current={isFastTrack ? 3 : 4} total={isFastTrack ? 8 : 9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 4</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Platform Onboarding & Training</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Complete orientation tutorials and review copyright and commission structures.</p>
-              </div>
-
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
-                
-                {/* Simulated Orientation/Course Creation tutorials */}
-                <div className="space-y-4">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Mandatory Orientation Chapters</h4>
-                  <div className="space-y-3">
-                    
-                    {/* Chapter 1 */}
-                    <div className="p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                          <Play size={14} />
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200">1. Trileza Studio Visual & Sound Standards</p>
-                          <p className="text-[10px] text-slate-400">Duration: 4 mins • Guidelines for microphone sync & 1080p outputs.</p>
-                        </div>
-                      </div>
-                      <button 
-                        type="button" 
-                        onClick={() => setOrientationModules({...orientationModules, videoStandards: !orientationModules.videoStandards})}
-                        className={cn(
-                          "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border-2 transition-all",
-                          orientationModules.videoStandards
-                            ? "bg-emerald-600 text-white border-emerald-600"
-                            : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800"
-                        )}
-                      >
-                        {orientationModules.videoStandards ? 'Watched' : 'Mark Watched'}
-                      </button>
-                    </div>
-
-                    {/* Chapter 2 */}
-                    <div className="p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                          <Play size={14} />
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200">2. Active Pedagogy & Grading Metrics</p>
-                          <p className="text-[10px] text-slate-400">Duration: 6 mins • How to design high-engagement coding challenges.</p>
-                        </div>
-                      </div>
-                      <button 
-                        type="button" 
-                        onClick={() => setOrientationModules({...orientationModules, pedagogy: !orientationModules.pedagogy})}
-                        className={cn(
-                          "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border-2 transition-all",
-                          orientationModules.pedagogy
-                            ? "bg-emerald-600 text-white border-emerald-600"
-                            : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800"
-                        )}
-                      >
-                        {orientationModules.pedagogy ? 'Watched' : 'Mark Watched'}
-                      </button>
-                    </div>
-
-                    {/* Chapter 3 */}
-                    <div className="p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                          <Play size={14} />
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200">3. Copyright Laws & Plagiarism Audits</p>
-                          <p className="text-[10px] text-slate-400">Duration: 3 mins • Reviewing strict original work regulations.</p>
-                        </div>
-                      </div>
-                      <button 
-                        type="button" 
-                        onClick={() => setOrientationModules({...orientationModules, copyright: !orientationModules.copyright})}
-                        className={cn(
-                          "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border-2 transition-all",
-                          orientationModules.copyright
-                            ? "bg-emerald-600 text-white border-emerald-600"
-                            : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800"
-                        )}
-                      >
-                        {orientationModules.copyright ? 'Watched' : 'Mark Watched'}
-                      </button>
-                    </div>
-
-                  </div>
-                </div>
-
-                {/* Revenue Share Graphic model */}
-                <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-4">
-                  <h4 className="font-bold text-xs text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                    <DollarSign size={14} className="text-emerald-500" /> Revenue Share Configuration
-                  </h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    By submitting your credentials, you acknowledge the Trileza premium revenue share allocation:
-                  </p>
-                  <div className="grid grid-cols-2 gap-4 text-center">
-                    <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl">
-                      <p className="text-xs text-slate-400 uppercase font-black tracking-wider">Instructor Share</p>
-                      <h3 className="text-3xl font-black text-emerald-500">70%</h3>
-                      <p className="text-[9px] text-slate-400 mt-1">Paid on all premium courses</p>
-                    </div>
-                    <div className="p-4 bg-slate-200/20 dark:bg-slate-800/40 border border-slate-300/30 rounded-2xl">
-                      <p className="text-xs text-slate-400 uppercase font-black tracking-wider">Trileza Service fee</p>
-                      <h3 className="text-3xl font-black text-slate-700 dark:text-slate-300">30%</h3>
-                      <p className="text-[9px] text-slate-400 mt-1">Hosting, billing, server scale</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Navigation Buttons */}
-                <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <Button variant="outline" onClick={() => handleBack('qualifications')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
-                  <Button 
-                    disabled={!orientationModules.videoStandards || !orientationModules.pedagogy || !orientationModules.copyright}
-                    onClick={() => handleNext('course_setup')} 
-                    className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl disabled:opacity-50"
-                  >
-                    Continue
-                  </Button>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* ── SECTION 5: COURSE CREATION PROCESS ── */}
-          {step === 'course_setup' && (
-            <motion.div 
-              key="course_setup" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
-              className="space-y-6"
-            >
-              <StepIndicator current={isFastTrack ? 4 : 5} total={isFastTrack ? 8 : 9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 5</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Initial Course Setup</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Initialize the core configuration and descriptive index tags for your initial course.</p>
-              </div>
-
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Title */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Course Title (Required)</label>
-                    <input 
-                      type="text" 
-                      value={form.courseTitle}
-                      onChange={e => setForm({...form, courseTitle: e.target.value})}
-                      placeholder="e.g. Advanced Agentic Design Systems"
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                    />
-                  </div>
-
-                  {/* Subtitle */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Course Subtitle (Required)</label>
-                    <input 
-                      type="text" 
-                      value={form.courseSubtitle}
-                      onChange={e => setForm({...form, courseSubtitle: e.target.value})}
-                      placeholder="e.g. Build robust reactive AI architectures"
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                    />
-                  </div>
-
-                  {/* Category */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Course Category</label>
-                    <select 
-                      value={form.courseCategory}
-                      onChange={e => setForm({...form, courseCategory: e.target.value})}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
-                    >
-                      <option value="">Select Category...</option>
-                      {COURSE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                    </select>
-                  </div>
-
-                  {/* Level */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Course Difficulty Level</label>
-                    <select 
-                      value={form.courseLevel}
-                      onChange={e => setForm({...form, courseLevel: e.target.value})}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
-                    >
-                      <option value="Beginner">Beginner</option>
-                      <option value="Intermediate">Intermediate</option>
-                      <option value="Advanced">Advanced</option>
-                      <option value="All Levels">All Levels / General Path</option>
-                    </select>
-                  </div>
-
-                  {/* Target Audience */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Target Audience (Required)</label>
-                    <input 
-                      type="text" 
-                      value={form.courseTarget}
-                      onChange={e => setForm({...form, courseTarget: e.target.value})}
-                      placeholder="e.g. Junior software developers seeking neural system architecture"
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                    />
-                  </div>
-
-                  {/* Prerequisites */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Prerequisites (Required)</label>
-                    <input 
-                      type="text" 
-                      value={form.coursePrereqs}
-                      onChange={e => setForm({...form, coursePrereqs: e.target.value})}
-                      placeholder="e.g. Intermediate python, fundamental data flow concepts"
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* Learning objectives (3 - 5 objectives) */}
-                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center justify-between ml-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400">Learning Objectives (Define 3-5)</label>
-                    {objectives.length < 5 && (
-                      <button 
-                        type="button" 
-                        onClick={() => setObjectives([...objectives, ''])}
-                        className="text-xs text-emerald-600 font-black uppercase tracking-wider flex items-center gap-1 hover:text-emerald-700"
-                      >
-                        <Plus size={14} /> Add Objective
-                      </button>
-                    )}
-                  </div>
-                  <div className="space-y-3">
-                    {objectives.map((obj, index) => (
-                      <div key={index} className="flex gap-3">
-                        <input 
-                          type="text"
-                          value={obj}
-                          onChange={(e) => {
-                            const newObjs = [...objectives];
-                            newObjs[index] = e.target.value;
-                            setObjectives(newObjs);
-                          }}
-                          placeholder={`Objective ${index + 1}: e.g. Design stateful micro-agents`}
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-xs font-semibold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
-                        />
-                        {objectives.length > 3 && (
-                          <button 
-                            type="button" 
-                            onClick={() => setObjectives(objectives.filter((_, i) => i !== index))}
-                            className="text-red-500 hover:text-red-700 transition-colors"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Long description */}
-                <div className="space-y-2 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Long-form Course Description (Required)</label>
-                  <textarea 
-                    value={form.courseDescription}
-                    onChange={e => setForm({...form, courseDescription: e.target.value})}
-                    placeholder="Enter an extensive comprehensive description detailing syllabus modules, project requirements, and output variables..."
-                    className="w-full h-32 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-[1.5rem] px-6 py-4 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all resize-none"
-                  />
-                </div>
-
-                {/* Promo video & Thumbnail uploads */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl text-center space-y-3">
-                    <div className="w-10 h-10 bg-white dark:bg-slate-800 shadow rounded-xl flex items-center justify-center mx-auto text-slate-400">
-                      <Video size={18} />
-                    </div>
-                    <div>
-                      <h5 className="font-bold text-xs text-slate-800 dark:text-white">Promotional Video</h5>
-                      <p className="text-[9px] text-slate-400">Max 50MB, MP4/MOV format.</p>
-                    </div>
-                    <label className="inline-block px-4 py-2 bg-slate-950 dark:bg-slate-800 hover:bg-black text-white text-[9px] font-black uppercase tracking-wider rounded-xl cursor-pointer">
-                      {promoVideoUploaded ? 'Change Video' : 'Select Video'}
-                      <input 
-                        type="file" 
-                        accept="video/*" 
-                        className="hidden" 
-                        onChange={e => { if (e.target.files?.[0]) setPromoVideoUploaded(e.target.files[0].name); }}
-                      />
-                    </label>
-                    {promoVideoUploaded && <p className="text-[10px] text-emerald-500 font-bold">{promoVideoUploaded}</p>}
-                  </div>
-
-                  <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl text-center space-y-3">
-                    <div className="w-10 h-10 bg-white dark:bg-slate-800 shadow rounded-xl flex items-center justify-center mx-auto text-slate-400">
-                      <Camera size={18} />
-                    </div>
-                    <div>
-                      <h5 className="font-bold text-xs text-slate-800 dark:text-white">Course Thumbnail</h5>
-                      <p className="text-[9px] text-slate-400">1280x720px, max 5MB (PNG/JPG).</p>
-                    </div>
-                    <label className="inline-block px-4 py-2 bg-slate-950 dark:bg-slate-800 hover:bg-black text-white text-[9px] font-black uppercase tracking-wider rounded-xl cursor-pointer">
-                      {thumbnailUploaded ? 'Change Image' : 'Select Image'}
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
-                        onChange={e => { if (e.target.files?.[0]) setThumbnailUploaded(e.target.files[0].name); }}
-                      />
-                    </label>
-                    {thumbnailUploaded && <p className="text-[10px] text-emerald-500 font-bold">{thumbnailUploaded}</p>}
-                  </div>
-                </div>
-
-                {/* Deliverable Checkboxes */}
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <label className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={form.hasPracticeTests}
-                      onChange={e => setForm({...form, hasPracticeTests: e.target.checked})}
-                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wide">Practice Assignments</span>
-                  </label>
-
-                  <label className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={form.hasCodingEx}
-                      onChange={e => setForm({...form, hasCodingEx: e.target.checked})}
-                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wide">Coding Exercises</span>
-                  </label>
-                </div>
-
-                {/* Navigation Buttons */}
-                <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <Button variant="outline" onClick={() => handleBack('training')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
-                  <Button 
-                    disabled={
-                      !form.courseTitle || 
-                      !form.courseSubtitle || 
-                      !form.courseCategory || 
-                      !form.courseTarget || 
-                      !form.coursePrereqs || 
-                      !form.courseDescription ||
-                      objectives.filter(Boolean).length < 3
-                    }
-                    onClick={() => handleNext('curriculum')} 
-                    className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl disabled:opacity-50"
-                  >
-                    Continue
-                  </Button>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* ── SECTION 6: CURRICULUM & CONTENT UPLOAD ── */}
-          {step === 'curriculum' && (
-            <motion.div 
-              key="curriculum" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
-              className="space-y-6"
-            >
-              <StepIndicator current={isFastTrack ? 5 : 6} total={isFastTrack ? 8 : 9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 6</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Curriculum & Video Upload</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Construct syllabus chapters and commit original authorship guarantees.</p>
-              </div>
-
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
-                
-                {/* Visual drag & drop Curriculum builder mockup */}
-                <div className="space-y-4">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Active Syllabus Grid</h4>
-                  <div className="p-6 border-2 border-slate-200 dark:border-slate-800 rounded-3xl bg-slate-50/50 dark:bg-slate-900/50 space-y-4">
-                    
-                    {/* Section 1 */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase tracking-wider bg-slate-900 dark:bg-slate-800 text-white px-3 py-1 rounded-lg">Section 1: Initial Architecture</span>
-                        <span className="text-[10px] text-slate-400 font-semibold">1 Lecture</span>
-                      </div>
-                      
-                      <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-between">
-                        <div className="flex items-center gap-3 text-slate-800 dark:text-slate-200">
-                          <Video size={16} className="text-emerald-500" />
-                          <div>
-                            <p className="text-xs font-bold">1.1 Project Structure Setup & InsForge Config</p>
-                            <p className="text-[9px] text-slate-400">Video: setup_module.mp4 (Ready) • Manual Closed Captions attached</p>
-                          </div>
-                        </div>
-                        <span className="text-[9px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded font-black uppercase">Verified</span>
-                      </div>
-                    </div>
-
-                    {/* Drag-and-drop / Add Section buttons */}
-                    <div className="flex gap-4">
-                      <button type="button" className="flex-1 py-3 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-emerald-500 rounded-2xl transition-all">
-                        + Add Section Unit
-                      </button>
-                      <button type="button" className="flex-1 py-3 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-emerald-500 rounded-2xl transition-all">
-                        + Add Lecture Item
-                      </button>
-                    </div>
-
-                  </div>
-                </div>
-
-                {/* Video resolutions limit card */}
-                <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-2">
-                  <h4 className="font-bold text-xs text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                    <Info size={14} className="text-emerald-500" /> Lecture Media Requirements
-                  </h4>
-                  <p className="text-xs text-slate-400 leading-relaxed font-medium">
-                    All committed video uploads must comply with our strict encoding regulations: **MP4 format, 1080p minimum resolution, H.264 video codec, and max 2GB file size limit per lecture.**
-                  </p>
-                </div>
-
-                {/* Original content declaration switch */}
-                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
-                  <input 
-                    type="checkbox" 
-                    checked={form.curriculumConfirmedOriginal}
-                    onChange={e => setForm({...form, curriculumConfirmedOriginal: e.target.checked})}
-                    className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 mt-1"
-                  />
-                  <div>
-                    <h4 className="font-bold text-sm text-slate-800 dark:text-white">Copyright & Originality Attestation (Required)</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed mt-1">I guarantee that all course curricula, slide decks, coding units, and video tracks represent my original work, or that I possess appropriate reprint/resale licensing credentials.</p>
-                  </div>
-                </label>
-
-                {/* Navigation Buttons */}
-                <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <Button variant="outline" onClick={() => handleBack('course_setup')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
-                  <Button 
-                    disabled={!form.curriculumConfirmedOriginal}
-                    onClick={() => handleNext('pricing')} 
-                    className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl disabled:opacity-50"
-                  >
-                    Continue
-                  </Button>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* ── SECTION 7: PRICING & DISTRIBUTION ── */}
-          {step === 'pricing' && (
-            <motion.div 
-              key="pricing" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
-              className="space-y-6"
-            >
-              <StepIndicator current={isFastTrack ? 6 : 7} total={isFastTrack ? 8 : 9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 7</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Pricing & Marketplace</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Declare your price margins, generate coupons, and choose distribution networks.</p>
-              </div>
-
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
-                
-                {/* Free vs Paid Toggle */}
-                <div className="grid grid-cols-2 gap-4">
-                  {['free', 'paid'].map(track => (
-                    <button
-                      key={track}
-                      type="button"
-                      onClick={() => setForm({...form, courseFreeTrack: track})}
-                      className={cn(
-                        "py-5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all border-2",
-                        form.courseFreeTrack === track
-                          ? "bg-slate-950 dark:bg-slate-800 text-white border-slate-950 dark:border-slate-800 shadow-lg"
-                          : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-100"
-                      )}
-                    >
-                      {track === 'free' ? 'Free Course Track' : 'Paid Course Track'}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Paid courses: pricing tiers selector */}
-                {form.courseFreeTrack === 'paid' && (
-                  <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Choose Course Price Tier</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                      {PRICE_TIERS.filter(p => p.tier !== 'Free').map(p => (
-                        <button
-                          key={p.tier}
-                          type="button"
-                          onClick={() => setForm({...form, selectedPriceTier: p.tier})}
-                          className={cn(
-                            "py-4 rounded-xl border text-center transition-all flex flex-col justify-center items-center",
-                            form.selectedPriceTier === p.tier
-                              ? "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold"
-                              : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300"
-                          )}
-                        >
-                          <span className="text-[9px] uppercase tracking-wider opacity-75">{p.tier}</span>
-                          <span className="text-sm font-black mt-0.5">{p.price}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Optional Coupon creation */}
-                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Configure Promotional Coupons (Optional)</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 ml-2">Coupon Code</label>
-                      <div className="relative">
-                        <Tag size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input 
-                          type="text" 
-                          value={form.couponCode}
-                          onChange={e => setForm({...form, couponCode: e.target.value.toUpperCase()})}
-                          placeholder="e.g. EARLYBIRD-AI"
-                          className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl pl-12 pr-6 py-4 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 ml-2">Discount Percentage</label>
-                      <select
-                        value={form.couponDiscount}
-                        onChange={e => setForm({...form, couponDiscount: e.target.value})}
-                        className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
-                      >
-                        <option value="10">10% Off</option>
-                        <option value="20">20% Off</option>
-                        <option value="50">50% Off</option>
-                        <option value="100">100% Free Access Link</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Distribution option (marketplace vs enterprise) */}
-                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Target Course Distribution</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {[
-                      { id: 'marketplace', title: 'Trileza Public Marketplace', desc: 'Available for global direct student subscriptions.' },
-                      { id: 'enterprise-only', title: 'Trileza for Enterprise', desc: 'Restricted to corporate sub-organizations.' }
-                    ].map(opt => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setForm({...form, distributionOption: opt.id})}
-                        className={cn(
-                          "p-5 rounded-2xl border-2 text-left transition-all flex flex-col justify-center",
-                          form.distributionOption === opt.id
-                            ? "bg-emerald-500/5 border-emerald-500 dark:border-emerald-400"
-                            : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
-                        )}
-                      >
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">{opt.title}</span>
-                        <span className="text-[9px] text-slate-400 mt-1 leading-normal">{opt.desc}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Navigation Buttons */}
-                <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <Button variant="outline" onClick={() => handleBack('curriculum')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
-                  <Button 
                     onClick={() => handleNext('preferences')} 
-                    className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl"
+                    className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl disabled:opacity-50"
                   >
                     Continue
                   </Button>
@@ -1513,6 +957,8 @@ const Onboarding = () => {
               </Card>
             </motion.div>
           )}
+
+
 
           {/* ── SECTION 8: COMMUNICATION & PREFERENCES ── */}
           {step === 'preferences' && (
@@ -1521,13 +967,13 @@ const Onboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={isFastTrack ? 7 : 8} total={isFastTrack ? 8 : 9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 8</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Communication Preferences</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Control what reports and platform analytics digests are delivered to your email.</p>
-              </div>
+              <PageHeader 
+                title="Communication Preferences"
+                description="Control what reports and platform analytics digests are delivered to your email."
+                tag="SECTION 8"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
                 
@@ -1575,7 +1021,7 @@ const Onboarding = () => {
 
                 {/* Navigation Buttons */}
                 <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <Button variant="outline" onClick={() => handleBack('pricing')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
+                  <Button variant="outline" onClick={() => handleBack('qualifications')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
                   <Button 
                     onClick={() => handleNext('review')} 
                     className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl"
@@ -1594,26 +1040,26 @@ const Onboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={isFastTrack ? 8 : 9} total={isFastTrack ? 8 : 9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 9</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Submission & Audit Review</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Perform a quality check assurance scan and launch your instructor request.</p>
-              </div>
+              <PageHeader 
+                title="Submission & Audit Review"
+                description="Perform a quality check assurance scan and launch your instructor request."
+                tag="SECTION 9"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
                 
-                {/* Course parameters visual recap */}
+                {/* Mentor Profile Recap */}
                 <div className="flex items-center gap-6 pb-6 border-b border-slate-100 dark:border-slate-800">
                   <div className="w-14 h-14 bg-gradient-to-br from-emerald-600 to-emerald-400 rounded-xl flex items-center justify-center text-white font-black text-lg flex-shrink-0 shadow-lg">
-                    {form.courseTitle ? form.courseTitle[0] : 'C'}
+                    {form.publicName ? form.publicName[0] : 'M'}
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900 dark:text-white">{form.courseTitle || 'Debut Course Title'}</h3>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{form.courseCategory} • Level: {form.courseLevel}</p>
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white">{form.publicName || 'Mentor Name'}</h3>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{form.yearsExp} • {form.highestEducation || 'No Education Specified'}</p>
                     <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold mt-1">
-                      <Users2 size={12} /> Instructor: <span className="text-emerald-600 dark:text-emerald-400 font-black">{form.publicName}</span>
+                      <Award size={12} /> Expertise: <span className="text-emerald-600 dark:text-emerald-400 font-black">{form.expertiseAreas.slice(0, 3).join(', ') || 'None selected'} {form.expertiseAreas.length > 3 ? '...' : ''}</span>
                     </div>
                   </div>
                 </div>
@@ -1624,7 +1070,7 @@ const Onboarding = () => {
                     <Clock size={14} className="text-emerald-500" /> Expected Review Timeline
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-                    Upon submission, your onboarding parameters and initial course blueprint are sent to the Trileza Quality Review Team. **The verification process takes between 3 to 10 business days.** If changes are required, you will receive a diagnostic checklist directly in your inbox.
+                    Upon submission, your onboarding parameters and qualifications are sent to the Trileza Quality Review Team. **The verification process takes between 3 to 10 business days.** If changes are required, you will receive a diagnostic checklist directly in your inbox.
                   </p>
                 </div>
 
@@ -1679,8 +1125,8 @@ const Onboarding = () => {
               <div className="relative w-40 h-40">
                 <div className="absolute inset-0 rounded-full border-4 border-emerald-500/10 animate-spin" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-20 h-20 bg-slate-900 dark:bg-emerald-600 rounded-full flex items-center justify-center shadow-2xl">
-                    <Award className="text-white animate-pulse" size={36} />
+                  <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                    <img src="/logo.png" alt="Trileza Logo" className="w-16 h-16 object-contain animate-pulse" />
                   </div>
                 </div>
               </div>

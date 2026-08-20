@@ -19,3 +19,5 @@ export function formatDate(date: string | Date): string {
     year: 'numeric',
   }).format(new Date(date));
 }
+
+export { executeWithAutoRefresh } from './authHelper';

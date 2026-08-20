@@ -1,0 +1,73 @@
+[build]
+  command = "npm run build && npm run build:admin"
+  publish = "dist"
+
+[[edge-functions]]
+  path = "/share/*"
+  function = "share"
+
+[[redirects]]
+  from = "/api/library/*"
+  to = "/.netlify/functions/library_api/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/feeds/*"
+  to = "/.netlify/functions/feeds_api?path=feeds/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/posts/*"
+  to = "/.netlify/functions/feeds_api?path=posts/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/posts"
+  to = "/.netlify/functions/feeds_api?path=posts"
+  status = 200
+
+[[redirects]]
+  from = "/api/comments/*"
+  to = "/.netlify/functions/feeds_api?path=comments/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/comments"
+  to = "/.netlify/functions/feeds_api?path=comments"
+  status = 200
+
+[[redirects]]
+  from = "/api/likes"
+  to = "/.netlify/functions/feeds_api?path=likes"
+  status = 200
+
+[[redirects]]
+  from = "/api/follows/*"
+  to = "/.netlify/functions/feeds_api?path=follows/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/follows"
+  to = "/.netlify/functions/feeds_api?path=follows"
+  status = 200
+
+[[redirects]]
+  from = "/api/notifications/*"
+  to = "/.netlify/functions/feeds_api?path=notifications/:splat"
+  status = 200
+
+
+[[redirects]]
+  from = "/gate/*"
+  to = "/admin/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

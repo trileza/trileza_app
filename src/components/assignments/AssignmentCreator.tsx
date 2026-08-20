@@ -5,12 +5,12 @@ import { cn } from '../../utils';
 import { nexus } from '../../lib/nexus';
 
 interface AssignmentCreatorProps {
-  courseId: string;
-  tutorId: string;
+  courseId?: string;
+  tutorId?: string;
   showFeedback: (msg: string, type?: 'success' | 'info') => void;
 }
 
-const AssignmentCreator = ({ courseId, tutorId, showFeedback }: AssignmentCreatorProps) => {
+const AssignmentCreator = ({ courseId = '', tutorId = '', showFeedback }: AssignmentCreatorProps) => {
   const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
   const [taskType, setTaskType] = useState<'multichoice' | 'blanks' | 'written' | 'video'>('multichoice');
 
@@ -137,6 +137,7 @@ const AssignmentCreator = ({ courseId, tutorId, showFeedback }: AssignmentCreato
 
       if (error) throw error;
 
+      window.dispatchEvent(new CustomEvent('trileza-assignment-created'));
       showFeedback('Assignment dispatched successfully!');
       
       // Reset Form fields
@@ -183,6 +184,7 @@ const AssignmentCreator = ({ courseId, tutorId, showFeedback }: AssignmentCreato
 
       if (error) throw error;
 
+      window.dispatchEvent(new CustomEvent('trileza-assignment-created'));
       showFeedback('Assignment deleted successfully!');
       await fetchExistingAssignments();
     } catch (e: any) {
@@ -393,7 +395,7 @@ const AssignmentCreator = ({ courseId, tutorId, showFeedback }: AssignmentCreato
                 >
                   {saving ? (
                     <>
-                      <Loader2 size={16} className="animate-spin" /> Dispatching...
+                      <img src="/logo.png" alt="Loading" className="w-4 h-4 object-contain animate-spin" /> Dispatching...
                     </>
                   ) : (
                     <>

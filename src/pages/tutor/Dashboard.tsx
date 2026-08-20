@@ -36,17 +36,14 @@ import { courseService } from '../../lib/services/courses';
 import type { Course } from '../../lib/database.types';
 import { cn } from '../../utils';
 
-import LibraryHighlights from '../../components/shared/LibraryHighlights';
-
 const TutorDashboard = () => {
   const navigate = useNavigate();
-  const { user, updateProfile } = useAuthStore();
+  const { user } = useAuthStore();
   const [toast, setToast] = React.useState<{message: string, type: 'success' | 'info'} | null>(null);
-  const [isEditing, setIsEditing] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [courses, setCourses] = React.useState<Course[]>([]);
   const [loadingCourses, setLoadingCourses] = React.useState(true);
+  const [menteeCount, setMenteeCount] = React.useState<number>(0);
 
   React.useEffect(() => {
     if (user) {
@@ -61,6 +58,21 @@ const TutorDashboard = () => {
         }
       };
       fetchCourses();
+
+      // Fetch real mentee count
+      const fetchMenteeCount = async () => {
+        try {
+          const { count } = await (await import('../../lib/nexus')).nexus.database
+            .from('profiles')
+            .select('id', { count: 'exact', head: true })
+            .eq('metadata->>assigned_mentor_id', user.id);
+          setMenteeCount(count || 0);
+        } catch (err) {
+          console.error('[TutorDashboard] Failed to fetch mentee count:', err);
+          // count stays 0
+        }
+      };
+      fetchMenteeCount();
     }
   }, [user]);
 
@@ -69,87 +81,33 @@ const TutorDashboard = () => {
   };
   
   const initialData = React.useMemo(() => ({
-    name: user?.full_name || 'Dr. David Ileza',
-    bio: user?.bio || 'Expert in Advanced Agentic Coding & AI Systems. Dedicated to empowering the next generation of engineers through practical, high-impact education.',
-    avatar: user?.avatar_url || 'https://api.dicebear.com/7.x/avataaars/svg?seed=David',
-    website: 'trileza.com/david',
-    email: user?.email || 'david@trileza.com',
-    expertise: [
-      { id: Date.now() + 1, type: 'Industrial Background', desc: 'Lead AI Architect at Trileza Systems. Over 15 years of codebase management and agentic system design.', icon: 'briefcase' },
-      { id: Date.now() + 2, type: 'Academic Pedigree', desc: 'PH.D. STANFORD UNIVERSITY • M.SC. MIT', icon: 'grad' }
-    ]
+    name: user?.full_name || '',
+    bio: user?.bio || '',
+    avatar: user?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id || 'user'}`,
+    website: (user as any)?.website || '',
+    email: user?.email || '',
+    expertise: (user as any)?.expertise || []
   }), [user]);
 
   const [tutorData, setTutorData] = React.useState(initialData);
 
-  const [editForm, setEditForm] = React.useState({
-    name: initialData.name,
-    bio: initialData.bio,
-    avatar: initialData.avatar,
-    website: initialData.website,
-    expertise: initialData.expertise
-  });
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setEditForm(prev => ({ ...prev, avatar: url }));
-      showFeedback('Picture uploaded! Don\'t forget to save changes.');
-    }
-  };
-
-  const addExpertise = () => {
-    setEditForm(prev => ({
-      ...prev,
-      expertise: [...prev.expertise, { id: Date.now(), type: 'New Role', desc: 'Details about this role', icon: 'briefcase' }]
-    }));
-    setIsExpanded(true);
-  };
-
-  const removeExpertise = (id: number) => {
-    setEditForm(prev => ({
-      ...prev,
-      expertise: prev.expertise.filter(e => e.id !== id)
-    }));
-  };
-
-  const updateExpertise = (id: number, field: string, value: string) => {
-    setEditForm(prev => ({
-      ...prev,
-      expertise: prev.expertise.map(e => e.id === id ? { ...e, [field]: value } : e)
-    }));
-  };
-
-  const handleSave = async () => {
+  // Keep tutorData in sync when user data loads
+  React.useEffect(() => {
     if (user) {
-      const { error } = await updateProfile({
-        full_name: editForm.name,
-        bio: editForm.bio,
-        avatar_url: editForm.avatar,
-        website: editForm.website,
-        expertise: editForm.expertise,
-      });
-      if (error) {
-        showFeedback('Failed to save: ' + error, 'info');
-        return;
-      }
+      const fresh = {
+        name: user.full_name || '',
+        bio: user.bio || '',
+        avatar: user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`,
+        website: (user as any)?.website || '',
+        email: user.email || '',
+        expertise: (user as any)?.expertise || []
+      };
+      setTutorData(fresh);
     }
-    setTutorData({
-      ...tutorData,
-      name: editForm.name,
-      bio: editForm.bio,
-      avatar: editForm.avatar,
-      website: editForm.website,
-      expertise: editForm.expertise
-    });
-    setIsEditing(false);
-    showFeedback('Profile completely updated!');
-  };
+  }, [user?.full_name, user?.bio, user?.avatar_url]);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-10 animate-in fade-in duration-700 pb-24">
-      <LibraryHighlights />
+    <div className="space-y-10 w-full animate-in fade-in duration-700 pb-24 font-sans relative">
 
       {/* ═══════════════════════════════════════════════════════════════════
           HERO PROFILE CARD — Social Media Style
@@ -157,7 +115,7 @@ const TutorDashboard = () => {
       <div className="rounded-3xl overflow-hidden shadow-2xl shadow-slate-300/40">
         
         {/* ── COVER BANNER ── */}
-        <div className="relative h-52 md:h-64 overflow-hidden" style={{
+        <div className="relative h-40 sm:h-52 md:h-64 overflow-hidden" style={{
           background: 'linear-gradient(135deg, #052e16 0%, #14532d 25%, #166534 50%, #15803d 75%, #16a34a 100%)'
         }}>
           {/* Mesh / Organic SVG pattern */}
@@ -174,144 +132,88 @@ const TutorDashboard = () => {
           <div className="absolute -bottom-32 -left-20 w-80 h-80 rounded-full bg-[#4ade80]/10 blur-3xl" />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-40 rounded-full bg-white/[0.03] blur-2xl rotate-12" />
           
-          {/* Top bar */}
-          <div className="absolute top-0 left-0 right-0 px-8 py-5 flex items-center justify-between">
+          {/* Top bar — subtle ambient detail */}
+          <div className="hidden md:flex absolute top-0 left-0 right-0 px-8 py-5 items-center justify-between pointer-events-none">
             <div className="flex items-center gap-2.5 text-white/70">
               <div className="w-8 h-8 rounded-lg bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
                 <Sparkles size={14} className="text-[#4ade80]" />
               </div>
-              <span className="text-sm font-bold uppercase tracking-wider">Nexus Ecosystem</span>
+              <span className="text-sm font-bold uppercase tracking-wider text-emerald-300">Trileza Mentor Platform</span>
             </div>
-            <Button
-              onClick={() => navigate('/live')}
-              className="bg-white text-[#14532d] hover:bg-white/90 border-none rounded-full px-6 h-10 font-bold text-sm flex items-center gap-2 shadow-xl shadow-black/20 transition-all hover:scale-[1.02]"
-            >
-              <Radio size={15} className="text-[#16a34a]" /> Enter Live Stage
-            </Button>
           </div>
 
-          {/* Banner title */}
-          <div className="absolute bottom-6 left-8 md:left-44 md:bottom-7">
-            <h2 className="text-white text-3xl md:text-4xl font-black tracking-tight drop-shadow-lg">
-              Mentor Command Center
+          {/* Banner title — offset cleanly so avatar never blocks text */}
+          <div className="absolute bottom-4 left-28 sm:bottom-6 sm:left-36 md:left-44 md:bottom-7">
+            <h2 className="text-white text-xl sm:text-3xl md:text-4xl font-black tracking-tight drop-shadow-lg">
+              Mentor Profile
             </h2>
           </div>
         </div>
 
         {/* ── PROFILE INFO BAR ── */}
-        <div className="relative bg-white">
+        <div className="relative bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
           {/* Avatar overlapping banner */}
-          <div className="absolute -top-16 left-6 md:left-8 z-20">
+          <div className="absolute -top-12 sm:-top-16 left-4 sm:left-6 md:left-8 z-20">
             <div className="relative group">
               {/* Online ring */}
-              <div className="absolute -inset-1.5 rounded-3xl bg-gradient-to-br from-[#22c55e] to-[#16a34a] opacity-80" />
-              <div className="relative w-28 h-28 md:w-32 md:h-32 rounded-3xl border-[5px] border-white shadow-2xl overflow-hidden bg-slate-100">
+              <div className="absolute -inset-1.5 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-[#22c55e] to-[#16a34a] opacity-80" />
+              <div className="relative w-20 h-20 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-2xl sm:rounded-3xl border-[4px] sm:border-[5px] border-white dark:border-slate-900 shadow-2xl overflow-hidden bg-slate-100 dark:bg-slate-800">
                 <img 
-                  src={isEditing ? editForm.avatar : tutorData.avatar} 
+                  src={tutorData.avatar} 
                   alt={tutorData.name} 
                   className="w-full h-full object-cover"
                 />
-                {isEditing && (
-                  <div 
-                    className="absolute inset-0 bg-black/50 flex items-center justify-center cursor-pointer hover:bg-black/60 transition-colors"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Camera className="text-white" size={28} />
-                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-                  </div>
-                )}
               </div>
               {/* Verified badge */}
-              {!isEditing && (
-                <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-[#16a34a] rounded-xl border-[3px] border-white flex items-center justify-center shadow-lg">
-                  <CheckCircle size={14} className="text-white" />
-                </div>
-              )}
+              <div className="absolute -bottom-1 -right-1 w-7 h-7 sm:w-8 sm:h-8 bg-[#16a34a] rounded-xl border-[3px] border-white dark:border-slate-900 flex items-center justify-center shadow-lg">
+                <CheckCircle size={14} className="text-white" />
+              </div>
             </div>
           </div>
 
           {/* Info + Actions */}
-          <div className="pt-4 md:pt-5 pb-6 px-6 md:px-8 ml-0 md:ml-44">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mt-14 md:mt-0">
+          <div className="pt-3 sm:pt-4 md:pt-5 pb-4 sm:pb-6 px-4 sm:px-6 md:px-8 ml-0 md:ml-44">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mt-10 sm:mt-14 md:mt-0">
               {/* Left: Name + badge */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#dcfce7] text-[#166534] text-xs font-bold uppercase tracking-wider border border-[#bbf7d0]">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#dcfce7] dark:bg-emerald-950/40 text-[#166534] dark:text-emerald-400 text-xs font-bold uppercase tracking-wider border border-[#bbf7d0] dark:border-emerald-800/40">
                     <CheckCircle size={11} /> Verified Mentor
                   </span>
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold uppercase tracking-wider">
-                    <Star size={11} className="text-amber-500" /> 4.9 Rating
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">
+                    <Award size={11} className="text-[#16a34a]" /> {courses.length} {courses.length === 1 ? 'Course' : 'Courses'}
                   </span>
                 </div>
-                {isEditing ? (
-                  <input 
-                    type="text" 
-                    value={editForm.name}
-                    onChange={(e) => setEditForm({...editForm, name: e.target.value})}
-                    className="w-full text-2xl font-black p-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-green-500 bg-slate-50 text-slate-900"
-                    placeholder="Full Name"
-                  />
-                ) : (
-                  <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900">
-                    {tutorData.name}
-                  </h1>
-                )}
-                {isEditing ? (
-                  <textarea 
-                    value={editForm.bio}
-                    onChange={(e) => setEditForm({...editForm, bio: e.target.value})}
-                    className="w-full h-16 p-2 text-slate-600 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-green-500 bg-slate-50 resize-none text-sm"
-                    placeholder="Your Bio"
-                  />
-                ) : (
-                  <p className="text-slate-500 text-sm font-medium max-w-lg">
-                    {tutorData.bio}
-                  </p>
-                )}
+                <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+                  {tutorData.name}
+                </h1>
+                <p className="text-slate-500 dark:text-slate-400 text-sm font-medium max-w-lg">
+                  {tutorData.bio}
+                </p>
               </div>
 
               {/* Right: Action buttons */}
               <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                {isEditing ? (
-                  <>
-                    <Button 
-                      onClick={handleSave}
-                      className="bg-[#16a34a] hover:bg-[#15803d] text-white border-none rounded-full px-6 h-10 font-bold text-sm shadow-lg shadow-green-600/25"
-                    >
-                      Save Changes
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      className="border-slate-200 text-slate-600 rounded-full px-5 h-10 font-bold text-sm hover:bg-slate-50"
-                      onClick={() => { setEditForm({ ...tutorData }); setIsEditing(false); }}
-                    >
-                      Cancel
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      onClick={() => setIsEditing(true)} 
-                      variant="outline"
-                      className="border-slate-200 text-slate-700 rounded-full px-5 h-10 font-bold text-sm hover:bg-slate-50 flex items-center gap-2"
-                    >
-                      <Edit2 size={14} /> Edit Profile
-                    </Button>
-                    <Button
-                      onClick={() => navigate('/portfolio')} 
-                      className="bg-[#16a34a] hover:bg-[#15803d] text-white border-none rounded-full px-5 h-10 font-bold text-sm shadow-lg shadow-green-600/25 flex items-center gap-2"
-                    >
-                      <Globe size={14} /> Public Profile
-                    </Button>
-                    <Button
-                      onClick={() => navigate('/messages')} 
-                      variant="outline"
-                      className="border-slate-200 text-slate-700 rounded-full px-5 h-10 font-bold text-sm hover:bg-slate-50 flex items-center gap-2"
-                    >
-                      <Mail size={14} /> Message
-                    </Button>
-                  </>
-                )}
+                  <Button
+                    onClick={() => navigate('/profile/edit')} 
+                    variant="outline"
+                    className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-full px-5 h-10 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Edit2 size={14} /> Edit Profile
+                  </Button>
+                  <Button
+                    onClick={() => navigate('/portfolio')} 
+                    className="bg-[#16a34a] hover:bg-[#15803d] text-white border-none rounded-full px-5 h-10 font-bold text-sm shadow-lg shadow-green-600/25 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Globe size={14} /> Public Profile
+                  </Button>
+                  <Button
+                    onClick={() => navigate('/messages')} 
+                    variant="outline"
+                    className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-full px-5 h-10 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Mail size={14} /> Message
+                  </Button>
               </div>
             </div>
           </div>
@@ -319,55 +221,53 @@ const TutorDashboard = () => {
       </div>
 
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          STATS ROW — Green Palette Gradient Cards
-          ═══════════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {/* Stat 1 */}
-        <div className="relative overflow-hidden p-5 rounded-2xl bg-gradient-to-br from-[#f0fdf4] to-[#dcfce7] border border-[#bbf7d0]/50 group hover:shadow-lg transition-all cursor-default">
-          <div className="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-[#bbf7d0]/40 blur-xl" />
+      {/* ── STATS ROW ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        {/* Stat 1: Real mentee count */}
+        <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#f0fdf4] to-[#dcfce7] dark:from-emerald-950/40 dark:to-emerald-900/30 border border-[#bbf7d0]/50 dark:border-emerald-800/40 group hover:shadow-lg transition-all cursor-pointer" onClick={() => navigate('/mentorship')}>
+          <div className="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-[#bbf7d0]/40 dark:bg-emerald-800/20 blur-xl" />
           <div className="relative z-10">
-            <div className="w-10 h-10 rounded-xl bg-[#bbf7d0] flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <Users size={18} className="text-[#166534]" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#bbf7d0] dark:bg-emerald-800/60 flex items-center justify-center mb-2.5 sm:mb-3 group-hover:scale-110 transition-transform">
+              <Users size={18} className="text-[#166534] dark:text-emerald-300" />
             </div>
-            <p className="text-xs font-bold uppercase tracking-wider text-[#15803d] mb-0.5">Total Mentees</p>
-            <p className="text-3xl font-black text-[#14532d]">124</p>
+            <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#15803d] dark:text-emerald-400 mb-0.5">My Mentees</p>
+            <p className="text-2xl sm:text-3xl font-black text-[#14532d] dark:text-emerald-200">{menteeCount}</p>
           </div>
         </div>
 
-        {/* Stat 2 */}
-        <div className="relative overflow-hidden p-5 rounded-2xl bg-gradient-to-br from-[#dcfce7] to-[#bbf7d0] border border-[#86efac]/40 group hover:shadow-lg transition-all cursor-default">
-          <div className="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-[#86efac]/40 blur-xl" />
+        {/* Stat 2: Real course count */}
+        <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#dcfce7] to-[#bbf7d0] dark:from-emerald-900/30 dark:to-emerald-950/40 border border-[#86efac]/40 dark:border-emerald-800/40 group hover:shadow-lg transition-all cursor-pointer" onClick={() => navigate('/tutor/courses/new')}>
+          <div className="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-[#86efac]/40 dark:bg-emerald-800/20 blur-xl" />
           <div className="relative z-10">
-            <div className="w-10 h-10 rounded-xl bg-[#86efac] flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <Video size={18} className="text-[#14532d]" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#86efac] dark:bg-emerald-800/60 flex items-center justify-center mb-2.5 sm:mb-3 group-hover:scale-110 transition-transform">
+              <BookOpen size={18} className="text-[#14532d] dark:text-emerald-300" />
             </div>
-            <p className="text-xs font-bold uppercase tracking-wider text-[#166534] mb-0.5">Pending Sessions</p>
-            <p className="text-3xl font-black text-[#14532d]">4</p>
+            <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#166534] dark:text-emerald-400 mb-0.5">Published</p>
+            <p className="text-2xl sm:text-3xl font-black text-[#14532d] dark:text-emerald-200">{courses.filter(c => c.status === 'published').length}</p>
           </div>
         </div>
 
-        {/* Stat 3 */}
-        <div className="relative overflow-hidden p-5 rounded-2xl bg-gradient-to-br from-[#f0fdf4] to-[#dcfce7] border border-[#bbf7d0]/50 group hover:shadow-lg transition-all cursor-default">
-          <div className="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-[#bbf7d0]/40 blur-xl" />
+        {/* Stat 3: Total enrolled learners across courses */}
+        <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#f0fdf4] to-[#dcfce7] dark:from-emerald-950/40 dark:to-emerald-900/30 border border-[#bbf7d0]/50 dark:border-emerald-800/40 group hover:shadow-lg transition-all cursor-default">
+          <div className="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-[#bbf7d0]/40 dark:bg-emerald-800/20 blur-xl" />
           <div className="relative z-10">
-            <div className="w-10 h-10 rounded-xl bg-[#bbf7d0] flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <Target size={18} className="text-[#166534]" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#bbf7d0] dark:bg-emerald-800/60 flex items-center justify-center mb-2.5 sm:mb-3 group-hover:scale-110 transition-transform">
+              <TrendingUp size={18} className="text-[#166534] dark:text-emerald-300" />
             </div>
-            <p className="text-xs font-bold uppercase tracking-wider text-[#15803d] mb-0.5">Cohort Score</p>
-            <p className="text-3xl font-black text-[#14532d]">84%</p>
+            <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#15803d] dark:text-emerald-400 mb-0.5">Learners</p>
+            <p className="text-2xl sm:text-3xl font-black text-[#14532d] dark:text-emerald-200">{courses.reduce((sum, c) => sum + (c.enrolled_count || 0), 0)}</p>
           </div>
         </div>
 
-        {/* Stat 4 */}
-        <div className="relative overflow-hidden p-5 rounded-2xl bg-gradient-to-br from-[#166534] to-[#14532d] border border-[#22c55e]/20 group hover:shadow-lg transition-all cursor-default">
+        {/* Stat 4: Total courses (all statuses) */}
+        <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#166534] to-[#14532d] dark:from-emerald-900 dark:to-emerald-950 border border-[#22c55e]/20 group hover:shadow-lg transition-all cursor-pointer" onClick={() => navigate('/wallet')}>
           <div className="absolute -top-4 -right-4 w-16 h-16 rounded-full bg-[#22c55e]/15 blur-xl" />
           <div className="relative z-10">
-            <div className="w-10 h-10 rounded-xl bg-[#22c55e]/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <TrendingUp size={18} className="text-[#4ade80]" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#22c55e]/20 flex items-center justify-center mb-2.5 sm:mb-3 group-hover:scale-110 transition-transform">
+              <Award size={18} className="text-[#4ade80]" />
             </div>
-            <p className="text-xs font-bold uppercase tracking-wider text-[#86efac] mb-0.5">Revenue</p>
-            <p className="text-3xl font-black text-white">$2.4k</p>
+            <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#86efac] mb-0.5">All Courses</p>
+            <p className="text-2xl sm:text-3xl font-black text-white">{courses.length}</p>
           </div>
         </div>
       </div>
@@ -378,80 +278,63 @@ const TutorDashboard = () => {
           ═══════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {/* ── LEFT: About & Expertise (2 cols) ── */}
+        {/* ── LEFT: About & Expertise ── */}
         <div className="lg:col-span-2 space-y-6">
-          <Card className="p-7 rounded-2xl border border-slate-200/60 shadow-lg bg-white">
+          <Card className="p-4 sm:p-7 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-lg bg-white dark:bg-slate-900">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#dcfce7] flex items-center justify-center">
-                  <Briefcase size={15} className="text-[#16a34a]" />
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#dcfce7] dark:bg-emerald-950/50 flex items-center justify-center">
+                  <Briefcase size={15} className="text-[#16a34a] dark:text-emerald-400" />
                 </div>
                 About & Expertise
               </h3>
-              {isEditing && (
-                <Button size="sm" variant="ghost" className="text-[#16a34a] hover:bg-green-50 gap-1 font-bold" onClick={addExpertise}>
-                  <Plus size={16} /> Add
-                </Button>
-              )}
             </div>
 
             {/* Bio */}
-            {isEditing ? (
-              <textarea 
-                value={editForm.bio}
-                onChange={(e) => setEditForm({...editForm, bio: e.target.value})}
-                className="w-full h-24 p-3 text-slate-700 font-medium rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-green-500 bg-slate-50 resize-none mb-5"
-                placeholder="Your Bio"
-              />
+            {tutorData.bio ? (
+              <p className="text-slate-600 dark:text-slate-300 text-sm sm:text-base leading-relaxed mb-6 font-medium">{tutorData.bio}</p>
             ) : (
-              <p className="text-slate-600 text-base leading-relaxed mb-6 font-medium">{tutorData.bio}</p>
+              <p className="text-slate-400 dark:text-slate-500 text-sm italic mb-6">No bio added yet. Click <strong>Edit Profile</strong> to add your bio and describe your background.</p>
             )}
 
             {/* Expertise */}
-            <div className={`space-y-3 transition-all duration-500 overflow-hidden ${isExpanded || isEditing ? 'max-h-[2000px]' : 'max-h-[260px]'}`}>
-              {(isEditing ? editForm.expertise : tutorData.expertise).map((exp, i) => (
+            <div className={`space-y-3 transition-all duration-500 overflow-hidden ${isExpanded ? 'max-h-[2000px]' : 'max-h-[260px]'}`}>
+              {tutorData.expertise.map((exp, i) => (
                 <div key={exp.id} className={cn(
-                  "flex items-start gap-4 p-5 rounded-2xl transition-all border group",
+                  "flex items-start gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl transition-all border group",
                   i % 2 === 0
-                    ? "bg-[#f0fdf4] border-[#dcfce7] hover:border-[#86efac]"
-                    : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                    ? "bg-[#f0fdf4] dark:bg-emerald-950/20 border-[#dcfce7] dark:border-emerald-800/30 hover:border-[#86efac]"
+                    : "bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800 hover:border-slate-200"
                 )}>
                   <div className={cn(
-                    "p-3 rounded-xl shrink-0",
-                    i % 2 === 0 ? "bg-[#bbf7d0] text-[#166534]" : "bg-slate-200 text-slate-600"
+                    "p-2.5 sm:p-3 rounded-xl shrink-0",
+                    i % 2 === 0 ? "bg-[#bbf7d0] dark:bg-emerald-900/50 text-[#166534] dark:text-emerald-300" : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
                   )}>
-                    {exp.icon === 'grad' ? <GradIcon size={20} /> : <Briefcase size={20} />}
+                    {exp.icon === 'grad' ? <GradIcon size={18} /> : <Briefcase size={18} />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    {isEditing ? (
-                      <div className="space-y-2 pr-8 relative">
-                        <input 
-                          type="text" value={exp.type}
-                          onChange={(e) => updateExpertise(exp.id, 'type', e.target.value)}
-                          className="w-full font-bold text-slate-900 text-base p-2 rounded-lg border border-slate-200 bg-white"
-                          placeholder="Title"
-                        />
-                        <textarea 
-                          value={exp.desc}
-                          onChange={(e) => updateExpertise(exp.id, 'desc', e.target.value)}
-                          className="w-full text-sm text-slate-600 leading-relaxed p-2 rounded-lg border border-slate-200 bg-white h-20 resize-none"
-                          placeholder="Description"
-                        />
-                        <button className="absolute -right-2 top-2 p-2 text-slate-300 hover:text-red-500 transition-colors" onClick={() => removeExpertise(exp.id)}><Trash2 size={16}/></button>
-                      </div>
-                    ) : (
-                      <>
-                        <p className="font-bold text-slate-900 text-base">{exp.type}</p>
-                        <p className="text-sm text-slate-500 mt-1 leading-relaxed">{exp.desc}</p>
-                      </>
-                    )}
+                    <p className="font-bold text-slate-900 dark:text-white text-sm sm:text-base">{exp.type}</p>
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{exp.desc}</p>
                   </div>
                 </div>
               ))}
+              {/* Empty state for expertise when not editing */}
+              {tutorData.expertise.length === 0 && (
+                <div className="text-center py-6 border border-dashed border-slate-200 rounded-2xl">
+                  <Briefcase size={24} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-slate-400 text-sm font-medium">No expertise entries yet.</p>
+                  <button
+                    className="mt-2 text-[#16a34a] text-xs font-bold hover:underline cursor-pointer"
+                    onClick={() => navigate('/profile/edit')}
+                  >
+                    + Add your background & credentials
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Expand */}
-            {!isEditing && tutorData.expertise.length > 2 && (
+            {tutorData.expertise.length > 2 && (
               <div className="pt-4 border-t border-slate-100 mt-4 text-center">
                 <Button variant="ghost" size="sm" className="text-slate-500 hover:text-slate-900 font-bold" onClick={() => setIsExpanded(!isExpanded)}>
                   {isExpanded ? <span className="flex items-center gap-1">Show Less <ChevronUp size={16} /></span> : <span className="flex items-center gap-1">Show All <ChevronDown size={16} /></span>}
@@ -460,32 +343,21 @@ const TutorDashboard = () => {
             )}
 
             {/* Save/Edit actions */}
-            {!isEditing ? (
-              <div className="flex gap-3 mt-6 pt-5 border-t border-slate-100">
-                <Button 
-                  variant="outline" 
-                  className="border-slate-200 hover:bg-slate-50 text-slate-700 rounded-full px-6 h-10 font-bold flex items-center gap-2"
-                  onClick={() => setIsEditing(true)}
-                >
-                  <Edit2 size={15} /> Edit Profile
-                </Button>
-                <Button 
-                  className="bg-slate-900 hover:bg-slate-800 text-white border-none rounded-full px-6 h-10 font-bold flex items-center gap-2 shadow-md"
-                  onClick={() => navigate('/messages')}
-                >
-                  <Mail size={15} /> Contact
-                </Button>
-              </div>
-            ) : (
-              <div className="flex gap-3 mt-6 pt-5 border-t border-slate-100">
-                <Button onClick={handleSave} className="bg-[#16a34a] hover:bg-[#15803d] text-white border-none rounded-full px-6 h-10 font-bold shadow-lg shadow-green-600/20">
-                  Save Changes
-                </Button>
-                <Button variant="outline" className="border-slate-200 text-slate-600 rounded-full px-5 h-10 font-bold hover:bg-slate-50" onClick={() => { setEditForm({ ...tutorData }); setIsEditing(false); }}>
-                  Cancel
-                </Button>
-              </div>
-            )}
+            <div className="flex gap-3 mt-6 pt-5 border-t border-slate-100">
+              <Button 
+                variant="outline" 
+                className="border-slate-200 hover:bg-slate-50 text-slate-700 rounded-full px-6 h-10 font-bold flex items-center gap-2 cursor-pointer"
+                onClick={() => navigate('/profile/edit')}
+              >
+                <Edit2 size={15} /> Edit Profile
+              </Button>
+              <Button 
+                className="bg-slate-900 hover:bg-slate-800 text-white border-none rounded-full px-6 h-10 font-bold flex items-center gap-2 shadow-md cursor-pointer"
+                onClick={() => navigate('/messages')}
+              >
+                <Mail size={15} /> Contact
+              </Button>
+            </div>
           </Card>
         </div>
 
@@ -527,94 +399,48 @@ const TutorDashboard = () => {
             </div>
           </Card>
 
-          {/* Connect & Links — Green tinted */}
-          <Card className="p-6 rounded-2xl bg-[#f0fdf4] border border-[#bbf7d0]/40 shadow-lg">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-[#166534] mb-4 flex items-center gap-2">
+          {/* Portfolio & Links */}
+          <Card className="p-4 sm:p-6 rounded-2xl bg-[#f0fdf4] dark:bg-emerald-950/20 border border-[#bbf7d0]/40 dark:border-emerald-800/30 shadow-lg">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-[#166534] dark:text-emerald-400 mb-4 flex items-center gap-2">
               <Globe size={14} className="text-[#16a34a]" /> Portfolio & Links
             </h3>
             <div className="space-y-2.5">
-              {isEditing ? (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-white border border-[#dcfce7]">
-                  <Globe size={15} className="text-[#16a34a] shrink-0" />
-                  <input 
-                    type="text" value={editForm.website}
-                    onChange={(e) => setEditForm({...editForm, website: e.target.value})}
-                    className="w-full text-sm font-bold text-slate-900 border-none bg-transparent outline-none"
-                    placeholder="Website Link"
-                  />
-                </div>
-              ) : (
+              {tutorData.website && (
                 <button 
-                  className="w-full flex items-center justify-between p-3 rounded-xl bg-white hover:shadow-md border border-[#dcfce7] transition-all group text-left"
-                  onClick={() => navigate('/portfolio')}
+                  className="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 hover:shadow-md border border-[#dcfce7] dark:border-emerald-800/30 transition-all group text-left cursor-pointer"
+                  onClick={() => window.open(tutorData.website.startsWith('http') ? tutorData.website : `https://${tutorData.website}`, '_blank')}
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-[#dcfce7] flex items-center justify-center">
-                      <Globe size={14} className="text-[#16a34a]" />
+                    <div className="w-8 h-8 rounded-lg bg-[#dcfce7] dark:bg-emerald-950/50 flex items-center justify-center">
+                      <Globe size={14} className="text-[#16a34a] dark:text-emerald-400" />
                     </div>
-                    <span className="text-sm font-bold text-slate-700">{tutorData.website}</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate max-w-[140px]">{tutorData.website}</span>
                   </div>
-                  <ExternalLink size={13} className="text-slate-300 group-hover:text-[#16a34a] transition-colors" />
+                  <ExternalLink size={13} className="text-slate-300 dark:text-slate-600 group-hover:text-[#16a34a] transition-colors" />
                 </button>
               )}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white border border-[#dcfce7]">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-[#dcfce7] dark:border-emerald-800/30">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-[#bbf7d0] flex items-center justify-center">
-                    <Users size={14} className="text-[#15803d]" />
+                  <div className="w-8 h-8 rounded-lg bg-[#bbf7d0] dark:bg-emerald-900/50 flex items-center justify-center">
+                    <Users size={14} className="text-[#15803d] dark:text-emerald-300" />
                   </div>
-                  <span className="text-sm font-bold text-slate-800">12,850 Learners</span>
+                  <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{courses.reduce((sum, c) => sum + (c.enrolled_count || 0), 0).toLocaleString()} Learners</span>
                 </div>
                 <CheckCircle size={13} className="text-[#22c55e]" />
               </div>
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white border border-[#dcfce7]">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-[#dcfce7] flex items-center justify-center">
-                    <Star size={14} className="text-[#16a34a]" />
-                  </div>
-                  <span className="text-sm font-bold text-slate-800">4.9 Avg Rating</span>
-                </div>
-                <span className="text-amber-400 text-xs">★★★★★</span>
-              </div>
-              {!isEditing && (
-                <Button 
-                  className="w-full rounded-xl h-10 mt-2 font-bold text-sm bg-[#166534] text-white hover:bg-[#14532d] border-none shadow-md"
-                  onClick={() => navigate('/portfolio')}
-                >
-                  View Portfolio →
-                </Button>
-              )}
+              <Button 
+                className="w-full rounded-xl h-10 mt-2 font-bold text-sm bg-[#166534] dark:bg-emerald-600 text-white hover:bg-[#14532d] dark:hover:bg-emerald-500 border-none shadow-md cursor-pointer"
+                onClick={() => navigate('/portfolio')}
+              >
+                View Portfolio →
+              </Button>
             </div>
           </Card>
         </div>
       </div>
 
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          BECOME A MENTOR CTA
-          ═══════════════════════════════════════════════════════════════════ */}
-      {!user?.mentor_tier && (
-        <div 
-          className="relative overflow-hidden rounded-2xl p-8 cursor-pointer group transition-all duration-500 hover:shadow-xl"
-          style={{ background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 40%, #86efac 100%)' }}
-          onClick={() => navigate('/mentor/onboarding')}
-        >
-          <div className="absolute top-0 right-0 w-48 h-48 bg-[#4ade80]/30 rounded-full blur-3xl" />
-          <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
-            <div className="w-16 h-16 bg-[#166534] rounded-2xl flex items-center justify-center text-white shadow-xl group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
-              <Shield size={30} />
-            </div>
-            <div className="flex-1 text-center md:text-left">
-              <h3 className="text-2xl font-black text-[#14532d] mb-1 tracking-tight">Establish Your <span className="text-[#16a34a]">Mentor Node</span></h3>
-              <p className="text-[#166534]/80 font-medium leading-relaxed">
-                Join the Nexus mentorship ecosystem. Get tiered verification and unlock 1:1 and group sessions.
-              </p>
-            </div>
-            <Button className="rounded-full h-12 px-8 font-bold text-sm bg-[#14532d] hover:bg-[#052e16] text-white border-none shadow-xl group-hover:translate-x-1 transition-all">
-              Begin Verification →
-            </Button>
-          </div>
-        </div>
-      )}
+
 
 
       {/* ═══════════════════════════════════════════════════════════════════
@@ -635,34 +461,34 @@ const TutorDashboard = () => {
         </div>
 
         {loadingCourses ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-64 animate-pulse bg-slate-100 rounded-2xl" />
+              <div key={i} className="h-64 animate-pulse bg-slate-100 dark:bg-slate-800 rounded-2xl" />
             ))}
           </div>
         ) : courses.length === 0 ? (
-          <div className="p-16 text-center rounded-2xl border-2 border-dashed border-[#bbf7d0] bg-gradient-to-br from-[#f0fdf4] to-white">
-            <div className="w-16 h-16 bg-[#dcfce7] rounded-2xl flex items-center justify-center mx-auto mb-5 text-[#16a34a]">
+          <div className="p-8 sm:p-16 text-center rounded-2xl border-2 border-dashed border-[#bbf7d0] dark:border-emerald-800/40 bg-gradient-to-br from-[#f0fdf4] to-white dark:from-emerald-950/20 dark:to-slate-900">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 bg-[#dcfce7] dark:bg-emerald-950/50 rounded-2xl flex items-center justify-center mx-auto mb-4 sm:mb-5 text-[#16a34a] dark:text-emerald-400">
               <BookOpen size={28} />
             </div>
-            <h3 className="text-xl font-bold text-slate-900">No courses yet</h3>
-            <p className="text-slate-500 text-sm max-w-xs mx-auto mt-2 leading-relaxed">Start your journey as an educator by creating your first course.</p>
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">No courses yet</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm max-w-xs mx-auto mt-2 leading-relaxed">Start your journey as an educator by creating your first course.</p>
             <Button 
-              className="mt-6 bg-[#16a34a] hover:bg-[#15803d] text-white border-none rounded-full px-8 h-10 font-bold text-sm shadow-lg shadow-green-600/20"
+              className="mt-5 sm:mt-6 bg-[#16a34a] hover:bg-[#15803d] text-white border-none rounded-full px-6 sm:px-8 h-10 font-bold text-xs sm:text-sm shadow-lg shadow-green-600/20"
               onClick={() => navigate('/tutor/courses/new')}
             >
               Create First Course →
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
             {courses.map((course) => (
               <div 
                 key={course.id} 
-                className="group overflow-hidden rounded-2xl border border-slate-200/60 shadow-md hover:shadow-xl transition-all duration-500 cursor-pointer bg-white"
+                className="group overflow-hidden rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-md hover:shadow-xl transition-all duration-500 cursor-pointer bg-white dark:bg-slate-900"
                 onClick={() => navigate(`/tutor/courses/${course.id}`)}
               >
-                <div className="relative aspect-video bg-slate-100 overflow-hidden">
+                <div className="relative aspect-video bg-slate-100 dark:bg-slate-800 overflow-hidden">
                   {course.thumbnail_url ? (
                     <img src={course.thumbnail_url} alt={course.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                   ) : (
@@ -679,9 +505,9 @@ const TutorDashboard = () => {
                     </span>
                   </div>
                 </div>
-                <div className="p-5">
-                  <h3 className="font-bold text-slate-900 line-clamp-2 group-hover:text-[#16a34a] transition-colors">{course.title}</h3>
-                  <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100 text-slate-400">
+                <div className="p-4 sm:p-5">
+                  <h3 className="font-bold text-slate-900 dark:text-white line-clamp-2 group-hover:text-[#16a34a] dark:group-hover:text-emerald-400 transition-colors text-sm sm:text-base">{course.title}</h3>
+                  <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-slate-400 dark:text-slate-500">
                     <div className="flex items-center gap-1.5">
                       <Users size={13} />
                       <span className="text-xs font-bold">{course.enrolled_count}</span>

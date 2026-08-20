@@ -5,13 +5,16 @@ import {
   Calendar, Upload, Save, Award, PlayCircle,
   GripVertical, X, CheckCircle, Paperclip, Clock, ChevronRight,
   Globe, Target, Sparkles, BookOpen, Search, Link2, Image,
-  Settings, Layers
+  Settings, Layers, GraduationCap, UploadCloud, Users
 } from 'lucide-react';
-import { cn } from '../../utils';
+import { cn, executeWithAutoRefresh } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
+import { useUploadStore } from '../../store/uploadStore';
 import { courseService } from '../../lib/services/courses';
-import { LoadingOverlay } from '../../components/shared';
+import { LoadingOverlay, TrilezaVideoPlayer, PageHeader } from '../../components/shared';
+import { Button } from '../../components/ui';
 import { nexus } from '../../lib/nexus';
+import * as tus from 'tus-js-client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Material { id: string; name: string; size?: string; type: 'pdf' | 'zip' | 'link' | 'doc'; url?: string; }
@@ -42,7 +45,7 @@ const DIGITAL_SKILL_CATEGORIES = [
   "Systems Architecture",
   "Web3 & Blockchain Development",
   "Smart Contract Engineering",
-  
+
   // Data, AI, & Advanced Computing
   "Artificial Intelligence (AI)",
   "Machine Learning (ML)",
@@ -56,7 +59,7 @@ const DIGITAL_SKILL_CATEGORIES = [
   "Business Intelligence (BI)",
   "AI Product Management",
   "Quantitative Analysis",
-  
+
   // Design, UX & Creative
   "UI/UX Design",
   "User Experience Research",
@@ -69,7 +72,7 @@ const DIGITAL_SKILL_CATEGORIES = [
   "Web Design",
   "Game Design",
   "Brand Identity Design",
-  
+
   // Cyber Security & Networking
   "Cybersecurity",
   "Ethical Hacking & Pentesting",
@@ -78,7 +81,7 @@ const DIGITAL_SKILL_CATEGORIES = [
   "Cloud Security",
   "Information Security Management",
   "Systems Administration",
-  
+
   // Product & Business Tech
   "Product Management",
   "Agile & Scrum Practices",
@@ -87,7 +90,7 @@ const DIGITAL_SKILL_CATEGORIES = [
   "E-commerce Management",
   "IT Project Management",
   "SaaS Growth & Strategy",
-  
+
   // Marketing, Growth & Analytics
   "Digital Marketing",
   "Search Engine Optimization (SEO)",
@@ -221,9 +224,11 @@ const ThumbnailSelector: React.FC<ThumbnailSelectorProps> = ({
 
     setUploading(true);
     try {
-      const { data, error } = await nexus.storage
-        .from('course-materials-trileza-784bc328')
-        .uploadAuto(file);
+      const { data, error } = await executeWithAutoRefresh(() =>
+        nexus.storage
+          .from('course-materials-trileza-784bc328')
+          .uploadAuto(file)
+      );
 
       if (error) throw error;
       if (data?.url) {
@@ -261,7 +266,7 @@ const ThumbnailSelector: React.FC<ThumbnailSelectorProps> = ({
               : 'text-slate-500 hover:text-slate-900 bg-transparent'
           )}
         >
-          <Upload size={13} strokeWidth={2.5} /> Upload File
+          <Upload size={13} /> Upload File
         </button>
         <button
           type="button"
@@ -273,7 +278,7 @@ const ThumbnailSelector: React.FC<ThumbnailSelectorProps> = ({
               : 'text-slate-500 hover:text-slate-900 bg-transparent'
           )}
         >
-          <Link2 size={13} strokeWidth={2.5} /> Paste Link
+          <Link2 size={13} /> Paste Link
         </button>
       </div>
 
@@ -345,7 +350,7 @@ const ThumbnailSelector: React.FC<ThumbnailSelectorProps> = ({
             />
             <Link2 size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
           </div>
-          
+
           {linkInput && (
             <div className="relative rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 aspect-[16/9] max-w-sm flex items-center justify-center shadow-inner group animate-in fade-in zoom-in-95 duration-200">
               <img
@@ -402,7 +407,7 @@ const LiveScheduler = ({ session, onSave, onClose }: {
               <p className="text-green-700 text-xs mt-1 font-black tracking-widest uppercase">Students will be notified automatically</p>
             </div>
             <button onClick={onClose} className="w-9 h-9 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 hover:bg-slate-200 transition-colors">
-              <X size={16} strokeWidth={3} />
+              <X size={16} />
             </button>
           </div>
         </div>
@@ -450,7 +455,7 @@ const LiveScheduler = ({ session, onSave, onClose }: {
 
           <button onClick={() => { onSave(form); onClose(); }}
             className="w-full h-14 bg-green-600 hover:bg-green-700 text-white font-black text-sm uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-xl shadow-green-600/20 mt-4 border-none">
-            <Calendar size={18} strokeWidth={2.5} /> Confirm Schedule
+            <Calendar size={18} /> Confirm Schedule
           </button>
         </div>
       </div>
@@ -458,18 +463,88 @@ const LiveScheduler = ({ session, onSave, onClose }: {
   );
 };
 
-// ─── Topic Card ───────────────────────────────────────────────────────────────
+
+// Local cache for signed preview URLs in the Course Builder
+const builderSignedUrlCache: Record<string, string> = {};
+
 const TopicCard = ({ topic, index, onChange, onRemove }: {
   topic: Topic; index: number;
   onChange: (t: Topic) => void; onRemove: () => void;
 }) => {
+  const { courseId } = useParams<{ courseId: string }>();
   const [showScheduler, setShowScheduler] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const materialInputRef = useRef<HTMLInputElement>(null);
 
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  // Connect to the global background upload store
+  const activeUploads = useUploadStore(state => state.activeUploads);
+  const startUpload = useUploadStore(state => state.startUpload);
+  const pauseUpload = useUploadStore(state => state.pauseUpload);
+  const resumeUploadWithFile = useUploadStore(state => state.resumeUploadWithFile);
+  const clearUpload = useUploadStore(state => state.clearUpload);
+
+  const currentUpload = activeUploads[topic.id];
+  const isInspecting = currentUpload?.status === 'inspecting';
+  const isOptimizing = currentUpload?.status === 'optimizing';
+  const isUploading = currentUpload?.status === 'uploading';
+  const isPaused = currentUpload?.status === 'paused';
+  const isFailed = currentUpload?.status === 'failed';
+  const isProcessing = isInspecting || isOptimizing || isUploading;
+  const uploadProgress = currentUpload?.progress ?? 0;
+  const statusMessage = currentUpload?.statusMessage || (
+    isInspecting ? 'Analyzing video format...' :
+      isOptimizing ? 'Your video is being optimized for streaming — this may take a few minutes.' :
+        isUploading ? 'Uploading to Bunny.net...' :
+          isPaused ? 'Upload Paused' :
+            isFailed ? 'Upload Failed' : ''
+  );
+
+  // Automatically merge completed uploads from the store
+  useEffect(() => {
+    if (currentUpload?.status === 'success' && currentUpload.videoUrl) {
+      if (currentUpload.videoUrl !== topic.videoUrl) {
+        set({ videoUrl: currentUpload.videoUrl });
+        clearUpload(topic.id);
+      }
+    }
+  }, [currentUpload, topic.videoUrl, topic.id, clearUpload]);
+
+  useEffect(() => {
+    if (topic.videoUrl && topic.videoUrl.includes('.m3u8')) {
+      const parts = topic.videoUrl.split('/');
+      const videoId = parts[parts.length - 2];
+
+      if (builderSignedUrlCache[videoId]) {
+        setPreviewUrl(builderSignedUrlCache[videoId]);
+        return;
+      }
+
+      const fetchSignedUrl = async () => {
+        try {
+          const { data, error } = await nexus.functions.invoke('bunny-proxy', {
+            body: { action: 'get-signed-url', payload: { videoId } }
+          });
+          if (!error && data?.data?.signedUrl) {
+            builderSignedUrlCache[videoId] = data.data.signedUrl;
+            setPreviewUrl(data.data.signedUrl);
+          } else {
+            setPreviewUrl(topic.videoUrl);
+          }
+        } catch (err) {
+          console.error('Failed to get signed preview URL:', err);
+          setPreviewUrl(topic.videoUrl);
+        }
+      };
+      fetchSignedUrl();
+    } else {
+      setPreviewUrl(topic.videoUrl);
+    }
+  }, [topic.videoUrl]);
+
   const set = (patch: Partial<Topic>) => onChange({ ...topic, ...patch });
 
-  // Real file upload handler for materials
   const handleMaterialUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -479,17 +554,36 @@ const TopicCard = ({ topic, index, onChange, onRemove }: {
       size: `${(f.size / 1024).toFixed(0)} KB`,
       type: f.name.endsWith('.pdf') ? 'pdf'
         : f.name.endsWith('.zip') ? 'zip'
-        : f.name.endsWith('.doc') || f.name.endsWith('.docx') ? 'doc'
-        : 'link',
+          : f.name.endsWith('.doc') || f.name.endsWith('.docx') ? 'doc'
+            : 'link',
     }));
     set({ materials: [...topic.materials, ...newMaterials] });
-    e.target.value = ''; // reset
+    e.target.value = '';
   };
 
-  // Video file handler
-  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) set({ videoUrl: file.name });
+    if (!file) return;
+
+    if (!courseId) {
+      alert('Course ID not found. Save the course details first.');
+      return;
+    }
+
+    try {
+      await startUpload({
+        courseId,
+        topicId: topic.id,
+        file,
+        onSuccess: (url) => {
+          set({ videoUrl: url });
+          clearUpload(topic.id);
+        }
+      });
+    } catch (err) {
+      console.error('Video processing or upload failed:', err);
+      alert('Video pipeline error: ' + (err as Error).message);
+    }
   };
 
   const typeColors: Record<string, string> = {
@@ -510,22 +604,17 @@ const TopicCard = ({ topic, index, onChange, onRemove }: {
       )}
 
       <div className="rounded-[2rem] overflow-hidden border-2 border-slate-250/70 bg-white shadow-sm hover:shadow-md transition-all duration-300">
-        {/* ── Topic Header ── */}
         <div className="flex items-center gap-3 px-6 py-4 bg-slate-50 border-b-2 border-slate-200">
           <GripVertical size={18} className="text-slate-500 cursor-grab shrink-0" />
-
           <div className="w-8 h-8 rounded-xl bg-slate-200 text-slate-800 flex items-center justify-center text-xs font-black shrink-0">
             {String(index + 1).padStart(2, '0')}
           </div>
-
           <input
             value={topic.title}
             onChange={e => set({ title: e.target.value })}
             placeholder={`Topic ${index + 1}: Enter a title...`}
             className="flex-1 bg-transparent text-slate-900 font-black text-base outline-none placeholder:text-slate-500 min-w-0"
           />
-
-          {/* Status Badges */}
           <div className="hidden md:flex items-center gap-2 shrink-0">
             <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider",
               topic.videoUrl ? "bg-green-100 text-green-800 border border-green-200" : "bg-slate-200 text-slate-700")}>
@@ -540,48 +629,116 @@ const TopicCard = ({ topic, index, onChange, onRemove }: {
               {topic.liveSession ? `✓ Live Set` : 'No Live'}
             </span>
           </div>
-
           <button onClick={() => setShowScheduler(true)}
-            className="px-4 py-2 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 text-xs font-black rounded-xl flex items-center gap-1.5 transition-all shrink-0">
+            className="px-4 py-2 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 text-xs font-black rounded-xl flex items-center gap-1.5 transition-all shrink-0 cursor-pointer">
             <Calendar size={13} />
             {topic.liveSession ? 'Edit Live' : '+ Schedule Live'}
           </button>
-          <button onClick={onRemove} className="p-2 text-slate-500 hover:text-rose-600 transition-colors shrink-0">
+          <button onClick={onRemove} className="p-2 text-slate-500 hover:text-rose-600 transition-colors shrink-0 cursor-pointer">
             <Trash2 size={16} />
           </button>
         </div>
 
-        {/* ── Topic Body ── */}
         <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-200 bg-white">
-
-          {/* Column 1: Video */}
           <div className="p-6 space-y-4">
             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
               <Video size={13} className="text-green-600" /> Lecture Video
             </h4>
 
-            {topic.videoUrl ? (
-              <div className="relative rounded-2xl overflow-hidden bg-slate-900 aspect-video shadow-inner">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <PlayCircle className="text-white opacity-90" size={36} />
+            {isProcessing || isPaused || isFailed ? (
+              <div className="aspect-video rounded-2xl bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center space-y-3">
+                <div className="relative w-16 h-16 flex items-center justify-center">
+                  <div className="absolute inset-0 border-4 border-slate-800 rounded-full" />
+                  {isProcessing && (
+                    <div className="absolute inset-0 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                  )}
+                  <span className="text-[10px] font-black text-emerald-400">{uploadProgress}%</span>
                 </div>
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-3">
-                  <p className="text-white text-[10px] font-bold truncate">{topic.videoUrl}</p>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wider text-emerald-400">
+                    {isInspecting ? 'Analyzing Format' :
+                      isOptimizing ? 'Optimizing Video' :
+                        isUploading ? 'Uploading Video' :
+                          isPaused ? 'Upload Paused' :
+                            'Upload Failed'}
+                  </p>
+                  <p className="text-[10px] text-slate-300 font-medium max-w-[220px] mx-auto mt-1 leading-snug">
+                    {statusMessage}
+                  </p>
+                  <p className="text-[9px] text-slate-500 truncate max-w-[200px] mt-1">{currentUpload?.fileName}</p>
                 </div>
-                <button onClick={() => set({ videoUrl: '' })}
-                  className="absolute top-2 right-2 w-6 h-6 bg-rose-600 rounded-full flex items-center justify-center text-white hover:bg-rose-700 transition-colors">
-                  <X size={11} />
-                </button>
+                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden max-w-[150px] mx-auto">
+                  <div className="bg-emerald-500 h-full rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                </div>
+                <div className="flex items-center gap-2 pt-1 z-10">
+                  {isUploading && (
+                    <button
+                      type="button"
+                      onClick={() => pauseUpload(topic.id)}
+                      className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-[10px] font-black uppercase tracking-wider rounded-lg border-none cursor-pointer text-slate-300"
+                    >
+                      Pause
+                    </button>
+                  )}
+                  {isPaused && (
+                    <label className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-[10px] font-black uppercase tracking-wider rounded-lg border-none cursor-pointer text-white">
+                      Resume
+                      <input
+                        type="file"
+                        accept="video/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) resumeUploadWithFile(topic.id, file);
+                        }}
+                      />
+                    </label>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => clearUpload(topic.id)}
+                    className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-[10px] font-black uppercase tracking-wider rounded-lg border-none cursor-pointer text-rose-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : topic.videoUrl ? (
+              <div className="relative rounded-2xl overflow-hidden bg-slate-900 aspect-video shadow-inner flex flex-col">
+                <div className="flex-1 min-h-0 relative">
+                  <TrilezaVideoPlayer
+                    src={previewUrl || topic.videoUrl}
+                    title={topic.title || 'Lesson Video'}
+                    autoPlay={false}
+                  />
+                </div>
+                <div className="p-3 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                  <span className="text-[9px] text-slate-405 truncate max-w-[65%] font-mono text-slate-300">{topic.videoUrl}</span>
+                  <button onClick={() => set({ videoUrl: '' })}
+                    className="px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600/25 border border-rose-500/20 hover:border-rose-500/40 rounded-lg text-[9px] font-black text-rose-400 transition-colors uppercase tracking-wider border-none cursor-pointer">
+                    Change
+                  </button>
+                </div>
               </div>
             ) : (
-              <label className="block aspect-video rounded-2xl bg-slate-50 border-2 border-dashed border-slate-350 hover:border-green-500 hover:bg-green-50/10 cursor-pointer transition-all group">
+              <label
+                onDragOver={(e) => { e.preventDefault(); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    const fakeEvent = { target: { files: e.dataTransfer.files } } as any;
+                    handleVideoUpload(fakeEvent);
+                  }
+                }}
+                className="block aspect-video rounded-2xl bg-slate-50 border-2 border-dashed border-slate-350 hover:border-green-500 hover:bg-green-50/10 cursor-pointer transition-all group relative overflow-hidden"
+              >
                 <div className="h-full flex flex-col items-center justify-center gap-3">
                   <div className="w-12 h-12 bg-white border border-slate-200 group-hover:bg-green-50 group-hover:border-green-150 rounded-xl flex items-center justify-center transition-all shadow-sm">
-                    <Upload size={20} className="text-slate-500 group-hover:text-green-600 transition-colors" />
+                    <UploadCloud size={22} className="text-slate-500 group-hover:text-green-600 transition-colors" />
                   </div>
                   <div className="text-center px-4">
-                    <p className="text-sm font-black text-slate-700 group-hover:text-green-800">Upload Video</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5 font-bold">MP4, MOV, AVI</p>
+                    <p className="text-sm font-black text-slate-700 group-hover:text-green-800">Drag & Drop Video or Click</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5 font-bold">Resumable TUS Upload (Bunny.net)</p>
                   </div>
                 </div>
                 <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
@@ -595,20 +752,18 @@ const TopicCard = ({ topic, index, onChange, onRemove }: {
             </div>
 
             <input
-              value={topic.videoUrl.startsWith('local') ? '' : topic.videoUrl}
+              value={topic.videoUrl.startsWith('http') ? topic.videoUrl : ''}
               onChange={e => set({ videoUrl: e.target.value })}
-              placeholder="Paste YouTube / Vimeo link..."
+              placeholder="Paste play URL or standard link..."
               className="w-full h-11 px-4 bg-slate-50 border border-slate-300 rounded-xl text-xs font-black text-slate-800 placeholder:text-slate-500 outline-none focus:bg-white focus:border-green-500 transition-all"
             />
           </div>
 
-          {/* Column 2: Materials */}
           <div className="p-6 space-y-4">
             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
               <Paperclip size={13} className="text-green-600" /> Class Materials
             </h4>
 
-            {/* Uploaded files list */}
             <div className="space-y-2 min-h-[100px]">
               {topic.materials.length === 0 ? (
                 <div className="h-24 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-250 flex flex-col items-center justify-center gap-2">
@@ -624,64 +779,62 @@ const TopicCard = ({ topic, index, onChange, onRemove }: {
                       </div>
                       <div className="flex-1 min-w-0">
                         {mat.type === 'link' ? (
-                           <input 
-                             value={mat.name}
-                             placeholder="Link title (e.g. Documentation)"
-                             onChange={e => {
-                               const newMats = topic.materials.map(m => m.id === mat.id ? { ...m, name: e.target.value } : m);
-                               set({ materials: newMats });
-                             }}
-                             className="text-xs font-black text-slate-800 bg-transparent border-b-2 border-slate-200 focus:border-green-500 outline-none w-full placeholder:text-slate-400"
-                           />
+                          <input
+                            value={mat.name}
+                            placeholder="Link title (e.g. Documentation)"
+                            onChange={e => {
+                              const newMats = topic.materials.map(m => m.id === mat.id ? { ...m, name: e.target.value } : m);
+                              set({ materials: newMats });
+                            }}
+                            className="text-xs font-black text-slate-800 bg-transparent border-b-2 border-slate-200 focus:border-green-500 outline-none w-full placeholder:text-slate-400"
+                          />
                         ) : (
                           <p className="text-xs font-black text-slate-805 truncate">{mat.name}</p>
                         )}
                         {mat.size && <p className="text-[10px] text-slate-500 font-extrabold">{mat.size}</p>}
                       </div>
                       <button onClick={() => set({ materials: topic.materials.filter(m => m.id !== mat.id) })}
-                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition-all shrink-0">
+                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 transition-all shrink-0 border-none bg-transparent cursor-pointer">
                         <X size={14} />
                       </button>
                     </div>
                     {mat.type === 'link' && (
-                       <input 
-                         value={mat.url || ''}
-                         placeholder="https://..."
-                         onChange={e => {
-                           const newMats = topic.materials.map(m => m.id === mat.id ? { ...m, url: e.target.value } : m);
-                           set({ materials: newMats });
-                         }}
-                         className="w-full text-[10px] p-2 bg-white border border-slate-250 rounded-lg outline-none focus:border-green-500 mt-1 font-bold text-slate-800"
-                       />
+                      <input
+                        value={mat.url || ''}
+                        placeholder="https://..."
+                        onChange={e => {
+                          const newMats = topic.materials.map(m => m.id === mat.id ? { ...m, url: e.target.value } : m);
+                          set({ materials: newMats });
+                        }}
+                        className="w-full text-[10px] p-2 bg-white border border-slate-250 rounded-lg outline-none focus:border-green-500 mt-1 font-bold text-slate-800"
+                      />
                     )}
                   </div>
                 ))
               )}
             </div>
 
-            {/* Selection Area: Either/Or */}
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-205">
-               <label className="h-11 bg-slate-800 hover:bg-slate-900 text-white rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all text-[10px] font-black uppercase tracking-widest shadow-sm">
-                  <Upload size={14} /> File
-                  <input 
-                    ref={materialInputRef} 
-                    type="file" 
-                    multiple 
-                    accept=".pdf,.zip,.doc,.docx,.ppt,.pptx"
-                    className="hidden" 
-                    onChange={handleMaterialUpload} 
-                  />
-               </label>
-               <button 
-                 onClick={() => set({ materials: [...topic.materials, { id: Date.now().toString(), name: '', type: 'link', url: '' }] })}
-                 className="h-11 bg-white border-2 border-slate-250 hover:border-green-500 hover:bg-green-50/10 text-slate-600 hover:text-green-700 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px] font-black uppercase tracking-widest"
-               >
-                  <Paperclip size={14} /> Link
-               </button>
+              <label className="h-11 bg-slate-800 hover:bg-slate-900 text-white rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all text-[10px] font-black uppercase tracking-widest shadow-sm">
+                <Upload size={14} /> File
+                <input
+                  ref={materialInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.zip,.doc,.docx,.ppt,.pptx"
+                  className="hidden"
+                  onChange={handleMaterialUpload}
+                />
+              </label>
+              <button
+                onClick={() => set({ materials: [...topic.materials, { id: Date.now().toString(), name: '', type: 'link', url: '' }] })}
+                className="h-11 bg-white border-2 border-slate-250 hover:border-green-500 hover:bg-green-50/10 text-slate-600 hover:text-green-700 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px] font-black uppercase tracking-widest cursor-pointer"
+              >
+                <Paperclip size={14} /> Link
+              </button>
             </div>
           </div>
 
-          {/* Column 3: Objective + Live */}
           <div className="p-6 space-y-4">
             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
               <Award size={13} className="text-green-600" /> Learning Objective
@@ -708,13 +861,13 @@ const TopicCard = ({ topic, index, onChange, onRemove }: {
                   <Clock size={10} /> {topic.liveSession.duration} minutes
                 </p>
                 <div className="flex gap-2 mt-2 pt-1">
-                  <button onClick={() => setShowScheduler(true)} className="flex-1 h-8 bg-white hover:bg-slate-100 border-2 border-slate-250 rounded-lg text-[10px] font-black text-slate-700 transition-colors">Edit</button>
-                  <button onClick={() => set({ liveSession: null })} className="flex-1 h-8 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg text-[10px] font-black text-rose-700 transition-colors">Remove</button>
+                  <button onClick={() => setShowScheduler(true)} className="flex-1 h-8 bg-white hover:bg-slate-100 border-2 border-slate-250 rounded-lg text-[10px] font-black text-slate-700 transition-colors cursor-pointer">Edit</button>
+                  <button onClick={() => set({ liveSession: null })} className="flex-1 h-8 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg text-[10px] font-black text-rose-700 transition-colors cursor-pointer">Remove</button>
                 </div>
               </div>
             ) : (
               <button onClick={() => setShowScheduler(true)}
-                className="w-full h-14 rounded-2xl border-2 border-dashed border-green-300 bg-green-50/20 hover:bg-green-50 hover:border-green-400 text-green-700 text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2">
+                className="w-full h-14 rounded-2xl border-2 border-dashed border-green-300 bg-green-50/20 hover:bg-green-50 hover:border-green-400 text-green-700 text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer">
                 <Calendar size={16} /> Schedule Live Class
               </button>
             )}
@@ -726,36 +879,261 @@ const TopicCard = ({ topic, index, onChange, onRemove }: {
 };
 
 // ─── Setup Modal ─────────────────────────────────────────────────────────────
-const CourseSetupModal = ({ onSave, onClose }: { onSave: (title: string, desc: string) => void; onClose: () => void }) => {
-  const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
+const CourseSetupModal = ({ onSave, onClose }: { onSave: (title: string, desc: string, programType: 'mentorship' | 'professional') => void; onClose: () => void }) => {
+  const [programType, setProgramType] = useState<'mentorship' | 'professional'>('professional');
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-slate-300 animate-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-xl mx-4 overflow-hidden border border-slate-300 animate-in zoom-in-95 duration-200">
         <div className="bg-slate-50 border-b-2 border-slate-200 px-8 py-6">
           <div className="flex justify-between items-center">
             <div>
-              <h3 className="text-xl font-black text-slate-900 tracking-tight">Course Architecture Setup</h3>
-              <p className="text-green-700 text-xs mt-1 font-black tracking-widest uppercase">Define the blueprint</p>
+              <h3 className="text-xl font-black text-slate-900 tracking-tight">Create New Course</h3>
+              <p className="text-green-700 text-xs mt-1 font-black tracking-widest uppercase">Choose your program structure &amp; Course Builder blueprint</p>
             </div>
             <button onClick={onClose} className="w-9 h-9 bg-slate-100 rounded-full flex items-center justify-center text-slate-550 hover:bg-slate-200 transition-colors">
-              <X size={16} strokeWidth={3} />
+              <X size={16} />
             </button>
           </div>
         </div>
-        <div className="p-8 space-y-5 bg-slate-50/50">
+
+        <div className="p-8 space-y-6 bg-slate-50/50">
+          {/* Option Selector: Mentorship Program vs Professional Course */}
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-700 uppercase tracking-widest block">Course Title</label>
-            <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Advanced Agentic AI" className="w-full h-12 px-4 bg-white border-2 border-slate-300 rounded-xl text-sm font-black text-slate-850 outline-none focus:border-green-500 focus:ring-4 focus:ring-green-500/10 transition-all" />
+            <label className="text-[10px] font-black text-slate-700 uppercase tracking-widest block">Program Type</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Option 1: Mentorship Program */}
+              <div
+                onClick={() => setProgramType('mentorship')}
+                className={cn(
+                  "p-5 rounded-2xl border-2 transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-3 group text-left hover:scale-[1.03] hover:border-green-600/40 hover:shadow-lg",
+                  programType === 'mentorship'
+                    ? "bg-white border-green-600 shadow-xl shadow-green-600/10 ring-4 ring-green-600/10"
+                    : "bg-white border-slate-250 hover:border-green-600/60 hover:bg-slate-50"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300",
+                    programType === 'mentorship' ? "bg-green-600 text-white" : "bg-slate-100 text-slate-600"
+                  )}>
+                    <Users size={20} />
+                  </div>
+                  {programType === 'mentorship' && (
+                    <CheckCircle size={16} className="text-green-600" />
+                  )}
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-900 text-sm">Mentorship Program</h4>
+                  <p className="text-xs text-slate-500 mt-1 leading-snug">Cohort-based live guidance, 1-on-1 advice &amp; direct mentor reviews.</p>
+                </div>
+              </div>
+
+              {/* Option 2: Professional Course */}
+              <div
+                onClick={() => setProgramType('professional')}
+                className={cn(
+                  "p-5 rounded-2xl border-2 transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-3 group text-left hover:scale-[1.03] hover:border-green-600/40 hover:shadow-lg",
+                  programType === 'professional'
+                    ? "bg-white border-green-600 shadow-xl shadow-green-600/10 ring-4 ring-green-600/10"
+                    : "bg-white border-slate-250 hover:border-green-600/60 hover:bg-slate-50"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300",
+                    programType === 'professional' ? "bg-green-600 text-white" : "bg-slate-100 text-slate-600"
+                  )}>
+                    <GraduationCap size={20} />
+                  </div>
+                  {programType === 'professional' && (
+                    <CheckCircle size={16} className="text-green-600" />
+                  )}
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-900 text-sm">Professional Course</h4>
+                  <p className="text-xs text-slate-500 mt-1 leading-snug">Self-paced video modules, structured curriculum &amp; certificates.</p>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-700 uppercase tracking-widest block">Short Description</label>
-            <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3} placeholder="What will mentees learn..." className="w-full p-4 bg-white border-2 border-slate-300 rounded-xl text-sm font-bold text-slate-800 outline-none resize-none focus:border-green-500 focus:ring-4 focus:ring-green-500/10 transition-all" />
-          </div>
-          <button onClick={() => { if(title) onSave(title, desc); }} className="w-full h-14 bg-green-600 hover:bg-green-700 text-white font-black text-sm uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-xl shadow-green-600/20 mt-4 border-none">
-            Enter Course Atelier <ChevronRight size={18} strokeWidth={2.5} />
+
+          <button 
+            onClick={() => onSave('', '', programType)} 
+            className="w-full h-14 bg-green-600 hover:bg-green-700 text-white font-black text-sm uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-xl shadow-green-600/20 mt-4 border-none cursor-pointer"
+          >
+            Create New Course <ChevronRight size={18} />
           </button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+interface UploadModeSelectorProps {
+  mode: 'one_by_one' | 'bulk';
+  onSelectMode: (mode: 'one_by_one' | 'bulk') => void;
+}
+
+const UploadModeSelector: React.FC<UploadModeSelectorProps> = ({ mode, onSelectMode }) => {
+  return (
+    <div className="bg-slate-50 border-2 border-slate-250 p-6 rounded-[2.5rem] space-y-5 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-4">
+        <div>
+          <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 flex items-center gap-2 font-sans">
+            <UploadCloud size={18} className="text-green-600" /> Select Video Upload Strategy
+          </h4>
+          <p className="text-xs font-bold text-slate-500 mt-1 font-sans">
+            Choose your preferred upload method before adding videos to your course lessons.
+          </p>
+        </div>
+        <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-[10px] font-black uppercase tracking-wider self-start sm:self-center border border-green-200">
+          Resumable TUS Engine Enabled
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {/* Container 1: Upload One by One */}
+        <div
+          onClick={() => onSelectMode('one_by_one')}
+          className={cn(
+            "p-6 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden",
+            mode === 'one_by_one'
+              ? "bg-white border-green-600 shadow-xl shadow-green-600/10 ring-4 ring-green-600/10"
+              : "bg-white border-slate-250 hover:border-slate-400 hover:bg-slate-50/80"
+          )}
+        >
+          <div className="flex items-start justify-between">
+            <div className={cn(
+              "w-12 h-12 rounded-xl flex items-center justify-center transition-all",
+              mode === 'one_by_one' ? "bg-green-600 text-white shadow-md" : "bg-slate-100 text-slate-600 group-hover:bg-slate-200"
+            )}>
+              <Video size={24} />
+            </div>
+            {mode === 'one_by_one' ? (
+              <span className="px-3 py-1 bg-green-600 text-white text-[10px] font-black uppercase tracking-wider rounded-full flex items-center gap-1 shadow-sm">
+                <CheckCircle size={12} /> Selected Mode
+              </span>
+            ) : (
+              <span className="px-3 py-1 bg-slate-100 text-slate-500 text-[10px] font-black uppercase tracking-wider rounded-full">
+                Click to Select
+              </span>
+            )}
+          </div>
+          <div className="space-y-1">
+            <h5 className="text-base font-black text-slate-900 tracking-tight font-sans">
+              Upload One by One
+            </h5>
+            <p className="text-xs font-bold text-slate-500 leading-relaxed font-sans">
+              Upload videos one at a time. Best for careful review of each video.
+            </p>
+          </div>
+          <div className="text-[10px] font-black uppercase tracking-wider text-green-700 font-sans pt-2 border-t border-slate-150">
+            ✓ Step-by-step verification &amp; manual review
+          </div>
+        </div>
+
+        {/* Container 2: Bulk Upload */}
+        <div
+          onClick={() => onSelectMode('bulk')}
+          className={cn(
+            "p-6 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-4 group relative overflow-hidden",
+            mode === 'bulk'
+              ? "bg-white border-green-600 shadow-xl shadow-green-600/10 ring-4 ring-green-600/10"
+              : "bg-white border-slate-250 hover:border-slate-400 hover:bg-slate-50/80"
+          )}
+        >
+          <div className="flex items-start justify-between">
+            <div className={cn(
+              "w-12 h-12 rounded-xl flex items-center justify-center transition-all",
+              mode === 'bulk' ? "bg-green-600 text-white shadow-md" : "bg-slate-100 text-slate-600 group-hover:bg-slate-200"
+            )}>
+              <Layers size={24} />
+            </div>
+            {mode === 'bulk' ? (
+              <span className="px-3 py-1 bg-green-600 text-white text-[10px] font-black uppercase tracking-wider rounded-full flex items-center gap-1 shadow-sm">
+                <CheckCircle size={12} /> Selected Mode
+              </span>
+            ) : (
+              <span className="px-3 py-1 bg-slate-100 text-slate-500 text-[10px] font-black uppercase tracking-wider rounded-full">
+                Click to Select
+              </span>
+            )}
+          </div>
+          <div className="space-y-1">
+            <h5 className="text-base font-black text-slate-900 tracking-tight font-sans">
+              Bulk Upload
+            </h5>
+            <p className="text-xs font-bold text-slate-500 leading-relaxed font-sans">
+              Upload multiple videos at once. Best for batch uploading courses.
+            </p>
+          </div>
+          <div className="text-[10px] font-black uppercase tracking-wider text-green-700 font-sans pt-2 border-t border-slate-150">
+            ✓ Multi-video batch queue &amp; auto-lesson mapping
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const BatchVideoDropzone: React.FC<{
+  onFilesSelected: (files: FileList | File[]) => void;
+}> = ({ onFilesSelected }) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      onFilesSelected(e.dataTransfer.files);
+    }
+  };
+
+  return (
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onClick={() => inputRef.current?.click()}
+      className={cn(
+        "p-8 rounded-[2rem] border-2 border-dashed transition-all duration-300 cursor-pointer flex flex-col items-center justify-center text-center gap-3 relative overflow-hidden group mb-6",
+        isDragging
+          ? "border-green-500 bg-green-50/50 scale-[1.01]"
+          : "border-slate-300 hover:border-green-500 bg-slate-50/50 hover:bg-green-50/20"
+      )}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept="video/*,.mp4,.mov,.webm,.avi,.mkv"
+        className="hidden"
+        onChange={(e) => e.target.files && onFilesSelected(e.target.files)}
+      />
+      <div className="w-16 h-16 rounded-2xl bg-green-100 text-green-700 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
+        <UploadCloud size={32} />
+      </div>
+      <div>
+        <h4 className="text-base font-black text-slate-900 tracking-tight font-sans">
+          Batch Drag & Drop Multiple Lesson Videos
+        </h4>
+        <p className="text-xs font-bold text-slate-500 max-w-md mx-auto mt-1 font-sans">
+          Select or drop multiple video files at once. Each video automatically becomes a lesson with TUS background uploading.
+        </p>
+      </div>
+      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-green-700 bg-green-100/80 px-4 py-1.5 rounded-full font-sans">
+        <Video size={13} /> Multiple Video Batch Upload Enabled
       </div>
     </div>
   );
@@ -766,7 +1144,12 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
   const { courseId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  
+  const initUploads = useUploadStore(state => state.initUploads);
+
+  useEffect(() => {
+    initUploads();
+  }, [initUploads]);
+
   const [courseTitle, setCourseTitle] = useState('');
   const [courseDesc, setCourseDesc] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState('');
@@ -816,15 +1199,45 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
           setRefundPolicy(fullCourse.refund_policy || 'No refund policy specified.');
           setTags(Array.isArray(fullCourse.tags) ? fullCourse.tags.join(', ') : '');
           setMaterials(fullCourse.materials || []);
-          setTopics(fullCourse.modules.map((m: any) => ({
-            id: m.id,
-            title: m.title,
-            objective: m.objective || '',
-            videoUrl: '', // To be implemented with storage
-            materials: [], // To be implemented with storage
-            liveSession: null, // To be implemented with liveSessions table
-            expanded: false
-          })));
+          // Fetch live sessions
+          const { data: liveSessions } = await nexus.database
+            .from('live_sessions')
+            .select('*')
+            .eq('course_id', courseId);
+
+          setTopics(fullCourse.modules.map((m: any) => {
+            const videoLesson = m.lessons?.find((l: any) => l.type === 'video');
+            const materialLessons = m.lessons?.filter((l: any) => l.type !== 'video') || [];
+            const liveSession = liveSessions?.find((s: any) => s.title === `Live Class: ${m.title}`);
+
+            let mappedLive = null;
+            if (liveSession && liveSession.scheduled_at) {
+              const d = new Date(liveSession.scheduled_at);
+              const dateStr = d.toISOString().split('T')[0];
+              const timeStr = d.toTimeString().split(' ')[0].substring(0, 5);
+              mappedLive = {
+                date: dateStr,
+                time: timeStr,
+                duration: '60',
+                note: ''
+              };
+            }
+
+            return {
+              id: m.id,
+              title: m.title,
+              objective: m.objective || '',
+              videoUrl: videoLesson?.content_url || '',
+              materials: materialLessons.map((l: any) => ({
+                id: l.id,
+                name: l.title,
+                type: l.type === 'pdf' ? 'pdf' : l.type === 'zip' ? 'zip' : 'link',
+                url: l.content_url || ''
+              })),
+              liveSession: mappedLive,
+              expanded: false
+            };
+          }));
         } catch (err) {
           console.error('Failed to fetch course:', err);
         } finally {
@@ -851,11 +1264,65 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
       setRefundPolicy('No refund policy specified.');
       setTags('');
       setMaterials([]);
-      setTopics([emptyTopic(1)]);
       setWizardStep(1);
       setEditStep('curriculum');
+      if (!courseTitle) {
+        setShowSetup(true);
+      }
     }
   }, [courseId]);
+
+  const startBulkUpload = useUploadStore(state => state.startBulkUpload);
+  const clearUpload = useUploadStore(state => state.clearUpload);
+  const [uploadMode, setUploadMode] = useState<'one_by_one' | 'bulk'>('one_by_one');
+
+  const handleBatchVideoUpload = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter(
+      f => f.type.startsWith('video/') || f.name.match(/\.(mp4|mov|avi|webm|mkv)$/i)
+    );
+    if (fileArray.length === 0) return;
+
+    let activeId = courseId;
+    if (!activeId || activeId === 'new') {
+      activeId = `temp-${Date.now()}`;
+    }
+
+    // Filter out initial empty topic if blank
+    const currentTopics = topics.filter(t => t.title.trim() !== '' || t.videoUrl !== '');
+
+    const newItems: Array<{ topicId: string; file: File }> = [];
+    const updatedTopics: Topic[] = [...currentTopics];
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      const topicId = `topic-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`;
+      const cleanTitle = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+
+      const newTopic: Topic = {
+        id: topicId,
+        title: cleanTitle,
+        objective: '',
+        videoUrl: '',
+        materials: [],
+        liveSession: null,
+        expanded: true
+      };
+      updatedTopics.push(newTopic);
+      newItems.push({ topicId, file });
+    }
+
+    setTopics(updatedTopics);
+
+    // Queue bulk video processing
+    startBulkUpload({
+      courseId: activeId,
+      items: newItems,
+      onItemSuccess: (topicId, url) => {
+        setTopics(prev => prev.map(t => t.id === topicId ? { ...t, videoUrl: url } : t));
+        clearUpload(topicId);
+      }
+    });
+  };
 
   // Load tutor's course list if courseId is undefined (Index View)
   React.useEffect(() => {
@@ -869,7 +1336,7 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
             .from('course_reviews')
             .select('course_id, status')
             .eq('submitted_by', user.id);
-            
+
           const reviewMap = new Map(reviews?.map(r => [r.course_id, r.status]) || []);
           const updatedList = list.map(c => ({
             ...c,
@@ -887,7 +1354,7 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
   }, [courseId, user]);
 
   if (loading) {
-    return <LoadingOverlay message="Loading Blueprint" submessage="Retrieving course architecture from Nexus..." />;
+    return <LoadingOverlay message="Loading Blueprint" submessage="Retrieving course builder blueprint from Nexus..." />;
   }
 
   const addTopic = () => setTopics(prev => [...prev, emptyTopic(prev.length + 1)]);
@@ -905,12 +1372,12 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
     }
 
     if (publish) {
-      if (!courseTitle || !courseDesc || !language || !level || !duration || !priceStandard || !accessPeriod || !refundPolicy || !learningObjectives || !prerequisites || !thumbnailUrl) {
-        alert('Please fill out all required fields marked with * before publishing.');
+      if (!courseTitle.trim() || !courseDesc.trim()) {
+        alert('Please fill out Course Title and Description before publishing.');
         return false;
       }
       if (topics.length === 0 || topics.some(t => !t.title)) {
-        alert('Please provide at least one topic module with a valid title.');
+        alert('Please provide at least one topic lesson with a valid title.');
         return false;
       }
     }
@@ -938,13 +1405,49 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
         status: 'draft', // Hardcode to 'draft' so it remains hidden until approved!
       });
 
-      // 2. Save Modules (Topics)
-      for (let i = 0; i < topics.length; i++) {
-        const topic = topics[i];
-        if (topic.id.includes('-') && courseId) {
-          await courseService.addModule(courseId, topic.title, i);
+      // 2. Save Curriculum (Modules, Lessons, Materials, Live Sessions)
+      await courseService.saveCurriculum(courseId, topics, user.id);
+
+      // Reload topics with permanent database IDs
+      const fullCourse = await courseService.getFullCourse(courseId);
+      const { data: liveSessions } = await nexus.database
+        .from('live_sessions')
+        .select('*')
+        .eq('course_id', courseId);
+
+      setTopics(fullCourse.modules.map((m: any) => {
+        const videoLesson = m.lessons?.find((l: any) => l.type === 'video');
+        const materialLessons = m.lessons?.filter((l: any) => l.type !== 'video') || [];
+        const liveSession = liveSessions?.find((s: any) => s.title === `Live Class: ${m.title}`);
+
+        let mappedLive = null;
+        if (liveSession && liveSession.scheduled_at) {
+          const d = new Date(liveSession.scheduled_at);
+          const dateStr = d.toISOString().split('T')[0];
+          const timeStr = d.toTimeString().split(' ')[0].substring(0, 5);
+          mappedLive = {
+            date: dateStr,
+            time: timeStr,
+            duration: '60',
+            note: ''
+          };
         }
-      }
+
+        return {
+          id: m.id,
+          title: m.title,
+          objective: m.objective || '',
+          videoUrl: videoLesson?.content_url || '',
+          materials: materialLessons.map((l: any) => ({
+            id: l.id,
+            name: l.title,
+            type: l.type === 'pdf' ? 'pdf' : l.type === 'zip' ? 'zip' : 'link',
+            url: l.content_url || ''
+          })),
+          liveSession: mappedLive,
+          expanded: false
+        };
+      }));
 
       // 3. Register/Update Review if deploying
       if (publish) {
@@ -1006,53 +1509,76 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
 
   const handleCreateCourse = async () => {
     if (!user) return;
-    
-    // Final verification of required fields
-    if (!courseTitle.trim() || !courseDesc.trim() || !thumbnailUrl.trim() ||
-        !language.trim() || !duration.trim() || !level.trim() || !accessPeriod.trim() ||
-        !priceStandard.trim() || isNaN(Number(priceStandard)) || !refundPolicy.trim() ||
-        !learningObjectives.trim() || !prerequisites.trim()) {
-      alert('Please fill out all required fields before creating the course.');
+
+    // Verification of required fields for the 4-step workflow
+    if (!courseTitle.trim() || !courseDesc.trim()) {
+      alert('Please fill out the Course Title and Description in Step 1 before publishing.');
       return;
     }
 
     setIsSaving(true);
     try {
-      // 1. Create skeleton
+      // 1. Create course entry
       const newCourse = await courseService.createCourse(user.id, courseTitle);
-      
-      // 2. Unconditionally update with all wizard fields as draft
+
+      // 2. Update with all fields and set published status
       await courseService.updateCourse(newCourse.id, {
         title: courseTitle,
         description: courseDesc,
-        thumbnail_url: thumbnailUrl,
+        thumbnail_url: thumbnailUrl || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800',
         trailer_url: trailerUrl || null,
-        category: category || null,
-        language,
-        duration,
-        learning_objectives: learningObjectives.split('\n').filter(s => s.trim()),
-        prerequisites: prerequisites.split('\n').filter(s => s.trim()) as any,
-        level,
+        category: category || 'General',
+        language: language || 'English',
+        duration: duration || `${topics.length * 30} mins`,
+        learning_objectives: learningObjectives ? learningObjectives.split('\n').filter(s => s.trim()) : ['Master core concepts'],
+        prerequisites: prerequisites ? prerequisites.split('\n').filter(s => s.trim()) as any : [],
+        level: level || 'Beginner',
         price_standard: Number(priceStandard) || 0,
-        access_period: accessPeriod,
+        access_period: accessPeriod || 'Lifetime',
         certification_available: certificationAvailable,
-        refund_policy: refundPolicy,
+        refund_policy: refundPolicy || 'Standard policy',
         tags: tags ? tags.split(',').map(s => s.trim()).filter(s => s) as any : [],
         materials: [],
-        status: 'draft',
+        status: 'published',
       });
 
-      // 3. Add a default module so they have a starting point in their curriculum
-      await courseService.addModule(newCourse.id, 'Module 1: Introduction', 0);
+      // 3. Save topics & lessons curriculum created in Step 3
+      if (topics.length > 0) {
+        await courseService.saveCurriculum(newCourse.id, topics, user.id);
+      }
 
-      // Reset wizard step
-      setWizardStep(1);
-      
-      // 4. Navigate to the newly created course!
-      navigate(`/tutor/courses/${newCourse.id}`, { replace: true });
-    } catch (err) {
-      console.error('Failed to create course blueprint:', err);
-      alert('Failed to initialize course blueprint. Please try again.');
+      // 4. Register review as approved/published so it appears on catalog
+      await nexus.database
+        .from('course_reviews')
+        .insert([{
+          course_id: newCourse.id,
+          submitted_by: user.id,
+          status: 'approved',
+          checklist_title: true,
+          checklist_description: true,
+          checklist_curriculum: true,
+          checklist_video: true,
+          checklist_audio: true,
+          checklist_thumbnail: true,
+          checklist_no_copyright: true
+        }]);
+
+      window.dispatchEvent(new Event('trileza-course-published'));
+
+      setShowToast(true);
+      setTimeout(() => {
+        setShowToast(false);
+        navigate('/tutor/courses', { replace: true });
+      }, 1500);
+    } catch (err: any) {
+      console.error('Failed to create course:', err);
+      const msg = err?.message || String(err);
+      if (msg.includes('Invalid token') || msg.includes('JWT expired') || msg.includes('Unauthorized')) {
+        await useAuthStore.getState().syncProfile();
+        alert('Session synchronized. Please click Publish again.');
+      } else {
+        alert('Failed to publish course. Please try again: ' + msg);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -1061,18 +1587,19 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
   // ─── View: Course Index (No CourseId) ───
   if (!courseId) {
     return (
-      <div className="max-w-7xl mx-auto pb-24 space-y-8 animate-in fade-in duration-500 font-sans">
+      <div className="w-full pb-24 space-y-8 animate-in fade-in duration-500 font-sans course-page-container">
         {/* Soft elegant gray banner with green elements */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white border-2 border-slate-250/70 p-8 md:p-12 rounded-[2.5rem] shadow-sm relative overflow-hidden">
-          <div className="absolute -top-32 -left-32 w-80 h-80 bg-green-200 rounded-full blur-[100px] opacity-25" />
-          <div className="relative z-10 space-y-2">
-            <h1 className="text-4xl font-black tracking-tight text-slate-900">Course Architect</h1>
-            <p className="text-slate-655 font-bold max-w-xl text-lg mt-2">Manage your published programs and build new learning experiences.</p>
-          </div>
-          <button onClick={() => navigate('/tutor/courses/new')} className="relative z-10 bg-green-600 hover:bg-green-700 text-white font-black px-8 py-4 rounded-2xl shadow-lg shadow-green-600/15 flex items-center gap-2 transition-all border-none">
-            <Plus size={20} /> Build New Course
-          </button>
-        </div>
+        <PageHeader
+          title="Course Builder"
+          description="Manage your published programs and build new learning experiences."
+          tag="COURSE BUILDER"
+          icon={GraduationCap}
+          rightContent={
+            <Button onClick={() => navigate('/tutor/courses/new')} className="bg-orange-500 hover:bg-orange-600 text-white border-none rounded-xl px-5 h-11 font-bold text-sm shadow-lg shadow-orange-600/25 flex items-center gap-2">
+              <Plus size={16} /> Build New Course
+            </Button>
+          }
+        />
 
         {loadingList ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
@@ -1086,8 +1613,8 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
               <BookOpen size={28} />
             </div>
             <h3 className="text-xl font-bold text-slate-900">No course blueprints yet</h3>
-            <p className="text-slate-500 text-sm leading-relaxed max-w-xs mx-auto">Establish your mentor node by initiating your first program blueprint.</p>
-            <button 
+            <p className="text-slate-550 text-sm leading-relaxed max-w-xs mx-auto">Establish your mentor space by initiating your first program blueprint.</p>
+            <button
               onClick={() => navigate('/tutor/courses/new')}
               className="bg-green-600 hover:bg-green-700 text-white font-black px-8 py-4 rounded-2xl shadow-lg shadow-green-600/15 transition-all border-none"
             >
@@ -1096,40 +1623,115 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {coursesList.map((course) => (
-              <div 
-                key={course.id} 
-                onClick={() => navigate(`/tutor/courses/${course.id}`)} 
-                className="bg-white border-2 border-slate-250/70 hover:border-green-405 rounded-[2rem] p-6 shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer group flex flex-col justify-between min-h-[200px]"
-              >
-                <div>
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="w-12 h-12 bg-slate-50 group-hover:bg-green-50 text-slate-500 group-hover:text-green-700 rounded-xl flex items-center justify-center transition-all border-2 border-slate-200 shadow-inner">
-                      <FileText size={24}/>
+            {coursesList.map((course) => {
+              const thumbnailSrc = course.thumbnail_url || course.thumbnail;
+              return (
+                <div
+                  key={course.id}
+                  onClick={() => navigate(`/tutor/courses/${course.id}`)}
+                  className="bg-white border-2 border-slate-250/70 hover:border-green-400 rounded-[2rem] p-5 shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer group flex flex-col justify-between overflow-hidden relative"
+                >
+                  <div>
+                    {/* Course Thumbnail Image Box */}
+                    <div className="relative w-full h-44 rounded-2xl overflow-hidden mb-4 bg-slate-100 border border-slate-200 shadow-inner group-hover:shadow-md transition-all">
+                      {thumbnailSrc ? (
+                        <img 
+                          src={thumbnailSrc} 
+                          alt={course.title} 
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 to-slate-150 text-slate-400">
+                          <BookOpen size={36} />
+                          <span className="text-[10px] font-black uppercase tracking-widest mt-2 text-slate-400">No Thumbnail</span>
+                        </div>
+                      )}
+
+                      {/* Review Status Badge */}
+                      <div className="absolute top-3 right-3">
+                        <span className={cn(
+                          "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-sm backdrop-blur-md",
+                          course.reviewStatus === 'approved' || course.status === 'published'
+                            ? "bg-green-600/90 text-white border-green-500"
+                            : course.reviewStatus === 'pending_deletion' || course.status === 'pending_deletion'
+                              ? "bg-red-600/90 text-white border-red-500"
+                              : course.reviewStatus === 'pending'
+                                ? "bg-blue-600/90 text-white border-blue-500"
+                                : course.reviewStatus === 'needs_changes'
+                                  ? "bg-amber-500/90 text-white border-amber-400"
+                                  : course.reviewStatus === 'rejected'
+                                    ? "bg-rose-600/90 text-white border-rose-500"
+                                    : "bg-slate-800/80 text-white border-slate-700"
+                        )}>
+                          {course.reviewStatus ? `review: ${course.reviewStatus.replace('_', ' ')}` : (course.status || 'draft')}
+                        </span>
+                      </div>
+
+                      {/* Delete Course Icon Button */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!user?.id) return;
+                          if (!window.confirm(`Are you sure you want to request deletion of "${course.title}"? An admin will review and approve the request.`)) return;
+
+                          try {
+                            const { error: courseErr } = await nexus.database
+                              .from('courses')
+                              .update({ status: 'pending_deletion' })
+                              .eq('id', course.id);
+
+                            if (courseErr) throw courseErr;
+
+                            const { data: existingReview } = await nexus.database
+                              .from('course_reviews')
+                              .select('id')
+                              .eq('course_id', course.id)
+                              .maybeSingle();
+
+                            if (existingReview) {
+                              await nexus.database
+                                .from('course_reviews')
+                                .update({ status: 'pending_deletion', submitted_at: new Date().toISOString() })
+                                .eq('id', existingReview.id);
+                            } else {
+                              await nexus.database
+                                .from('course_reviews')
+                                .insert([{
+                                  course_id: course.id,
+                                  submitted_by: user.id,
+                                  status: 'pending_deletion',
+                                  submitted_at: new Date().toISOString()
+                                }]);
+                            }
+
+                            alert('Course deletion requested! It is now pending admin review & approval.');
+                            setCoursesList(prev => prev.map(c => c.id === course.id ? { ...c, status: 'pending_deletion', reviewStatus: 'pending_deletion' } : c));
+                          } catch (err: any) {
+                            console.error('Failed to request deletion:', err);
+                            alert('Failed to request deletion: ' + (err.message || err));
+                          }
+                        }}
+                        className="absolute top-3 left-3 p-2 rounded-xl bg-slate-950/75 hover:bg-red-600 text-white transition-all shadow-md border border-white/20 cursor-pointer flex items-center justify-center opacity-85 hover:opacity-100"
+                        title="Delete Course (Requires Admin Approval)"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
-                    <span className={cn(
-                      "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
-                      course.reviewStatus === 'approved' || course.status === 'published'
-                        ? "bg-green-100 text-green-800 border-green-200" 
-                        : course.reviewStatus === 'pending'
-                        ? "bg-blue-100 text-blue-800 border-blue-200"
-                        : course.reviewStatus === 'needs_changes'
-                        ? "bg-amber-100 text-amber-800 border-amber-200"
-                        : course.reviewStatus === 'rejected'
-                        ? "bg-red-105 text-red-800 border-red-200"
-                        : "bg-slate-100 text-slate-800 border-slate-200"
-                    )}>
-                      {course.reviewStatus ? `review: ${course.reviewStatus.replace('_', ' ')}` : course.status}
+
+                    <h3 className="font-black text-lg text-slate-900 group-hover:text-green-700 transition-colors leading-tight line-clamp-2 px-1">
+                      {course.title}
+                    </h3>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t-2 border-slate-100 flex items-center justify-between text-xs font-black text-slate-550 px-1">
+                    <span>{course.enrolled_count || 0} Enrolled Students</span>
+                    <span className="group-hover:translate-x-1 transition-transform text-slate-700 group-hover:text-green-700 flex items-center gap-1">
+                      Edit Blueprint &rarr;
                     </span>
                   </div>
-                  <h3 className="font-black text-xl text-slate-900 group-hover:text-green-700 transition-colors leading-tight line-clamp-2">{course.title}</h3>
                 </div>
-                <div className="mt-4 pt-4 border-t-2 border-slate-150 flex items-center justify-between text-xs font-black text-slate-550">
-                  <span>{course.enrolled_count || 0} Enrolled Students</span>
-                  <span className="group-hover:translate-x-1 transition-transform text-slate-700 group-hover:text-green-700">Edit Blueprint &rarr;</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -1138,44 +1740,60 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
 
   // ─── View: Immersive Step-by-Step Creation Wizard ───
   if (courseId === 'new') {
-    const isStep1Valid = !!courseTitle.trim() && !!courseDesc.trim() && !!thumbnailUrl.trim();
-    const isStep2Valid = !!language.trim() && !!duration.trim() && !!level.trim() && !!accessPeriod.trim();
-    const isStep3Valid = !!priceStandard.trim() && !isNaN(Number(priceStandard)) && !!refundPolicy.trim();
-    const isStep4Valid = !!learningObjectives.trim() && !!prerequisites.trim();
+    const isStep1Valid = !!courseTitle.trim() && !!courseDesc.trim();
+    const isStep2Valid = true;
+    const isStep3Valid = topics.length > 0;
+    const isStep4Valid = isStep1Valid && isStep3Valid;
 
     return (
-      <div className="max-w-4xl mx-auto pb-24 space-y-8 animate-in fade-in duration-500 font-sans">
-        {/* Wizard Header Banner */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-slate-900 border border-slate-800 p-8 md:p-12 rounded-[2.5rem] shadow-2xl relative overflow-hidden text-white">
-          <div className="absolute -top-32 -left-32 w-80 h-80 bg-green-500 rounded-full blur-[100px] opacity-10" />
-          <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-green-400 rounded-full blur-[100px] opacity-10" />
-          <div className="relative z-10 space-y-2">
-            <div className="flex items-center gap-2 text-green-400 font-black tracking-widest text-xs uppercase mb-1">
-              <Sparkles size={14} /> New Course Architect
-            </div>
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white">Create Course Blueprint</h1>
-            <p className="text-slate-400 font-medium max-w-xl text-sm">Provide the foundational metadata before entering the curriculum atelier. All fields marked with * are required.</p>
-          </div>
-          <button onClick={() => navigate('/tutor/courses')} className="relative z-10 h-11 px-5 rounded-xl border border-slate-700 bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white font-bold flex items-center gap-2 transition-all border-none font-sans">
-            <ChevronLeft size={16} /> Dashboard
-          </button>
-        </div>
+      <div className="max-w-5xl mx-auto pb-24 space-y-8 animate-in fade-in duration-500 font-sans course-page-container">
+        {showSetup && (
+          <CourseSetupModal 
+            onSave={(t, d, pType) => {
+              setCourseTitle(t);
+              setCourseDesc(d);
+              if (pType === 'mentorship') {
+                setCategory('Mentorship Program');
+              } else {
+                setCategory('Software Engineering');
+              }
+              setShowSetup(false);
+            }} 
+            onClose={() => {
+              setShowSetup(false);
+              if (!courseTitle) navigate('/tutor/courses');
+            }} 
+          />
+        )}
 
-        {/* Premium Timeline Tracker */}
+        {/* Wizard Header Banner */}
+        <PageHeader
+          title="Create New Course Blueprint"
+          description="Build your course in 4 easy steps: Choose Program Type & Details, Thumbnail, Lessons & Video Uploads, then Preview and Publish."
+          tag="STREAMLINED COURSE BUILDER"
+          icon={Sparkles}
+          rightContent={
+            <Button onClick={() => navigate('/tutor/courses')} className="bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl px-5 h-11 font-bold text-sm shadow-sm flex items-center gap-2">
+              <ChevronLeft size={16} /> Dashboard
+            </Button>
+          }
+        />
+
+        {/* 4-Step Timeline Tracker */}
         <div className="bg-white border-2 border-slate-200/80 rounded-[2rem] p-6 shadow-sm">
           <div className="flex items-center justify-between relative px-2">
             {/* Background progress line */}
             <div className="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 -translate-y-1/2 z-0 rounded-full" />
-            <div 
-              className="absolute top-1/2 left-0 h-1 bg-green-500 -translate-y-1/2 z-0 rounded-full transition-all duration-500" 
+            <div
+              className="absolute top-1/2 left-0 h-1 bg-green-500 -translate-y-1/2 z-0 rounded-full transition-all duration-500"
               style={{ width: `${((wizardStep - 1) / 3) * 100}%` }}
             />
 
             {[
-              { step: 1, label: 'Identity', icon: Globe },
-              { step: 2, label: 'Specs', icon: Clock },
-              { step: 3, label: 'Finance & Policies', icon: Award },
-              { step: 4, label: 'Pedagogy', icon: Target },
+              { step: 1, label: '1. Basic Details', icon: Globe },
+              { step: 2, label: '2. Thumbnail', icon: Image },
+              { step: 3, label: '3. Lessons & Videos', icon: Video },
+              { step: 4, label: '4. Preview & Publish', icon: Sparkles },
             ].map((s) => {
               const Icon = s.icon;
               const isActive = wizardStep === s.step;
@@ -1183,27 +1801,27 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
 
               return (
                 <div key={s.step} className="flex flex-col items-center relative z-10">
-                  <button 
+                  <button
                     onClick={() => {
                       if (s.step < wizardStep) setWizardStep(s.step);
                       else if (s.step === 2 && isStep1Valid) setWizardStep(2);
-                      else if (s.step === 3 && isStep1Valid && isStep2Valid) setWizardStep(3);
-                      else if (s.step === 4 && isStep1Valid && isStep2Valid && isStep3Valid) setWizardStep(4);
+                      else if (s.step === 3 && isStep1Valid) setWizardStep(3);
+                      else if (s.step === 4 && isStep1Valid) setWizardStep(4);
                     }}
-                    disabled={s.step > wizardStep}
+                    disabled={s.step > wizardStep && !isStep1Valid}
                     className={cn(
-                      "w-12 h-12 rounded-2xl flex items-center justify-center border-2 transition-all duration-300",
-                      isActive 
+                      "w-12 h-12 rounded-2xl flex items-center justify-center border-2 transition-all duration-300 cursor-pointer",
+                      isActive
                         ? "bg-slate-900 border-slate-900 text-white shadow-lg scale-110"
                         : isCompleted
                           ? "bg-green-600 border-green-600 text-white"
                           : "bg-white border-slate-250 text-slate-400 cursor-not-allowed hover:border-slate-350"
                     )}
                   >
-                    {isCompleted ? <CheckCircle size={18} strokeWidth={3} /> : <Icon size={18} />}
+                    {isCompleted ? <CheckCircle size={18} /> : <Icon size={18} />}
                   </button>
                   <span className={cn(
-                    "text-[10px] font-black uppercase tracking-wider mt-2.5",
+                    "text-[11px] font-black uppercase tracking-wider mt-2.5",
                     isActive ? "text-slate-900 font-bold" : "text-slate-400"
                   )}>
                     {s.label}
@@ -1217,211 +1835,164 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
         {/* Wizard Step Panels */}
         <div className="bg-white border-2 border-slate-205 rounded-[2.5rem] p-8 md:p-12 shadow-sm min-h-[400px] flex flex-col justify-between">
           <div className="space-y-8 animate-in fade-in duration-300">
+
+            {/* STEP 1: Basic Details */}
             {wizardStep === 1 && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-xl font-black text-slate-905 tracking-tight font-sans">Step 1: Course Identity & Story</h3>
-                  <p className="text-xs text-slate-500 font-bold mt-1 font-sans">Introduce your program with an arresting title, clear description, and thumbnail.</p>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight font-sans">Step 1: Course Basic Details</h3>
+                  <p className="text-xs text-slate-500 font-bold mt-1 font-sans">Enter the course title, description, category, level, and pricing.</p>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-550 block font-sans">Course Title *</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-600 block font-sans">Course Title *</label>
                     <input
                       value={courseTitle}
                       onChange={e => setCourseTitle(e.target.value)}
-                      placeholder="e.g. Advanced Agentic AI Architecture"
-                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-905 placeholder:text-slate-500 outline-none focus:bg-white focus:border-green-500 focus:ring-4 focus:ring-green-500/5 transition-all border border-slate-250 font-sans"
+                      placeholder="e.g. Full-Stack Web Architecture & AI Engineering"
+                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-900 placeholder:text-slate-400 outline-none focus:bg-white focus:border-green-500 focus:ring-4 focus:ring-green-500/5 transition-all border border-slate-250 font-sans"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Category</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-600 block font-sans">Category</label>
                     <CategoryAutocomplete value={category} onChange={setCategory} />
                   </div>
 
                   <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Short Description *</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-600 block font-sans">Short Description *</label>
                     <textarea
                       value={courseDesc}
                       onChange={e => setCourseDesc(e.target.value)}
                       rows={4}
-                      placeholder="Give a compelling summary of what the course covers, who it is for, and why they should enroll."
-                      className="w-full p-4 bg-slate-50 rounded-xl text-sm font-bold text-slate-905 placeholder:text-slate-500 outline-none focus:bg-white focus:border-green-500 focus:ring-4 focus:ring-green-500/5 transition-all border border-slate-250 resize-none leading-relaxed font-sans"
+                      placeholder="Give a clear summary of what mentees will learn and accomplish."
+                      className="w-full p-4 bg-slate-50 rounded-xl text-sm font-bold text-slate-900 placeholder:text-slate-400 outline-none focus:bg-white focus:border-green-500 focus:ring-4 focus:ring-green-500/5 transition-all border border-slate-250 resize-none leading-relaxed font-sans"
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Thumbnail Image *</label>
-                    <ThumbnailSelector value={thumbnailUrl} onChange={setThumbnailUrl} />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Tags / Keywords <span className="text-[10px] text-slate-400 normal-case">(optional)</span></label>
-                    <input
-                      value={tags}
-                      onChange={e => setTags(e.target.value)}
-                      placeholder="react, web, artificial intelligence"
-                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-905 placeholder:text-slate-500 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 font-sans"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {wizardStep === 2 && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-xl font-black text-slate-905 tracking-tight font-sans">Step 2: Course Specs & Pedagogy</h3>
-                  <p className="text-xs text-slate-500 font-bold mt-1 font-sans">Specify technical requirements, duration, and accessibility details.</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Language *</label>
-                    <select
-                      value={language}
-                      onChange={e => setLanguage(e.target.value)}
-                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-905 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 font-sans"
-                    >
-                      <option value="English">English</option>
-                      <option value="Spanish">Spanish</option>
-                      <option value="French">French</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Skill Level *</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-600 block font-sans">Target Level *</label>
                     <select
                       value={level}
                       onChange={e => setLevel(e.target.value)}
-                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-905 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 font-sans"
+                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 font-sans"
                     >
                       <option value="Beginner">Beginner</option>
                       <option value="Intermediate">Intermediate</option>
                       <option value="Advanced">Advanced</option>
-                      <option value="Expert">Expert</option>
+                      <option value="All Levels">All Levels</option>
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Total Duration *</label>
-                    <input
-                      value={duration}
-                      onChange={e => setDuration(e.target.value)}
-                      placeholder="e.g. 15 hours 45 mins"
-                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-905 placeholder:text-slate-550 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 font-sans"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Access Period *</label>
-                    <select
-                      value={accessPeriod}
-                      onChange={e => setAccessPeriod(e.target.value)}
-                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-905 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 font-sans"
-                    >
-                      <option value="Lifetime">Lifetime</option>
-                      <option value="1 Year">1 Year</option>
-                      <option value="6 Months">6 Months</option>
-                      <option value="3 Months">3 Months</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            {wizardStep === 3 && (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-xl font-black text-slate-905 tracking-tight font-sans">Step 3: Financials & Policy</h3>
-                  <p className="text-xs text-slate-550 font-bold mt-1 font-sans">Configure standard pricing, certificates, refund logic, and borrowing options.</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Base Price ({user?.country === 'Nigeria' ? 'NGN' : 'USD'}) *</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-600 block font-sans">Course Price ({user?.country === 'Nigeria' ? 'NGN' : 'USD'}) *</label>
                     <input
                       type="number"
                       value={priceStandard}
                       onChange={e => setPriceStandard(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-905 placeholder:text-slate-500 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 font-sans"
-                    />
-                    <p className="text-[10px] font-bold text-green-600 mt-1 uppercase tracking-widest font-sans">{user?.country === 'Nigeria' ? 'Regional PPP applied in NGN' : 'Regional Tiered Pricing will be automatically calculated.'}</p>
-                  </div>
-                  
-                  <div className="space-y-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl md:col-span-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-black text-slate-900 font-sans">Provide Certification? *</h4>
-                        <p className="text-[10px] font-bold text-slate-500 font-sans">Mentees receive a verifiable certificate upon completion.</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked={certificationAvailable} onChange={e => setCertificationAvailable(e.target.checked)} className="sr-only peer" />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
-                      </label>
-                    </div>
-                    
-                  </div>
-
-                  <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Refund Policy *</label>
-                    <textarea
-                      value={refundPolicy}
-                      onChange={e => setRefundPolicy(e.target.value)}
-                      rows={3}
-                      placeholder="e.g. 100% refund within 14 days if course progress is under 10%."
-                      className="w-full p-4 bg-slate-50 rounded-xl text-sm font-bold text-slate-905 placeholder:text-slate-500 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 resize-none leading-relaxed font-sans"
+                      placeholder="0.00 (Enter 0 for Free Course)"
+                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-900 placeholder:text-slate-400 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 font-sans"
                     />
                   </div>
                 </div>
               </div>
             )}
 
+            {/* STEP 2: Upload Thumbnail */}
+            {wizardStep === 2 && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight font-sans">Step 2: Upload Course Thumbnail</h3>
+                  <p className="text-xs text-slate-500 font-bold mt-1 font-sans">Drag and drop or select a high-quality cover image for your course.</p>
+                </div>
+
+                <div className="p-6 bg-slate-50 border-2 border-slate-200 rounded-[2rem]">
+                  <ThumbnailSelector value={thumbnailUrl} onChange={setThumbnailUrl} />
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: Add Lessons & Video Modules */}
+            {wizardStep === 3 && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight font-sans">Step 3: Add Lessons &amp; Video Modules</h3>
+                  <p className="text-xs text-slate-500 font-bold mt-1 font-sans">Select your upload method below, then upload your course videos with automatic Bunny.net optimization &amp; resumable streaming.</p>
+                </div>
+
+                {/* Upload Mode Selector (One by One vs Bulk Upload) */}
+                <UploadModeSelector mode={uploadMode} onSelectMode={setUploadMode} />
+
+                {/* Batch Multi-Video Upload Dropzone (Visible when Bulk Upload is selected) */}
+                {uploadMode === 'bulk' && (
+                  <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                    <BatchVideoDropzone onFilesSelected={handleBatchVideoUpload} />
+                  </div>
+                )}
+
+                {/* Topic / Lesson List */}
+                <div className="space-y-4">
+                  {topics.map((t, idx) => (
+                    <TopicCard
+                      key={t.id}
+                      topic={t}
+                      index={idx}
+                      onChange={updated => setTopics(topics.map(tp => tp.id === t.id ? updated : tp))}
+                      onRemove={() => setTopics(topics.filter(tp => tp.id !== t.id))}
+                    />
+                  ))}
+                  <button
+                    onClick={() => setTopics([...topics, emptyTopic(topics.length + 1)])}
+                    className="w-full py-4 border-2 border-dashed border-slate-300 hover:border-green-500 rounded-2xl text-xs font-black uppercase tracking-wider text-slate-600 hover:text-green-700 transition-all flex items-center justify-center gap-2 bg-slate-50/50 hover:bg-green-50/20 cursor-pointer"
+                  >
+                    <Plus size={16} /> Add Another Lesson / Topic
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4: Preview & Publish */}
             {wizardStep === 4 && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-xl font-black text-slate-905 tracking-tight font-sans">Step 4: Pedagogy & Outcomes</h3>
-                  <p className="text-xs text-slate-500 font-bold mt-1 font-sans">Define learning objectives, requirements, and promotional media.</p>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight font-sans">Step 4: Preview & Publish</h3>
+                  <p className="text-xs text-slate-500 font-bold mt-1 font-sans">Review your course summary and publish it to the student marketplace.</p>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block flex justify-between font-sans">
-                      <span>Learning Outcomes *</span>
-                      <span className="text-[10px] text-slate-400 normal-case font-sans">(One outcome per line)</span>
-                    </label>
-                    <textarea
-                      value={learningObjectives}
-                      onChange={e => setLearningObjectives(e.target.value)}
-                      rows={3}
-                      placeholder="By the end of this course, students will build a custom agentic pipeline...&#10;Understand system level orchestration..."
-                      className="w-full p-4 bg-slate-50 rounded-xl text-sm font-bold text-slate-905 placeholder:text-slate-500 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 resize-none leading-relaxed font-sans"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block flex justify-between font-sans">
-                      <span>Course Prerequisites *</span>
-                      <span className="text-[10px] text-slate-400 normal-case font-sans">(One prerequisite per line)</span>
-                    </label>
-                    <textarea
-                      value={prerequisites}
-                      onChange={e => setPrerequisites(e.target.value)}
-                      rows={3}
-                      placeholder="Basic familiarity with JavaScript or Python.&#10;Foundational knowledge of relational databases."
-                      className="w-full p-4 bg-slate-50 rounded-xl text-sm font-bold text-slate-905 placeholder:text-slate-500 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 resize-none leading-relaxed font-sans"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-555 block font-sans">Promotional Trailer Video URL <span className="text-[10px] text-slate-400 normal-case">(optional)</span></label>
-                    <input
-                      value={trailerUrl}
-                      onChange={e => setTrailerUrl(e.target.value)}
-                      placeholder="https://youtube.com/watch?v=..."
-                      className="w-full h-12 bg-slate-50 rounded-xl px-4 text-sm font-bold text-slate-905 placeholder:text-slate-500 outline-none focus:bg-white focus:border-green-500 transition-all border border-slate-250 font-sans"
-                    />
+                <div className="bg-slate-50 border-2 border-slate-200 rounded-[2rem] p-6 space-y-6">
+                  {/* Course Card Preview */}
+                  <div className="flex flex-col md:flex-row gap-6 items-start">
+                    <div className="w-full md:w-64 h-40 rounded-2xl overflow-hidden bg-slate-900 shrink-0 border border-slate-200">
+                      <img
+                        src={thumbnailUrl || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800'}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="space-y-3 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 rounded-full bg-green-100 text-green-800 text-[10px] font-black uppercase tracking-wider">
+                          {category || 'General'}
+                        </span>
+                        <span className="px-3 py-1 rounded-full bg-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-wider">
+                          {level}
+                        </span>
+                      </div>
+                      <h2 className="text-2xl font-black text-slate-900">{courseTitle || 'Untitled Course'}</h2>
+                      <p className="text-xs text-slate-600 leading-relaxed">{courseDesc || 'No description provided.'}</p>
+                      <div className="flex items-center gap-4 text-xs font-black text-slate-700 pt-2">
+                        <span>Price: {Number(priceStandard) > 0 ? `$${priceStandard}` : 'FREE'}</span>
+                        <span>•</span>
+                        <span>{topics.length} Lessons</span>
+                        <span>•</span>
+                        <span>{topics.filter(t => t.videoUrl).length} Videos Ready</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
+
           </div>
 
           {/* Navigation Controls */}
@@ -1431,7 +2002,7 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
                 if (wizardStep > 1) setWizardStep(wizardStep - 1);
                 else navigate('/tutor/courses');
               }}
-              className="h-14 px-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black transition-all flex items-center gap-2 border border-slate-250 shadow-sm font-sans"
+              className="h-14 px-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black transition-all flex items-center gap-2 border border-slate-250 shadow-sm font-sans cursor-pointer"
             >
               <ChevronLeft size={18} /> {wizardStep === 1 ? 'Cancel' : 'Back'}
             </button>
@@ -1439,12 +2010,8 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
             {wizardStep < 4 ? (
               <button
                 onClick={() => setWizardStep(wizardStep + 1)}
-                disabled={
-                  (wizardStep === 1 && !isStep1Valid) ||
-                  (wizardStep === 2 && !isStep2Valid) ||
-                  (wizardStep === 3 && !isStep3Valid)
-                }
-                className="h-14 px-8 rounded-xl bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-green-600/10 disabled:opacity-50 disabled:cursor-not-allowed border-none font-sans"
+                disabled={wizardStep === 1 && !isStep1Valid}
+                className="h-14 px-8 rounded-xl bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg shadow-green-600/10 disabled:opacity-50 disabled:cursor-not-allowed border-none font-sans cursor-pointer"
               >
                 Next Step <ChevronRight size={18} />
               </button>
@@ -1452,9 +2019,9 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
               <button
                 onClick={handleCreateCourse}
                 disabled={isSaving || !isStep4Valid}
-                className="h-14 px-8 rounded-xl bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-xl shadow-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed border-none font-sans"
+                className="h-14 px-8 rounded-xl bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-xl shadow-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed border-none font-sans cursor-pointer"
               >
-                {isSaving ? 'Engrafting Blueprint...' : 'Create Course & Enter Atelier'} <Award size={18} />
+                {isSaving ? 'Publishing Course...' : 'Publish Course Now'} <Award size={18} />
               </button>
             )}
           </div>
@@ -1465,7 +2032,7 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
 
   // ─── View: Atelier (Builder) ───
   return (
-    <div className="max-w-6xl mx-auto pb-24 space-y-6 animate-in fade-in duration-500 relative font-sans">
+    <div className="max-w-6xl mx-auto pb-24 space-y-6 animate-in fade-in duration-500 relative font-sans course-page-container">
       {/* Premium Toast */}
       {showToast && (
         <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top duration-500">
@@ -1487,8 +2054,8 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
           <div className="absolute -top-32 -left-32 w-80 h-80 bg-green-200 rounded-full blur-[100px] opacity-25" />
           <div className="relative z-10">
             <div className="flex items-center gap-2 mb-3">
-               <button onClick={() => navigate('/tutor/courses')} className="w-8 h-8 rounded-full bg-white hover:bg-slate-100 border border-slate-200 flex items-center justify-center transition-all border-none"><ChevronLeft size={16} className="text-slate-700" /></button>
-               <span className="text-green-700 font-black tracking-[0.2em] uppercase text-xs">Content Creator Mode</span>
+              <button onClick={() => navigate('/tutor/courses')} className="w-8 h-8 rounded-full bg-white hover:bg-slate-100 border border-slate-200 flex items-center justify-center transition-all border-none"><ChevronLeft size={16} className="text-slate-700" /></button>
+              <span className="text-green-700 font-black tracking-[0.2em] uppercase text-xs">Content Creator Mode</span>
             </div>
             <h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-900 mb-2">{courseTitle || 'Untitled Blueprint'}</h1>
             {courseDesc && <p className="text-slate-655 font-bold text-sm max-w-2xl">{courseDesc}</p>}
@@ -1518,6 +2085,16 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
             ))}
           </div>
 
+          {/* Upload Strategy Mode Selector (One by One vs Bulk) */}
+          <UploadModeSelector mode={uploadMode} onSelectMode={setUploadMode} />
+
+          {/* Batch Multi-Video Upload Dropzone (Visible when Bulk Upload is selected) */}
+          {uploadMode === 'bulk' && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+              <BatchVideoDropzone onFilesSelected={handleBatchVideoUpload} />
+            </div>
+          )}
+
           {/* Curriculum */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1541,23 +2118,23 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
           {/* Bottom Actions for Curriculum Step */}
           <div className="mt-8 bg-white border-2 border-slate-250/70 rounded-[2rem] p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
             <div>
-              <h3 className="font-black text-xl text-slate-900">Synchronize Draft Architecture</h3>
+              <h3 className="font-black text-xl text-slate-900">Synchronize Course Draft</h3>
               <p className="text-slate-655 font-bold text-sm mt-1">Save your draft progress or proceed to review your summary before deployment.</p>
             </div>
             <div className="flex gap-4 w-full md:w-auto">
-              <button 
-                onClick={() => handleSave(false)} 
-                disabled={isSaving} 
+              <button
+                onClick={() => handleSave(false)}
+                disabled={isSaving}
                 className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 h-14 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black transition-all border-2 border-slate-250 disabled:opacity-50 cursor-pointer text-xs uppercase tracking-wider"
               >
                 {isSaving ? 'Processing...' : <Save size={16} />} Save Draft
               </button>
-              <button 
+              <button
                 onClick={async () => {
                   const success = await handleSave(false);
                   if (success) setEditStep('summary');
-                }} 
-                disabled={isSaving} 
+                }}
+                disabled={isSaving}
                 className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 h-14 rounded-xl bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest shadow-lg shadow-green-600/15 transition-all disabled:opacity-50 cursor-pointer text-xs"
               >
                 Review Summary &amp; Deploy <ChevronRight size={16} />
@@ -1575,7 +2152,7 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
               <span className="text-[10px] font-black text-green-700 uppercase tracking-widest">Final Step</span>
               <h2 className="text-xl font-black text-slate-905 tracking-tight uppercase">Review Course Summary</h2>
             </div>
-            <button 
+            <button
               onClick={() => setEditStep('curriculum')}
               className="h-11 px-5 rounded-xl border-2 border-slate-250 hover:border-slate-400 bg-white text-slate-700 font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 shadow-sm"
             >
@@ -1711,19 +2288,69 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
               <p className="text-slate-655 font-bold text-sm mt-1">Once deployed, this course becomes active and visible on the public student registry.</p>
             </div>
             <div className="flex gap-4 w-full md:w-auto">
-              <button 
-                onClick={() => setEditStep('curriculum')} 
-                disabled={isSaving} 
+              {courseId && (
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(`Are you sure you want to request deletion of "${courseTitle || 'this course'}"? An admin will review and approve your request.`)) return;
+                    setIsSaving(true);
+                    try {
+                      const { error: courseErr } = await nexus.database
+                        .from('courses')
+                        .update({ status: 'pending_deletion' })
+                        .eq('id', courseId);
+                      if (courseErr) throw courseErr;
+
+                      const { data: existingReview } = await nexus.database
+                        .from('course_reviews')
+                        .select('id')
+                        .eq('course_id', courseId)
+                        .maybeSingle();
+
+                      if (existingReview) {
+                        await nexus.database
+                          .from('course_reviews')
+                          .update({ status: 'pending_deletion', submitted_at: new Date().toISOString() })
+                          .eq('id', existingReview.id);
+                      } else {
+                        await nexus.database
+                          .from('course_reviews')
+                          .insert([{
+                            course_id: courseId,
+                            submitted_by: user!.id,
+                            status: 'pending_deletion',
+                            submitted_at: new Date().toISOString()
+                          }]);
+                      }
+
+                      alert('Course deletion requested! It is now pending admin review & approval.');
+                      onBack();
+                    } catch (err: any) {
+                      console.error('Failed to request course deletion:', err);
+                      alert('Failed to request deletion: ' + (err.message || err));
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 h-14 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 font-black transition-all border-2 border-red-200 disabled:opacity-50 cursor-pointer text-xs uppercase tracking-wider"
+                  title="Request admin approval to delete this course"
+                >
+                  <Trash2 size={16} /> Request Deletion
+                </button>
+              )}
+              <button
+                onClick={() => setEditStep('curriculum')}
+                disabled={isSaving}
                 className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 h-14 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black transition-all border-2 border-slate-250 disabled:opacity-50 cursor-pointer text-xs uppercase tracking-wider"
               >
                 Edit Curriculum
               </button>
-              <button 
+              <button
                 onClick={async () => {
                   const success = await handleSave(true);
                   if (success) setEditStep('deployed');
-                }} 
-                disabled={isSaving} 
+                }}
+                disabled={isSaving}
                 className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 h-14 rounded-xl bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest shadow-xl shadow-green-600/20 transition-all disabled:opacity-50 cursor-pointer text-xs"
               >
                 Deploy Course <Award size={16} />
@@ -1746,7 +2373,7 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
               <div className="absolute inset-0 bg-green-150 rounded-full animate-ping opacity-25 duration-1000" />
               <div className="absolute -inset-2 bg-green-50 rounded-full border border-green-200/40" />
               <div className="w-20 h-20 bg-green-600 rounded-full flex items-center justify-center text-white shadow-xl shadow-green-600/30 relative z-10">
-                <CheckCircle size={40} strokeWidth={2.5} className="animate-bounce" />
+                <CheckCircle size={40} className="animate-bounce" />
               </div>
             </div>
 
@@ -1774,19 +2401,19 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
 
             {/* Beautiful Quick Action Buttons */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-md mt-10 z-10 relative">
-              <button 
+              <button
                 onClick={() => navigate('/courses')}
                 className="h-14 bg-slate-900 hover:bg-slate-950 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-slate-900/10 border-none cursor-pointer"
               >
                 <Globe size={15} /> View in Library
               </button>
-              <button 
+              <button
                 onClick={() => navigate('/tutor/courses')}
                 className="h-14 bg-white border-2 border-slate-250 hover:border-slate-400 text-slate-700 font-black text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
               >
                 <Layers size={15} /> Manage Courses
               </button>
-              <button 
+              <button
                 onClick={() => setEditStep('curriculum')}
                 className="h-12 bg-transparent text-slate-450 hover:text-slate-700 font-black text-[10px] uppercase tracking-widest transition-colors border-none sm:col-span-2 text-center mt-2 cursor-pointer"
               >

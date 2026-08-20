@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { adminService } from '../../lib/services/admin';
 import type { SupportTicket } from '../../types/admin';
-import { Card, Button } from '../ui';
+import { Card, Button, Toast } from '../ui';
 import { useAuthStore } from '../../store/authStore';
 import { 
   LifeBuoy, 
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { cn } from '../../utils';
+import PageHeader from '../shared/PageHeader';
 
 const SupportAgentDashboard: React.FC = () => {
   const { user } = useAuthStore();
@@ -28,6 +29,11 @@ const SupportAgentDashboard: React.FC = () => {
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [replyText, setReplyText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const [toast, setToast] = useState<{ message: string; type?: 'success' | 'error' | 'info' } | null>(null);
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -63,9 +69,9 @@ const SupportAgentDashboard: React.FC = () => {
       );
       setSelectedTicket(updated);
       await fetchData();
-      alert(`Ticket status updated to: ${status}`);
+      showToast(`Ticket status updated to: ${status}`, 'success');
     } catch (err) {
-      alert('Failed to update ticket: ' + err);
+      showToast('Failed to update ticket: ' + err, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -85,7 +91,7 @@ const SupportAgentDashboard: React.FC = () => {
       setSelectedTicket(updated);
       await fetchData();
     } catch (err) {
-      alert('Failed to submit reply: ' + err);
+      showToast('Failed to submit reply: ' + err, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -100,42 +106,63 @@ const SupportAgentDashboard: React.FC = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 text-left">
       
-      {/* ── Header ── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Support Helpdesk</h2>
-          <p className="text-slate-550 font-bold text-xs mt-1">Resolve end-user queries, triage tickets, and escalate infrastructure errors.</p>
-        </div>
-        <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm flex items-center gap-2">
-          <RefreshCcw size={14} className="text-green-600" /> Refresh Node
-        </Button>
-      </div>
+      {selectedTicket ? (
+        <PageHeader 
+          title={`Ticket #${selectedTicket.id.slice(0, 8)}: ${selectedTicket.title}`} 
+          description="Verify end-user query, priority tier, and ticket thread log for applicant."
+          tag="Support Ticket Details"
+          icon={LifeBuoy}
+          rightContent={
+            <Button 
+              onClick={() => setSelectedTicket(null)}
+              variant="outline"
+              className="h-10 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs"
+            >
+              ← Back to Helpdesk
+            </Button>
+          }
+        />
+      ) : (
+        <PageHeader
+          title="Support Helpdesk"
+          description="Resolve end-user queries, triage tickets, and escalate infrastructure errors."
+          tag="Support Helpdesk"
+          icon={LifeBuoy}
+          rightContent={
+            <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white/15 hover:bg-white/20 border-white/20 text-white shadow-sm flex items-center gap-2 font-bold">
+              <RefreshCcw size={14} className="text-emerald-450 animate-spin-slow" /> Refresh data
+            </Button>
+          }
+        />
+      )}
 
       {/* ── Support Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: 'Active Support Tickets', value: activeTickets.length, icon: LifeBuoy, color: 'text-cyan-700 bg-cyan-50 border-cyan-250/60' },
-          { label: 'Escalated Issues', value: escalatedCount, icon: ShieldAlert, color: 'text-rose-700 bg-rose-50 border-rose-250/60' },
-          { label: 'Urgent SLA (1hr response)', value: urgentCount, icon: AlertTriangle, color: `text-red-700 bg-red-50 border-red-250/60 ${urgentCount > 0 ? 'animate-pulse' : ''}` },
-          { label: 'Average Response Time', value: '18 mins', icon: Clock, color: 'text-emerald-700 bg-emerald-50 border-emerald-250/60' },
-        ].map((stat, i) => (
-          <Card key={i} className="bg-white border-slate-200/60 p-5 rounded-2xl flex flex-col justify-between shadow-sm hover:shadow-md transition-all">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-black text-slate-450 uppercase tracking-widest">{stat.label}</span>
-              <div className={`p-2 rounded-xl border ${stat.color}`}>
-                <stat.icon size={15} />
+      {!selectedTicket && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+          {[
+            { label: 'Active Support Tickets', value: activeTickets.length, icon: LifeBuoy, color: 'text-cyan-700 bg-cyan-50 border-cyan-250/60' },
+            { label: 'Escalated Issues', value: escalatedCount, icon: ShieldAlert, color: 'text-rose-700 bg-rose-50 border-rose-250/60' },
+            { label: 'Urgent SLA (1hr response)', value: urgentCount, icon: AlertTriangle, color: `text-red-700 bg-red-50 border-red-250/60 ${urgentCount > 0 ? 'animate-pulse' : ''}` },
+            { label: 'Average Response Time', value: '18 mins', icon: Clock, color: 'text-emerald-700 bg-emerald-50 border-emerald-250/60' },
+          ].map((stat, i) => (
+            <Card key={i} className="bg-white border-slate-200/60 p-5 rounded-2xl flex flex-col justify-between shadow-sm hover:shadow-md transition-all">
+              <div className="flex justify-between items-start">
+                <span className="text-[10px] font-black text-slate-450 uppercase tracking-widest">{stat.label}</span>
+                <div className={`p-2 rounded-xl border ${stat.color}`}>
+                  <stat.icon size={15} />
+                </div>
               </div>
-            </div>
-            <p className="text-xl font-black text-slate-900 mt-3">{stat.value}</p>
-          </Card>
-        ))}
-      </div>
+              <p className="text-xl font-black text-slate-900 mt-3">{stat.value}</p>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* ── Grid Layout ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className={selectedTicket ? "grid grid-cols-1 lg:grid-cols-3 gap-8" : "w-full"}>
         
         {/* Left Columns: Ticket Queue */}
-        <div className="lg:col-span-2 space-y-8">
+        <div className={selectedTicket ? "lg:col-span-2 space-y-8" : "w-full space-y-8"}>
           
           {/* Active Tickets List */}
           <div className="space-y-4">
@@ -204,16 +231,17 @@ const SupportAgentDashboard: React.FC = () => {
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">Closed Ticket History ({closedTickets.length})</h3>
             
             <Card className="overflow-hidden bg-white border border-slate-200/80 rounded-2xl p-0 shadow-sm">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 bg-slate-50/50 text-[9px] uppercase font-black tracking-widest">
-                    <th className="p-4">Ticket details</th>
-                    <th className="p-4">Priority</th>
-                    <th className="p-4">Resolved by</th>
-                    <th className="p-4">Closed Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs">
+              <div className="overflow-x-auto w-full no-scrollbar">
+                <table className="w-full text-left border-collapse min-w-[600px]">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-500 bg-slate-50/50 text-[9px] uppercase font-black tracking-widest">
+                      <th className="p-4">Ticket details</th>
+                      <th className="p-4">Priority</th>
+                      <th className="p-4">Resolved by</th>
+                      <th className="p-4">Closed Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs">
                   {closedTickets.map(t => (
                     <tr key={t.id} className="hover:bg-slate-50/60 transition-colors">
                       <td className="p-4">
@@ -233,15 +261,16 @@ const SupportAgentDashboard: React.FC = () => {
                   ))}
                 </tbody>
               </table>
-            </Card>
-          </div>
+            </div>
+          </Card>
+        </div>
 
         </div>
 
         {/* Right Column: Ticket triage panel */}
-        <div className="space-y-6">
-          <Card className="bg-white border border-slate-200/80 p-6 rounded-3xl sticky top-8 shadow-sm flex flex-col min-h-[500px]">
-            {selectedTicket ? (
+        {selectedTicket && (
+          <div className="space-y-6">
+            <Card className="bg-white border border-slate-200/80 p-6 rounded-3xl sticky top-8 shadow-sm flex flex-col min-h-[500px]">
               <div className="space-y-5 flex-1 flex flex-col justify-between text-left">
                 <div className="space-y-4 flex-1 flex flex-col">
                   <div>
@@ -376,25 +405,21 @@ const SupportAgentDashboard: React.FC = () => {
                       Resolve Escalated Ticket
                     </Button>
                   )}
-                </div>
               </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4">
-                <div className="w-16 h-16 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm text-xl font-bold">
-                  🎫
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-slate-700 text-sm">Triage Deck</h4>
-                  <p className="text-xs text-slate-400 mt-1.5 max-w-[200px] mx-auto leading-relaxed">
-                    Select a support ticket from the queue to start triaging or resolve user issues.
-                  </p>
-                </div>
-              </div>
-            )}
+            </div>
           </Card>
-        </div>
+          </div>
+        )}
 
       </div>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
 
     </div>
   );

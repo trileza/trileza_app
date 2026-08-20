@@ -17,7 +17,7 @@ const PublicLibrary: React.FC = () => {
     : "Explore elite blueprinted e-books, case studies, and templates. Rent with mentor backing (Borrow-to-Own) or initiate peer crowdfunding.";
 
   return (
-    <div className="container mx-auto px-4 pb-20 animate-in fade-in duration-500 space-y-8 relative">
+    <div className="w-full pb-20 animate-in fade-in duration-500 space-y-8 relative">
       <PageHeader 
         title={
           <span>
@@ -31,9 +31,9 @@ const PublicLibrary: React.FC = () => {
           user?.role !== 'management' ? (
             <Button 
               onClick={() => setShowPublishingModal(true)}
-              className="gap-2 bg-brand-primary hover:bg-brand-primary-hover text-white border-none shadow-xl shadow-emerald-500/20 rounded-2xl h-14 px-6 font-black uppercase text-[10px] tracking-widest transition-all"
+              className="w-full sm:w-auto gap-2 bg-brand-primary hover:bg-brand-primary-hover text-white border-none shadow-xl shadow-emerald-500/20 rounded-2xl h-11 sm:h-14 px-4 sm:px-6 font-black uppercase text-[10px] tracking-widest transition-all mt-3 sm:mt-0 cursor-pointer"
             >
-              <PlusCircle size={14} /> Publish a Book
+              <PlusCircle size={14} /> Publish
             </Button>
           ) : null
         }
@@ -43,8 +43,8 @@ const PublicLibrary: React.FC = () => {
 
       {/* Publishing Modal Portal */}
       {showPublishingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-md p-4 md:p-10 overflow-y-auto animate-in fade-in duration-300">
-          <div className="bg-slate-50 dark:bg-slate-900 rounded-[3rem] w-full max-w-5xl max-h-[90vh] overflow-y-auto relative shadow-[0_32px_64px_-16px_rgba(0,0,0,0.35)] border border-white/10 dark:border-slate-800 animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/75 backdrop-blur-md p-0 sm:p-4 md:p-10 overflow-y-auto animate-in fade-in duration-300">
+          <div className="bg-slate-50 dark:bg-slate-900 rounded-[3rem] w-full max-w-5xl max-h-[90vh] overflow-y-auto relative shadow-[0_32px_64px_-16px_rgba(0,0,0,0.35)] border border-white/10 dark:border-slate-800 animate-in zoom-in-95 duration-300 mobile-bottom-sheet">
             {/* Close Button */}
             <button 
               onClick={() => setShowPublishingModal(false)}

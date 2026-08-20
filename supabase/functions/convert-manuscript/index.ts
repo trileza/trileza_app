@@ -1,5 +1,15 @@
 import { createClient } from 'npm:@insforge/sdk';
 import JSZip from 'npm:jszip';
+import ebookConverter from 'npm:node-ebook-converter';
+
+// Ensure Calibre's program directory is on the path on Windows hosts
+const pathSeparator = Deno.build.os === "windows" ? ";" : ":";
+const calibreDir = "C:\\Program Files\\Calibre2";
+const currentPath = Deno.env.get("PATH") || "";
+if (!currentPath.includes(calibreDir)) {
+  Deno.env.set("PATH", `${currentPath}${pathSeparator}${calibreDir}`);
+}
+
 
 
 const corsHeaders = {
@@ -151,33 +161,19 @@ export default async function (req: Request): Promise<Response> {
           // Attempt simple text parsing of the EPUB for study aids
           pagesList = await extractTextFromEpubZip(fileBuffer);
         } 
-        else if (fileExtension === 'docx') {
-          console.log(`[Manuscript Service] DOCX conversion via Docx2Shelf...`);
-          const cmd = new Deno.Command("Docx2Shelf", {
-            args: [inputFilePath, outputFilePath],
-          });
-          const { code, stderr } = await cmd.output();
-          if (code !== 0) {
-            const errText = new TextDecoder().decode(stderr);
-            throw new Error(`Docx2Shelf conversion failed: ${errText}`);
+        else if (fileExtension === 'docx' || fileExtension === 'pdf') {
+          console.log(`[Manuscript Service] ${fileExtension.toUpperCase()} conversion via node-ebook-converter...`);
+          try {
+            await ebookConverter.convert({
+              input: inputFilePath,
+              output: outputFilePath,
+            });
+            await runEpubCheck(outputFilePath);
+            finalEpubBytes = await Deno.readFile(outputFilePath);
+            pagesList = await extractTextFromEpubZip(finalEpubBytes.buffer);
+          } catch (err: any) {
+            throw new Error(`node-ebook-converter failed to convert ${fileExtension}: ${err.message || err}`);
           }
-          await runEpubCheck(outputFilePath);
-          finalEpubBytes = await Deno.readFile(outputFilePath);
-          pagesList = await extractTextFromEpubZip(finalEpubBytes.buffer);
-        } 
-        else if (fileExtension === 'pdf') {
-          console.log(`[Manuscript Service] PDF conversion via ebook-convert...`);
-          const cmd = new Deno.Command("ebook-convert", {
-            args: [inputFilePath, outputFilePath, "--epub-version", "3"],
-          });
-          const { code, stderr } = await cmd.output();
-          if (code !== 0) {
-            const errText = new TextDecoder().decode(stderr);
-            throw new Error(`Calibre ebook-convert failed: ${errText}`);
-          }
-          await runEpubCheck(outputFilePath);
-          finalEpubBytes = await Deno.readFile(outputFilePath);
-          pagesList = await extractTextFromEpubZip(finalEpubBytes.buffer);
         } 
         else if (fileExtension === 'txt' || fileExtension === 'md') {
           console.log(`[Manuscript Service] Text/MD conversion via text2epub...`);

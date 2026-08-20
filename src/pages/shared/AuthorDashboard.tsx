@@ -22,12 +22,15 @@ import {
   Milestone,
   CheckCircle,
   Hash,
-  Image
+  Image,
+  FileType
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { cn, executeWithAutoRefresh } from '../../utils';
 import { Card, Button } from '../../components/ui';
 import PageHeader from '../../components/shared/PageHeader';
 import { nexus } from '../../lib/nexus';
+import { libraryService } from '../../lib/services/libraryService';
 
 interface Book {
   id: string;
@@ -49,6 +52,9 @@ interface Book {
   book_file_name?: string;
   sample_pages_name?: string;
   age_rating?: string;
+  material_type?: string;
+  suggested_format?: string;
+  uploaded_format?: string;
 }
 
 const PRESET_COVERS = [
@@ -83,6 +89,91 @@ const SECTIONS = [
   'Others'
 ];
 
+interface FormatSuggestion {
+  best: string;
+  alternatives: string[];
+  reason: string;
+  warning: string;
+}
+
+const formatSuggestions: Record<string, FormatSuggestion> = {
+  'journal': {
+    best: 'PDF',
+    alternatives: ['DOCX', 'TeX'],
+    reason: 'PDF preserves complex academic formatting, figures, tables, and references exactly as intended. Recommended for citation and print.',
+    warning: 'Journal Papers typically require precise formatting. PDF ensures your paper appears exactly as submitted.'
+  },
+  'conference': {
+    best: 'PDF',
+    alternatives: ['DOCX', 'TeX'],
+    reason: 'PDF ensures your conference paper appears exactly as submitted, with proper template formatting and page limits.',
+    warning: 'Conference papers often have strict formatting requirements. PDF guarantees your paper meets the template.'
+  },
+  'magazine': {
+    best: 'PDF',
+    alternatives: ['DOCX'],
+    reason: 'PDF preserves the visual design, color layout, images, and typography that define your magazine\'s brand.',
+    warning: 'Magazines rely heavily on visual design. PDF captures every detail exactly as intended.'
+  },
+  'book_text': {
+    best: 'EPUB',
+    alternatives: ['PDF', 'DOCX'],
+    reason: 'EPUB provides the best reading experience on all devices with reflowable text, adjustable fonts, and chapter navigation.',
+    warning: 'EPUB is the industry standard for text-heavy books. It ensures your readers have the best experience on any device.'
+  },
+  'book_picture': {
+    best: 'PDF',
+    alternatives: ['Fixed-EPUB'],
+    reason: 'PDF preserves images, artwork, and layouts exactly. Essential for picture books, art books, and illustrated works.',
+    warning: 'Picture books require fixed layouts. PDF ensures images appear exactly as designed, page-by-page.'
+  },
+  'thesis': {
+    best: 'PDF',
+    alternatives: ['DOCX'],
+    reason: 'PDF maintains the strict formatting requirements, complex tables, and academic structure required for thesis submission.',
+    warning: 'Theses have strict formatting guidelines. PDF preserves your formatting exactly for submission and archival.'
+  },
+  'report': {
+    best: 'PDF',
+    alternatives: ['DOCX'],
+    reason: 'PDF preserves professional formatting, charts, tables, and branding for official reports and whitepapers.',
+    warning: 'Reports require professional presentation. PDF ensures your charts and tables display correctly.'
+  },
+  'manual': {
+    best: 'PDF',
+    alternatives: ['DOCX'],
+    reason: 'PDF preserves technical diagrams, step-by-step layouts, and instructions exactly as designed.',
+    warning: 'Manuals need precise diagrams and instructions. PDF ensures technical details are preserved.'
+  },
+  'newsletter': {
+    best: 'PDF',
+    alternatives: ['DOCX'],
+    reason: 'PDF preserves the newsletter\'s visual identity, columns, images, and layout.',
+    warning: 'Newsletters are visually designed. PDF captures the design exactly as intended.'
+  },
+  'other': {
+    best: 'PDF',
+    alternatives: ['DOCX', 'EPUB', 'TXT'],
+    reason: 'PDF ensures universal compatibility and exact reproduction of your content.',
+    warning: 'For maximum compatibility and exact reproduction, PDF is recommended.'
+  }
+};
+
+const getMaterialTypeLabel = (type: string) => {
+  switch (type) {
+    case 'journal': return 'Journal Paper';
+    case 'conference': return 'Conference Paper';
+    case 'magazine': return 'Magazine';
+    case 'book_text': return 'Book (Text-heavy)';
+    case 'book_picture': return 'Book (Picture/Art)';
+    case 'thesis': return 'Thesis/Dissertation';
+    case 'report': return 'Report/Whitepaper';
+    case 'manual': return 'Manual/Guide';
+    case 'newsletter': return 'Newsletter';
+    default: return 'Other';
+  }
+};
+
 interface AuthorDashboardProps {
   inline?: boolean;
   onClose?: () => void;
@@ -107,6 +198,10 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
   // Real PDF/EPUB file states
   const [realBookFile, setRealBookFile] = useState<File | null>(null);
   const [realSampleFile, setRealSampleFile] = useState<File | null>(null);
+  const [fileType, setFileType] = useState('epub');
+  const [materialType, setMaterialType] = useState('book_text');
+  const [formatWarning, setFormatWarning] = useState<string | null>(null);
+  const [bypassWarning, setBypassWarning] = useState(false);
 
   // OPTIONAL FIELDS
   const [isbn, setIsbn] = useState('');
@@ -118,8 +213,8 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
   const [publicationDate, setPublicationDate] = useState('');
   const [pages, setPages] = useState('');
 
-  // Dashboard view states
-  const [showUploadForm, setShowUploadForm] = useState(false);
+  // Dashboard view states (Go straight to publishing form when opened inline)
+  const [showUploadForm, setShowUploadForm] = useState(inline);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Stateful Author Books & Simulated stats
@@ -128,32 +223,101 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
   const [totalReads, setTotalReads] = useState(24);
   const [showNotification, setShowNotification] = useState<string | null>(null);
 
-  // Fetch author's books from real database
+  const handleFileChange = (file: File | null) => {
+    setRealBookFile(file);
+    setBypassWarning(false);
+
+    if (!file) {
+      setFormatWarning(null);
+      return;
+    }
+
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const suggestion = formatSuggestions[materialType];
+    if (suggestion) {
+      const bestFormat = suggestion.best.toLowerCase();
+      if (extension !== bestFormat) {
+        setFormatWarning(
+          `You uploaded a ${extension.toUpperCase()} file. For ${getMaterialTypeLabel(materialType)}, ${suggestion.best} is recommended. ${suggestion.warning}`
+        );
+      } else {
+        setFormatWarning(null);
+      }
+    }
+  };
+
+  const handleMaterialTypeChange = (newType: string) => {
+    setMaterialType(newType);
+    setBypassWarning(false);
+
+    const suggestion = formatSuggestions[newType];
+    if (suggestion) {
+      setFileType(suggestion.best.toLowerCase());
+    }
+
+    if (realBookFile) {
+      const extension = realBookFile.name.split('.').pop()?.toLowerCase();
+      if (suggestion) {
+        const bestFormat = suggestion.best.toLowerCase();
+        if (extension !== bestFormat) {
+          setFormatWarning(
+            `You uploaded a ${extension.toUpperCase()} file. For ${getMaterialTypeLabel(newType)}, ${suggestion.best} is recommended. ${suggestion.warning}`
+          );
+        } else {
+          setFormatWarning(null);
+        }
+      }
+    } else {
+      setFormatWarning(null);
+    }
+  };
+
+  const fetchAuthorStats = async (booksList: Book[]) => {
+    if (!user?.id || booksList.length === 0) {
+      setTotalReads(0);
+      setRoyalties(0);
+      return;
+    }
+    try {
+      const bookIds = booksList.map(b => b.id);
+      const { data: accessRecords, error } = await nexus.database
+        .from('api_user_library_access')
+        .select('*')
+        .in('book_id', bookIds);
+      
+      if (!error && accessRecords) {
+        const readsCount = accessRecords.length;
+        let totalRoyalties = 0;
+        accessRecords.forEach(rec => {
+          const book = booksList.find(b => b.id === rec.book_id);
+          if (book) {
+            if (rec.access_type === 'own') {
+              totalRoyalties += Number(book.retail_price) * 0.10;
+            } else {
+              totalRoyalties += Number(rec.lifetime_rent_total || book.rental_price) * 0.10;
+            }
+          }
+        });
+        setTotalReads(readsCount);
+        setRoyalties(totalRoyalties);
+      } else {
+        setTotalReads(0);
+        setRoyalties(0);
+      }
+    } catch (err) {
+      console.error('[Error fetching author stats]:', err);
+      setTotalReads(0);
+      setRoyalties(0);
+    }
+  };
+
   const fetchAuthorBooks = async () => {
     if (!user?.id) return;
     try {
-      const { data: dbBooks } = await nexus.database
-        .from('books')
-        .select('*')
-        .eq('author_id', user.id);
-      
-      if (dbBooks) {
-        setMyBooks(dbBooks.map((b: any) => ({
-          id: b.id,
-          title: b.title,
-          author_id: b.author_id,
-          author_name: b.author_name,
-          cover_url: b.cover_url,
-          retail_price: Number(b.retail_price),
-          rental_price: Number(b.rental_price),
-          category: b.category,
-          description: b.description || '',
-          rating: Number(b.rating || 5.0),
-          section: b.section || 'General',
-          isbn: b.isbn || '',
-          tags: Array.isArray(b.tags) ? b.tags : []
-        })));
-      }
+      const allBooks = await libraryService.listBooks();
+      const dbBooks = allBooks.filter(b => b.author_id === user.id);
+      setMyBooks(dbBooks as any);
+      await fetchAuthorStats(dbBooks);
     } catch (e) {
       console.error('[Error fetching author books]:', e);
     }
@@ -169,23 +333,9 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
     }
 
     fetchAuthorBooks();
-
-    // Set simulated stats based on user ID
-    const storedStats = localStorage.getItem(`trileza_author_stats_${user?.id}`);
-    if (storedStats) {
-      const parsed = JSON.parse(storedStats);
-      setRoyalties(parsed.royalties);
-      setTotalReads(parsed.reads);
-    } else {
-      const seedStats = {
-        royalties: 140.00,
-        reads: 24
-      };
-      localStorage.setItem(`trileza_author_stats_${user?.id}`, JSON.stringify(seedStats));
-      setRoyalties(seedStats.royalties);
-      setTotalReads(seedStats.reads);
-    }
   }, [user, isAuthor]);
+
+
 
   // Handle Book Upload
   const handleUploadBook = async (e: React.FormEvent) => {
@@ -198,69 +348,24 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
     }
 
     if (!realBookFile) {
-      alert('Please select a Book File (PDF/EPUB/DOCX/TXT/MD) to upload.');
+      alert('Please select a Book File to upload.');
+      return;
+    }
+
+    if (formatWarning && !bypassWarning) {
+      alert('Please address the file format warning before uploading or click "Continue Anyway".');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      // Proactively ensure the session token is fresh before starting long uploads
-      await nexus.auth.getCurrentUser();
-
-      // 1. Upload and convert manuscript to standard compliant EPUB 3 format
-      let fileUrl = '';
-      try {
-        const formData = new FormData();
-        formData.append('file', realBookFile);
-        formData.append('userId', user.id);
-        
-        const headers = nexus.getHttpClient().getHeaders();
-        const authHeader = headers['Authorization'] || headers['authorization'] || '';
-        const rawToken = authHeader.replace(/^Bearer\s+/i, '');
-        const userToken = rawToken === import.meta.env.VITE_INSFORGE_ANON_KEY ? '' : rawToken;
-        
-        const conversionRes = await fetch('https://25t8cbg8.functions.insforge.app/convert-manuscript', {
-          method: 'POST',
-          body: formData,
-          headers: {
-            'Authorization': `Bearer ${import.meta.env.VITE_INSFORGE_ANON_KEY}`,
-            'X-User-Token': userToken
-          }
-        });
-        
-        if (!conversionRes.ok) {
-          let errMsg = `Server returned status ${conversionRes.status}`;
-          try {
-            const errData = await conversionRes.json();
-            if (errData && errData.error) {
-              errMsg = errData.error;
-            } else if (errData && errData.message) {
-              errMsg = errData.message;
-            }
-          } catch (_) {}
-          throw new Error(errMsg);
-        }
-        
-        const conversionData = await conversionRes.json();
-        
-        if (conversionData.originalUrl) {
-          fileUrl = conversionData.originalUrl; // Always use the uploaded original file URL to retain high-fidelity native layouts (PDF/DOCX) with reading companion overlay!
-        } else if (conversionData.convertedUrl) {
-          fileUrl = conversionData.convertedUrl; // Fallback to converted EPUB
-        } else {
-          throw new Error('Manuscript upload returned no valid URLs');
-        }
-      } catch (convErr: any) {
-        console.error('Manuscript conversion error:', convErr);
-        // Fallback: direct upload if conversion service itself fails
-        alert(`EPUB 3 conversion service unavailable: ${convErr.message || convErr}. Uploading original file directly.`);
-        
+      await executeWithAutoRefresh(async () => {
+        // 1. Upload book file directly to storage
+        let fileUrl = '';
         const cleanBookName = realBookFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-        
-        // Try multiple storage paths in case of RLS restrictions
         const pathsToTry = [
-          `original/${user.id}_${Date.now()}_${cleanBookName}`,
-          `books/${user.id}_${Date.now()}_${cleanBookName}`
+          `books/${user.id}_${Date.now()}_${cleanBookName}`,
+          `original/${user.id}_${Date.now()}_${cleanBookName}`
         ];
         
         let uploadSuccess = false;
@@ -281,130 +386,105 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
         }
         
         if (!uploadSuccess) {
-          alert('Failed to upload manuscript file due to storage permissions. The book will be created without the file attachment. Please contact support or try again later.');
-          // Book will still be created but without a file_url
+          alert('Failed to upload manuscript file. Please try again later.');
+          return;
         }
-      }
 
-      // 2. Upload Sample PDF if present
-      let sampleUrl = '';
-      if (realSampleFile) {
-        const cleanSampleName = realSampleFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-        const samplePath = `samples/${user.id}_${Date.now()}_${cleanSampleName}`;
-        await nexus.storage.from('course-materials-trileza-784bc328').upload(samplePath, realSampleFile);
-        sampleUrl = nexus.storage
-          .from('course-materials-trileza-784bc328')
-          .getPublicUrl(samplePath);
-      }
+        // 2. Upload Sample PDF if present
+        let sampleUrl = '';
+        if (realSampleFile) {
+          const cleanSampleName = realSampleFile.name.replace(/\.\./g, '_').replace(/^\//, '');
+          const samplePath = `samples/${user.id}_${Date.now()}_${cleanSampleName}`;
+          await nexus.storage.from('course-materials-trileza-784bc328').upload(samplePath, realSampleFile);
+          sampleUrl = nexus.storage
+            .from('course-materials-trileza-784bc328')
+            .getPublicUrl(samplePath);
+        }
 
-      const priceNum = parseFloat(price) || 5000;
-      
-      let finalCover = coverUrl.trim();
-      if (realCoverFile) {
-        const cleanCoverName = realCoverFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-        const coverPath = `covers/${user.id}_${Date.now()}_${cleanCoverName}`;
-        await nexus.storage.from('course-materials-trileza-784bc328').upload(coverPath, realCoverFile);
-        finalCover = nexus.storage
-          .from('course-materials-trileza-784bc328')
-          .getPublicUrl(coverPath);
-      }
-      if (!finalCover) {
-        finalCover = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400' viewBox='0 0 300 400'><rect width='300' height='400' fill='%23F1F5F9'/><g transform='translate(110, 140)' stroke='%2394A3B8' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'><rect x='0' y='0' width='80' height='100' rx='8'/><path d='M 20 30 L 60 30'/><path d='M 20 50 L 60 50'/><path d='M 20 70 L 40 70'/></g><text x='150' y='280' fill='%2394A3B8' font-family='system-ui, sans-serif' font-size='14' font-weight='800' text-anchor='middle' letter-spacing='1'>NO COVER</text></svg>";
-      }
+        const priceNum = parseFloat(price) || 5000;
+        
+        let finalCover = coverUrl.trim();
+        if (realCoverFile) {
+          const cleanCoverName = realCoverFile.name.replace(/\.\./g, '_').replace(/^\//, '');
+          const coverPath = `covers/${user.id}_${Date.now()}_${cleanCoverName}`;
+          await nexus.storage.from('course-materials-trileza-784bc328').upload(coverPath, realCoverFile);
+          finalCover = nexus.storage
+            .from('course-materials-trileza-784bc328')
+            .getPublicUrl(coverPath);
+        }
+        if (!finalCover) {
+          finalCover = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400' viewBox='0 0 300 400'><rect width='300' height='400' fill='%23F1F5F9'/><g transform='translate(110, 140)' stroke='%2394A3B8' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'><rect x='0' y='0' width='80' height='100' rx='8'/><path d='M 20 30 L 60 30'/><path d='M 20 50 L 60 50'/><path d='M 20 70 L 40 70'/></g><text x='150' y='280' fill='%2394A3B8' font-family='system-ui, sans-serif' font-size='14' font-weight='800' text-anchor='middle' letter-spacing='1'>NO COVER</text></svg>";
+        }
 
-      // Optional Tags parsing
-      const parsedTags = tagsInput.trim() 
-        ? tagsInput.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
-        : [];
+        // Optional Tags parsing
+        const parsedTags = tagsInput.trim() 
+          ? tagsInput.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
+          : [];
 
-      const generatedIsbn = isbn.trim() || `978-${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+        const generatedIsbn = isbn.trim() || `978-${Math.floor(1000000000 + Math.random() * 9000000000)}`;
 
-      // 3. Insert Book into database
-      const bookId = `b-${Date.now()}`;
-      const { error: dbErr } = await nexus.database.from('books').insert({
-        id: bookId,
-        title: title.trim(),
-        author_id: user.id,
-        author_name: authorName.trim(),
-        cover_url: finalCover,
-        retail_price: priceNum,
-        rental_price: Number((priceNum * 0.1).toFixed(2)),
-        category: section === 'Fiction & Literature' ? 'E-book' : 'Case Study',
-        description: description.trim(),
-        rating: 5.0,
-        section: section,
-        isbn: generatedIsbn,
-        tags: parsedTags,
-        language: language.trim() || 'English',
-        publication_date: publicationDate.trim() || new Date().toISOString().split('T')[0],
-        pages: parseInt(pages) || null,
-        age_rating: ageRating,
-        sample_pages: sampleUrl ? [sampleUrl] : [],
-        file_url: fileUrl,
-        book_file_name: realBookFile.name
+        // 3. Insert Book into database
+        const bookId = `b-${Date.now()}`;
+        await libraryService.createBook({
+          id: bookId,
+          title: title.trim(),
+          author_id: user.id,
+          author_name: authorName.trim(),
+          cover_url: finalCover,
+          retail_price: priceNum,
+          rental_price: Number((priceNum * 0.1).toFixed(2)),
+          category: section === 'Fiction & Literature' ? 'E-book' : 'Case Study',
+          description: description.trim(),
+          rating: 5.0,
+          section: section,
+          isbn: generatedIsbn,
+          tags: parsedTags,
+          language: language.trim() || 'English',
+          publication_date: publicationDate.trim() || new Date().toISOString().split('T')[0],
+          pages: parseInt(pages) || undefined,
+          age_rating: ageRating,
+          sample_pages: sampleUrl ? [sampleUrl] : [],
+          file_url: fileUrl,
+          book_file_name: realBookFile.name,
+          material_type: materialType,
+          suggested_format: formatSuggestions[materialType]?.best || 'PDF',
+          uploaded_format: realBookFile ? realBookFile.name.split('.').pop()?.toUpperCase() : 'PDF'
+        });
+
+        // Hot-reload library catalog
+        window.dispatchEvent(new Event('trileza-book-published'));
+
+        await fetchAuthorBooks();
+
+        // Reset Form
+        setTitle('');
+        setPrice('39.99');
+        setDescription('');
+        setCoverUrl('');
+        setRealCoverFile(null);
+        setRealBookFile(null);
+        setRealSampleFile(null);
+        setFileType('epub');
+        setIsbn('');
+        setTagsInput('');
+        setCoAuthors('');
+        setEdition('');
+        setLanguage('English');
+        setPublicationDate('');
+        setPages('');
+        setShowUploadForm(false);
+        
+        triggerNotification(`Successfully published "${title}" to the Public Library!`);
+        if (onClose) {
+          setTimeout(() => {
+            onClose();
+          }, 1500);
+        }
       });
-
-      if (dbErr) throw dbErr;
-
-      // Submit book for Content Manager review automatically to sync with database reviews
-      const { error: reviewErr } = await nexus.database.from('book_reviews').insert([{
-        book_id: bookId,
-        submitted_by: user.id,
-        status: 'pending',
-        checklist_cover: false,
-        checklist_description: false,
-        checklist_readable: false,
-        checklist_price: false,
-        checklist_no_copyright: false
-      }]);
-      if (reviewErr) throw reviewErr;
-
-      // Hot-reload library catalog
-      window.dispatchEvent(new Event('trileza-book-published'));
-
-      await fetchAuthorBooks();
-
-      // Update simulated stats
-      const newRoyalties = royalties + 25.00;
-      const newReads = totalReads + 1;
-      setRoyalties(newRoyalties);
-      setTotalReads(newReads);
-      localStorage.setItem(`trileza_author_stats_${user.id}`, JSON.stringify({
-        royalties: newRoyalties,
-        reads: newReads
-      }));
-
-      // Reset Form
-      setTitle('');
-      setPrice('39.99');
-      setDescription('');
-      setCoverUrl('');
-      setRealCoverFile(null);
-      setRealBookFile(null);
-      setRealSampleFile(null);
-      setIsbn('');
-      setTagsInput('');
-      setCoAuthors('');
-      setEdition('');
-      setLanguage('English');
-      setPublicationDate('');
-      setPages('');
-      setShowUploadForm(false);
-      setIsSubmitting(false);
-      
-      triggerNotification(`Successfully published "${title}" to the Public Library!`);
-      if (onClose) {
-        setTimeout(() => {
-          onClose();
-        }, 1500);
-      }
     } catch (err: any) {
       console.error(err);
-      if (err?.message?.includes('Invalid token') || err?.message?.includes('JWT expired')) {
-        alert('Your session has expired or the token is invalid. Please log out and log back in to publish your book.');
-      } else {
-        alert('Failed to publish book: ' + (err.message || err));
-      }
+      alert('Failed to publish book: ' + (err.message || err));
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -413,12 +493,7 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
     if (!confirm('Are you sure you want to retract this book? It will be removed from the library.')) return;
 
     try {
-      const { error } = await nexus.database
-        .from('books')
-        .delete()
-        .eq('id', bookId);
-
-      if (error) throw error;
+      await libraryService.deleteBook(bookId);
 
       // Hot-reload library catalog
       window.dispatchEvent(new Event('trileza-book-published'));
@@ -450,7 +525,7 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
           <AlertCircle size={36} />
         </div>
         <div className="space-y-2">
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Access Restricted</h2>
+          <h2 className="text-3xl font-black text-foreground tracking-tight">Access Restricted</h2>
           <p className="text-slate-500 font-medium max-w-md mx-auto">
             You do not currently hold an approved Author status. Please complete the publisher application first to unlock this dashboard.
           </p>
@@ -488,81 +563,66 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
         />
       )}
 
-      {inline && (
-        <div className="flex justify-between items-center pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <BookMarked size={20} className="text-emerald-500 animate-pulse" /> Publishing Workspace Console
-            </h2>
-            <p className="text-sm font-medium text-slate-400">Publish blueprints, monitor royalties, and track distribution metrics.</p>
-          </div>
-          <Button 
-            onClick={() => setShowUploadForm(!showUploadForm)}
-            className="gap-2 bg-brand-primary hover:bg-brand-primary-hover text-white border-none shadow-lg shadow-emerald-500/10 rounded-2xl h-12 px-6 font-black uppercase text-[9px] tracking-widest transition-all"
-          >
-            <PlusCircle size={14} /> {showUploadForm ? 'Close Wizard' : 'Publish New Asset'}
-          </Button>
-        </div>
-      )}
-
       {showNotification && (
         <div className="max-w-4xl mx-auto p-4 bg-emerald-50 border border-emerald-250 text-emerald-700 rounded-2xl text-sm font-bold flex items-center gap-3 animate-in slide-in-from-top duration-300">
           <Sparkles size={16} className="text-emerald-500" /> {showNotification}
         </div>
       )}
 
-      {/* DASHBOARD ANALYTICS WIDGETS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Metric 1 */}
-        <Card className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl hover:ring-brand-primary/20 hover:translate-y-[-4px] transition-all duration-500 rounded-[2.5rem] bg-white flex justify-between items-center group">
-          <div className="space-y-4">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Published Books</p>
-            <p className="text-4xl font-black text-slate-900 group-hover:text-brand-primary transition-colors tabular-nums">{myBooks.length}</p>
-            <p className="text-xs text-slate-450 font-bold flex items-center gap-1">
-              <TrendingUp size={12} className="text-emerald-500" /> 100% active DRM coverage
-            </p>
-          </div>
-          <div className="p-5 rounded-2xl bg-emerald-50 text-emerald-500 shadow-inner group-hover:scale-115 group-hover:rotate-6 transition-all duration-500">
-            <BookOpen size={24} strokeWidth={2.5} />
-          </div>
-        </Card>
+      {/* DASHBOARD ANALYTICS WIDGETS - HIDDEN IN INLINE MODE */}
+      {!inline && !showUploadForm && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {/* Metric 1 */}
+          <Card className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl hover:ring-brand-primary/20 hover:translate-y-[-4px] transition-all duration-500 rounded-[2.5rem] bg-surface flex justify-between items-center group">
+            <div className="space-y-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Published Books</p>
+              <p className="text-4xl font-black text-foreground group-hover:text-brand-primary transition-colors tabular-nums">{myBooks.length}</p>
+              <p className="text-xs text-slate-450 font-bold flex items-center gap-1">
+                <TrendingUp size={12} className="text-emerald-500" /> 100% active DRM coverage
+              </p>
+            </div>
+            <div className="p-5 rounded-2xl bg-emerald-50 text-emerald-500 shadow-inner group-hover:scale-115 group-hover:rotate-6 transition-all duration-500">
+              <BookOpen size={24} />
+            </div>
+          </Card>
 
-        {/* Metric 2 */}
-        <Card className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl hover:ring-brand-primary/20 hover:translate-y-[-4px] transition-all duration-500 rounded-[2.5rem] bg-white flex justify-between items-center group">
-          <div className="space-y-4">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Total Reads & Borrows</p>
-            <p className="text-4xl font-black text-slate-900 group-hover:text-brand-primary transition-colors tabular-nums">{totalReads}</p>
-            <p className="text-xs text-slate-450 font-bold flex items-center gap-1">
-              <TrendingUp size={12} className="text-emerald-500" /> Simulated user engagements
-            </p>
-          </div>
-          <div className="p-5 rounded-2xl bg-emerald-50 text-emerald-500 shadow-inner group-hover:scale-115 group-hover:rotate-6 transition-all duration-500">
-            <Eye size={24} strokeWidth={2.5} />
-          </div>
-        </Card>
+          {/* Metric 2 */}
+          <Card className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl hover:ring-brand-primary/20 hover:translate-y-[-4px] transition-all duration-500 rounded-[2.5rem] bg-surface flex justify-between items-center group">
+            <div className="space-y-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Total Reads & Borrows</p>
+              <p className="text-4xl font-black text-foreground group-hover:text-brand-primary transition-colors tabular-nums">{totalReads}</p>
+              <p className="text-xs text-slate-450 font-bold flex items-center gap-1">
+                <TrendingUp size={12} className="text-emerald-500" /> Simulated user engagements
+              </p>
+            </div>
+            <div className="p-5 rounded-2xl bg-emerald-50 text-emerald-500 shadow-inner group-hover:scale-115 group-hover:rotate-6 transition-all duration-500">
+              <Eye size={24} />
+            </div>
+          </Card>
 
-        {/* Metric 3 */}
-        <Card className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl hover:ring-brand-primary/20 hover:translate-y-[-4px] transition-all duration-500 rounded-[2.5rem] bg-white flex justify-between items-center group">
-          <div className="space-y-4">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Accrued Royalties</p>
-            <p className="text-4xl font-black text-slate-900 group-hover:text-brand-primary transition-colors tabular-nums">₦{royalties.toFixed(2)}</p>
-            <p className="text-xs text-slate-450 font-bold flex items-center gap-1">
-              <Award size={12} className="text-amber-555" /> Outright sales & rentals (10%)
-            </p>
-          </div>
-          <div className="p-5 rounded-2xl bg-amber-50 text-amber-550 shadow-inner group-hover:scale-115 group-hover:rotate-6 transition-all duration-500">
-            <Coins size={24} strokeWidth={2.5} />
-          </div>
-        </Card>
-      </div>
+          {/* Metric 3 */}
+          <Card className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl hover:ring-brand-primary/20 hover:translate-y-[-4px] transition-all duration-500 rounded-[2.5rem] bg-surface flex justify-between items-center group">
+            <div className="space-y-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Accrued Royalties</p>
+              <p className="text-4xl font-black text-foreground group-hover:text-brand-primary transition-colors tabular-nums">₦{royalties.toFixed(2)}</p>
+              <p className="text-xs text-slate-450 font-bold flex items-center gap-1">
+                <Award size={12} className="text-amber-555" /> Outright sales & rentals (10%)
+              </p>
+            </div>
+            <div className="p-5 rounded-2xl bg-amber-50 text-amber-550 shadow-inner group-hover:scale-115 group-hover:rotate-6 transition-all duration-500">
+              <Coins size={24} />
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* COMPREHENSIVE UPLOAD FORM DIALOG */}
       {showUploadForm && (
-        <Card className="p-10 border-none shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] rounded-[3rem] bg-white max-w-4xl mx-auto animate-in slide-in-from-top-6 duration-500 space-y-8">
-          <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+        <Card className="p-10 border-none shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] rounded-[3rem] bg-surface max-w-4xl mx-auto animate-in slide-in-from-top-6 duration-500 space-y-8">
+          <div className="flex justify-between items-center pb-4 border-b border-border">
             <div>
-              <h3 className="text-2xl font-black text-slate-900 tracking-tight">Upload New Asset</h3>
-              <p className="text-slate-450 font-medium text-sm">Required fields marked with red asterisks (*).</p>
+              <h3 className="text-2xl font-black text-foreground tracking-tight">Upload New Asset</h3>
+              <p className="text-foreground/80 font-medium text-sm">Required fields marked with red asterisks (*).</p>
             </div>
             <button 
               onClick={() => setShowUploadForm(false)}
@@ -581,7 +641,7 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* Title */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 block">
                     Book Title <span className="text-rose-500">*</span>
                   </label>
                   <input 
@@ -590,13 +650,13 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="e.g. Advanced Software Architectures"
-                    className="w-full h-14 px-5 rounded-2xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-slate-800 font-bold transition-all duration-300 shadow-sm"
+                    className="w-full h-14 px-5 rounded-2xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-foreground font-bold transition-all duration-300 shadow-sm"
                   />
                 </div>
 
                 {/* Author Name */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 block">
                     Author / Pen Name <span className="text-rose-500">*</span>
                   </label>
                   <input 
@@ -605,19 +665,19 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                     value={authorName}
                     onChange={(e) => setAuthorName(e.target.value)}
                     placeholder="e.g. Sarah Jenkins"
-                    className="w-full h-14 px-5 rounded-2xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-slate-800 font-bold transition-all duration-300 shadow-sm"
+                    className="w-full h-14 px-5 rounded-2xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-foreground font-bold transition-all duration-300 shadow-sm"
                   />
                 </div>
 
                 {/* Category Selection */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 block">
                     Book Category <span className="text-rose-500">*</span>
                   </label>
                   <select 
                     value={section}
                     onChange={(e) => setSection(e.target.value)}
-                    className="w-full h-14 px-5 rounded-2xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-slate-800 font-bold transition-all duration-300 shadow-sm cursor-pointer"
+                    className="w-full h-14 px-5 rounded-2xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-foreground font-bold transition-all duration-300 shadow-sm cursor-pointer"
                   >
                     {SECTIONS.map(sec => (
                       <option key={sec} value={sec}>{sec}</option>
@@ -627,7 +687,7 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
 
                 {/* Price */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 block">
                     Retail Price (₦) <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
@@ -639,64 +699,171 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                       value={price}
                       onChange={(e) => setPrice(e.target.value)}
                       placeholder="5000"
-                      className="w-full h-14 pl-9 pr-5 rounded-2xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-slate-800 font-bold transition-all duration-300 shadow-sm"
+                      className="w-full h-14 pl-9 pr-5 rounded-2xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-foreground font-bold transition-all duration-300 shadow-sm"
                     />
                   </div>
-                  <span className="text-[10px] font-bold text-slate-400 block mt-1">
+                  <span className="text-[10px] font-bold text-foreground/70 block mt-1">
                     Borrow fee automatically sets to exactly 10%: **₦{(parseFloat(price || '0') * 0.1).toFixed(2)}** for two weeks.
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* SECTION 2: MOCK FILE AND COVER */}
+            {/* SECTION 2: FILE UPLOAD & COVER */}
             <div className="space-y-6">
               <h4 className="text-xs font-black text-brand-primary uppercase tracking-widest border-b border-slate-50 pb-2">
                 2. Assets Upload & Cover Design (Required)
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Book File Upload */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-                    Book File (PDF/EPUB/DOCX/TXT/MD) <span className="text-rose-500">*</span>
-                  </label>
-                  <input 
-                    type="file" 
-                    id="real-book-file-input" 
-                    accept=".pdf,.epub,.docx,.txt,.md"
-                    className="hidden" 
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) setRealBookFile(file);
-                    }}
-                  />
-                  <div 
-                    onClick={() => document.getElementById('real-book-file-input')?.click()}
-                    className={`border-2 border-dashed rounded-3rem p-6 text-center cursor-pointer transition-all duration-300 min-h-[140px] flex flex-col items-center justify-center space-y-2 ${
-                      realBookFile 
-                        ? 'border-emerald-500 bg-emerald-50/20' 
-                        : 'border-slate-200 hover:border-brand-primary hover:bg-slate-50/50'
-                    }`}
-                  >
-                    {realBookFile ? (
-                      <>
-                        <CheckCircle size={28} className="text-emerald-500 animate-bounce" />
-                        <span className="text-xs font-bold text-slate-700 block">{realBookFile.name}</span>
-                        <span className="text-[10px] font-medium text-slate-400">{(realBookFile.size / (1024 * 1024)).toFixed(2)} MB • DRM Protected</span>
-                      </>
-                    ) : (
-                      <>
-                        <UploadCloud size={32} className="text-slate-450" />
-                        <span className="text-xs font-bold text-slate-700 block">Drag book file here or click to select upload</span>
-                        <span className="text-[9px] font-bold text-slate-455 uppercase">Accepts PDF, EPUB, DOCX, TXT, or MD</span>
-                      </>
-                    )}
+                {/* File Type Dropdown + Book File Upload */}
+                <div className="space-y-4">
+                  {/* Material Type Selector */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 flex items-center gap-1.5">
+                      <FileType size={12} /> Material Category Type <span className="text-rose-500">*</span>
+                    </label>
+                    <select 
+                      value={materialType}
+                      onChange={(e) => handleMaterialTypeChange(e.target.value)}
+                      className="w-full h-14 px-5 rounded-2xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-foreground font-bold transition-all duration-300 shadow-sm cursor-pointer"
+                    >
+                      <option value="journal">📄 Journal Paper (PDF Standard)</option>
+                      <option value="conference">📄 Conference Paper (PDF Standard)</option>
+                      <option value="magazine">📰 Magazine (PDF High-Res Layout)</option>
+                      <option value="book_text">📖 Book (Text-heavy PDF / EPUB)</option>
+                      <option value="book_picture">🖼️ Book (Picture/Art PDF Layout)</option>
+                      <option value="thesis">📑 Thesis/Dissertation (PDF Academic)</option>
+                      <option value="report">📊 Report/Whitepaper (PDF Corporate)</option>
+                      <option value="manual">📋 Manual/Guide (PDF Technical)</option>
+                      <option value="newsletter">📬 Newsletter (PDF Document)</option>
+                      <option value="other">📎 Other Document Format</option>
+                    </select>
                   </div>
+
+                  {/* Explicit PDF & Digital Format Publishing Selection (Requirement 3 & 4) */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 flex items-center gap-1.5">
+                      <FileType size={12} /> Target Catalog Publishing Format <span className="text-rose-500">*</span>
+                    </label>
+                    <select 
+                      value="pdf"
+                      disabled
+                      className="w-full h-14 px-5 rounded-2xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-foreground font-bold transition-all duration-300 shadow-sm cursor-not-allowed appearance-none opacity-80"
+                    >
+                      <option value="pdf">📄 PDF Document (.pdf) — Strict Standard</option>
+                    </select>
+                  </div>
+
+                  {materialType && formatSuggestions[materialType] && (
+                    <div className="border-l-4 border-emerald-500 bg-emerald-50/20 p-5 rounded-2xl space-y-3 border border-emerald-100 shadow-xs text-left animate-in fade-in slide-in-from-top duration-300">
+                      <div className="flex items-start gap-2.5">
+                        <Sparkles size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <h4 className="font-black text-xs text-foreground uppercase tracking-wider">Format Recommendation</h4>
+                          <p className="text-[11px] text-foreground/90 font-bold leading-relaxed">
+                            {formatSuggestions[materialType].reason}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1.5">
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-xl font-extrabold text-[9px] uppercase tracking-wider shadow-xs">
+                          Best: {formatSuggestions[materialType].best}
+                        </span>
+                        {formatSuggestions[materialType].alternatives.length > 0 && (
+                          <span className="inline-flex items-center bg-slate-50 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-xl font-extrabold text-[9px] uppercase tracking-wider">
+                            ✓ Acceptable: {formatSuggestions[materialType].alternatives.join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Book File Upload */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 block">
+                      Upload Book File <span className="text-rose-500">*</span>
+                    </label>
+                    <input 
+                      type="file" 
+                      id="real-book-file-input" 
+                      accept=".pdf"
+                      className="hidden" 
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        handleFileChange(file || null);
+                      }}
+                    />
+                    <div 
+                      onClick={() => document.getElementById('real-book-file-input')?.click()}
+                      className={`border-2 border-dashed rounded-[1.5rem] p-6 text-center cursor-pointer transition-all duration-300 min-h-[120px] flex flex-col items-center justify-center space-y-2 ${
+                        realBookFile 
+                          ? 'border-emerald-500 bg-emerald-50/20' 
+                          : 'border-slate-200 hover:border-brand-primary hover:bg-slate-50/50'
+                      }`}
+                    >
+                      {realBookFile ? (
+                        <>
+                          <CheckCircle size={28} className="text-emerald-500" />
+                          <span className="text-xs font-bold text-slate-700 block">{realBookFile.name}</span>
+                          <span className="text-[10px] font-medium text-slate-400">{(realBookFile.size / (1024 * 1024)).toFixed(2)} MB</span>
+                        </>
+                      ) : (
+                        <>
+                          <UploadCloud size={28} className="text-slate-400" />
+                          <span className="text-xs font-bold text-slate-600 block">Click to select file</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase">Max 50MB • Accepted: PDF ONLY • DRM Protected</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Format Warning Box */}
+                  {formatWarning && (
+                    <div className={cn(
+                      "border-l-4 p-4 rounded-2xl flex items-start gap-3 border transition-all text-left",
+                      bypassWarning 
+                        ? "border-emerald-500 bg-emerald-50/10 border-l-emerald-500" 
+                        : "border-amber-500 bg-amber-50/15 border-l-amber-500 shadow-sm"
+                    )}>
+                      <span className="text-base mt-0.5">{bypassWarning ? "✅" : "⚠️"}</span>
+                      <div className="space-y-2 flex-1">
+                        <h4 className={cn("font-black text-xs uppercase tracking-wider", bypassWarning ? "text-emerald-700" : "text-amber-850")}>
+                          {bypassWarning ? "Warning Bypassed" : "Format Discrepancy"}
+                        </h4>
+                        <p className="text-[11px] text-foreground/90 font-bold leading-relaxed">
+                          {formatWarning}
+                        </p>
+                        {!bypassWarning && (
+                          <div className="flex gap-3 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setBypassWarning(true)}
+                              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-extrabold text-[9px] uppercase tracking-wider transition-colors shadow-xs"
+                            >
+                              Continue Anyway
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRealBookFile(null);
+                                setFormatWarning(null);
+                                const fileInput = document.getElementById('real-book-file-input') as HTMLInputElement;
+                                if (fileInput) fileInput.value = '';
+                              }}
+                              className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-650 border border-slate-250 rounded-xl font-extrabold text-[9px] uppercase tracking-wider transition-all"
+                            >
+                              Go Back
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Cover Page Options */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 block">
                     Cover Page (Attach or Link) <span className="text-rose-500">*</span>
                   </label>
                   
@@ -767,7 +934,7 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                           if (e.target.value) setRealCoverFile(null); // Clear file if URL typed
                         }}
                         placeholder="Paste image URL here..."
-                        className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-[11px] font-bold"
+                        className="w-full h-11 px-4 rounded-xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-[11px] font-bold"
                       />
                     </div>
                   </div>
@@ -784,7 +951,7 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* ISBN */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 flex items-center gap-1">
                     <Hash size={11} /> ISBN Designation
                   </label>
                   <input 
@@ -792,13 +959,13 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                     value={isbn}
                     onChange={(e) => setIsbn(e.target.value)}
                     placeholder="Auto-generated if left blank"
-                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold"
+                    className="w-full h-12 px-4 rounded-xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-xs font-bold"
                   />
                 </div>
 
                 {/* Edition */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 flex items-center gap-1">
                     <Layers size={11} /> Edition / Version
                   </label>
                   <input 
@@ -806,13 +973,13 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                     value={edition}
                     onChange={(e) => setEdition(e.target.value)}
                     placeholder="e.g. 1st Edition, 2026 Revision"
-                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold"
+                    className="w-full h-12 px-4 rounded-xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-xs font-bold"
                   />
                 </div>
 
                 {/* Language */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 flex items-center gap-1">
                     <FileText size={11} /> Language
                   </label>
                   <input 
@@ -820,26 +987,26 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                     value={language}
                     onChange={(e) => setLanguage(e.target.value)}
                     placeholder="e.g. English, Spanish"
-                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold"
+                    className="w-full h-12 px-4 rounded-xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-xs font-bold"
                   />
                 </div>
 
                 {/* Publication Date */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 flex items-center gap-1">
                     <TrendingUp size={11} /> Publication Date
                   </label>
                   <input 
                     type="date" 
                     value={publicationDate}
                     onChange={(e) => setPublicationDate(e.target.value)}
-                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold cursor-pointer"
+                    className="w-full h-12 px-4 rounded-xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-xs font-bold cursor-pointer"
                   />
                 </div>
 
                 {/* Pages */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 flex items-center gap-1">
                     <BookOpen size={11} /> Number of Pages
                   </label>
                   <input 
@@ -847,13 +1014,13 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                     value={pages}
                     onChange={(e) => setPages(e.target.value)}
                     placeholder="e.g. 240"
-                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold"
+                    className="w-full h-12 px-4 rounded-xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-xs font-bold"
                   />
                 </div>
 
                 {/* Co-Authors */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 flex items-center gap-1">
                     <UserPlus size={11} /> Co-Authors / Contributors
                   </label>
                   <input 
@@ -861,13 +1028,13 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                     value={coAuthors}
                     onChange={(e) => setCoAuthors(e.target.value)}
                     placeholder="e.g. Dr. Bisi A., Prof. Sarah Jenkins"
-                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold"
+                    className="w-full h-12 px-4 rounded-xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-xs font-bold"
                   />
                 </div>
 
                 {/* Tags */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 flex items-center gap-1">
                     <Tag size={11} /> Tags / Keywords
                   </label>
                   <input 
@@ -875,61 +1042,31 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                     value={tagsInput}
                     onChange={(e) => setTagsInput(e.target.value)}
                     placeholder="systems, architecture, node (comma-separated)"
-                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold"
+                    className="w-full h-12 px-4 rounded-xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-xs font-bold"
                   />
                 </div>
 
                 {/* Age Rating */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 flex items-center gap-1">
                     <Milestone size={11} /> Age Suitability Rating
                   </label>
                   <select 
                     value={ageRating}
                     onChange={(e) => setAgeRating(e.target.value)}
-                    className="w-full h-12 px-4 rounded-xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-xs font-bold cursor-pointer"
+                    className="w-full h-12 px-4 rounded-xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-xs font-bold cursor-pointer"
                   >
                     <option value="All Ages / G">All Ages / G</option>
                     <option value="Teen / PG-13">Teen / PG-13</option>
                     <option value="Mature / R">Mature / R</option>
                   </select>
                 </div>
-
-                {/* Optional Sample Pages Upload */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-                    Sample Pages (Optional PDF)
-                  </label>
-                  <input 
-                    type="file" 
-                    id="real-sample-file-input" 
-                    accept=".pdf"
-                    className="hidden" 
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) setRealSampleFile(file);
-                    }}
-                  />
-                  <div 
-                    onClick={() => document.getElementById('real-sample-file-input')?.click()}
-                    className={`border border-dashed rounded-xl px-4 py-2 flex items-center justify-between gap-2 h-12 cursor-pointer transition-all ${
-                      realSampleFile 
-                        ? 'border-emerald-400 bg-emerald-50/10' 
-                        : 'border-slate-250 bg-slate-50/50 hover:bg-slate-100/50'
-                    }`}
-                  >
-                    <span className="text-[10px] text-slate-500 font-bold truncate">
-                      {realSampleFile ? realSampleFile.name : 'Upload sample PDF...'}
-                    </span>
-                    <UploadCloud size={14} className="text-slate-400 shrink-0" />
-                  </div>
-                </div>
               </div>
             </div>
 
             {/* Synopsis / Description */}
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+              <label className="text-[10px] font-black uppercase tracking-wider text-foreground/70 block">
                 Synopsis / Description <span className="text-rose-500">*</span>
               </label>
               <textarea 
@@ -937,8 +1074,8 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={4}
-                placeholder="Describe your book details. What will mentees learn? Summarize the curriculum architecture..."
-                className="w-full p-5 rounded-2xl bg-slate-50 border border-slate-200/60 focus:border-brand-primary focus:bg-white focus:outline-none text-slate-800 font-bold transition-all duration-300 shadow-sm leading-relaxed"
+                placeholder="Describe your book details. What will mentees learn? Summarize the curriculum structure..."
+                className="w-full p-5 rounded-2xl bg-surface-2 border border-slate-200/60 focus:border-brand-primary focus:bg-surface focus:outline-none text-foreground font-bold transition-all duration-300 shadow-sm leading-relaxed"
               />
             </div>
 
@@ -964,14 +1101,15 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
         </Card>
       )}
 
-      {/* MANAGE PUBLISHED BOOKS SECTION */}
-      <div className="space-y-6">
-        <div className="flex justify-between items-center px-2">
-          <h3 className="text-2xl font-black text-slate-900 tracking-tight">Your Published Assets ({myBooks.length})</h3>
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-            DRM Secure Protected
-          </span>
-        </div>
+      {/* MANAGE PUBLISHED BOOKS SECTION - HIDDEN IN INLINE MODE */}
+      {!inline && !showUploadForm && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center px-2">
+            <h3 className="text-2xl font-black text-foreground tracking-tight">Your Published Assets ({myBooks.length})</h3>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              DRM Secure Protected
+            </span>
+          </div>
 
         {myBooks.length === 0 ? (
           <Card className="p-12 border-none shadow-[0_12px_24px_-8px_rgba(0,0,0,0.02)] rounded-[2.5rem] bg-white text-center space-y-4">
@@ -1070,6 +1208,9 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
           </div>
         )}
       </div>
+      )}
+
+
     </div>
   );
 };

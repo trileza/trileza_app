@@ -354,7 +354,7 @@ const AuthorApplication: React.FC<AuthorApplicationProps> = ({ inline = false, o
                     }}
                     className="w-full bg-emerald-400 hover:bg-emerald-500 text-slate-950 font-black py-3.5 rounded-2xl border-none shadow-lg text-[9px] uppercase tracking-widest transition-transform hover:scale-[1.02] flex items-center justify-center gap-2"
                   >
-                    🚀 Auto-Approve Right Now (Dev Sim)
+                    Auto-Approve Right Now (Dev Sim)
                   </Button>
                   <div className="pt-2">
                     <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl bg-white/10 text-emerald-400">

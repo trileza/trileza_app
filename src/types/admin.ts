@@ -9,9 +9,25 @@ export type AdminRole =
 
 export interface AdminUser {
   id: string;
-  role: AdminRole;
+  user_id: string;
+  roles: AdminRole[];
+  onboarded: boolean;
+  suspended: boolean;
+  last_login?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AdminInvite {
+  id: string;
+  email: string;
+  roles: AdminRole[];
+  invited_by?: string;
+  token: string;
+  expires_at: string;
+  status: 'pending' | 'accepted' | 'expired';
+  created_at: string;
+  accepted_at?: string;
 }
 
 export interface AdminAuditLog {
@@ -31,7 +47,7 @@ export interface CourseReview {
   course_id: string;
   submitted_by: string;
   content_manager_id?: string;
-  status: 'pending' | 'approved' | 'needs_changes' | 'rejected';
+  status: 'pending' | 'pending_deletion' | 'approved' | 'needs_changes' | 'rejected';
   checklist_title: boolean;
   checklist_description: boolean;
   checklist_curriculum: boolean; // >=5 lessons
@@ -43,10 +59,13 @@ export interface CourseReview {
   submitted_at: string;
   reviewed_at?: string;
   
-  // Joined virtual properties
   course_title?: string;
   course_thumbnail?: string;
   submitted_by_name?: string;
+  category?: string;
+  description?: string;
+  price_standard?: number;
+  price_elite?: number;
 }
 
 export interface BookReview {
@@ -71,6 +90,7 @@ export interface BookReview {
   category?: string;
   retail_price?: number;
   file_url?: string;
+  description?: string;
 }
 
 export interface MentorApplication {

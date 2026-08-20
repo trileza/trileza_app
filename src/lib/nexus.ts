@@ -31,4 +31,6 @@ if (!INSFORGE_URL || !INSFORGE_ANON_KEY) {
 export const nexus = createClient({
   baseUrl: INSFORGE_URL,
   anonKey: INSFORGE_ANON_KEY,
+  timeout: 0,
+  debug: true,
 });

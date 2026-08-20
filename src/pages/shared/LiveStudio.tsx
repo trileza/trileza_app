@@ -1,292 +1,426 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Radio, 
-  Users,
-  ArrowRight,
-  Plus,
-  Calendar,
-  Clock,
-  Video,
-  Layout
+  Radio, Users, ArrowRight, Plus, Calendar, Clock, Video, Layout, Share2, Upload, Info
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { cn } from '../../utils';
+import { cn, executeWithAutoRefresh } from '../../utils';
 import { Card, Button } from '../../components/ui';
 import { useAuthStore } from '../../store/authStore';
 import { liveService } from '../../lib/services/live';
 import type { LiveSession } from '../../lib/services/live';
 import { Toast } from '../../components/ui/Toast';
 import { PageHeader } from '../../components/shared';
+import ShareMeetingModal from '../../components/live/ShareMeetingModal';
+import { nexus } from '../../lib/nexus';
 
 const LiveStudio: React.FC = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
-  const [activeSessions, setActiveSessions] = useState<LiveSession[]>([]);
+  
+  const [scheduledSessions, setScheduledSessions] = useState<LiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'info'} | null>(null);
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduleForm, setScheduleForm] = useState({ title: '', time: '' });
+  
+  // Share States
+  const [shareMeeting, setShareMeeting] = useState<LiveSession | null>(null);
+  
+  // Form States
+  const [scheduleForm, setScheduleForm] = useState({ 
+    title: '', 
+    description: '',
+    time: '',
+    type: 'instant' as 'instant' | 'scheduled' | 'recurring',
+    recurring: 'none' as 'none' | 'daily' | 'weekly',
+    imageUrl: ''
+  });
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsUploading(true);
+    setToast({ message: 'Processing thumbnail...', type: 'info' });
+    
+    try {
+      // Compress image to reduce file size and upload time
+      const compressedFile = await new Promise<File>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+          const img = new Image();
+          img.src = event.target?.result as string;
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 800;
+            const MAX_HEIGHT = 450;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob((blob) => {
+              if (blob) {
+                const newFile = new File([blob], file.name, {
+                  type: 'image/jpeg',
+                  lastModified: Date.now(),
+                });
+                resolve(newFile);
+              } else {
+                reject(new Error('Canvas to Blob failed'));
+              }
+            }, 'image/jpeg', 0.8);
+          };
+          img.onerror = (error) => reject(error);
+        };
+        reader.onerror = (error) => reject(error);
+      });
+
+      setToast({ message: 'Uploading thumbnail...', type: 'info' });
+      const { data, error: uploadError } = await executeWithAutoRefresh(() =>
+        nexus.storage
+          .from('session-thumbnails')
+          .uploadAuto(compressedFile)
+      );
+
+      if (uploadError) throw uploadError;
+
+      setScheduleForm(prev => ({ ...prev, imageUrl: data.url }));
+      setToast({ message: 'Thumbnail uploaded successfully!', type: 'success' });
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      setToast({ message: `Upload failed: ${err.message}`, type: 'info' });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const fetchSessions = async () => {
+    try {
+      const data = await liveService.getCourseSessions('global');
+      if (data) {
+        setScheduledSessions(data.filter(s => s.status === 'scheduled'));
+      }
+    } catch (err) {
+      console.error('Failed to fetch live sessions:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchSessions = async () => {
-      try {
-        // Fetch all active/live sessions
-        // In a real app, we'd filter by 'live' status
-        const { data, error } = await (liveService as any).getCourseSessions('global'); // Using a dummy global ID for lobby
-        if (data) setActiveSessions(data);
-      } catch (err) {
-        console.error('Failed to fetch live sessions:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchSessions();
   }, []);
 
-  const handleStartSession = async () => {
+  const handleScheduleSession = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!user) return;
-    try {
-      setToast({ message: 'Initializing Elite Broadcast Node...', type: 'info' });
-      const session = await liveService.createSession(
-        'global', // For testing
-        user.id,
-        `${user.full_name}'s Masterclass`,
-        new Date().toISOString()
-      );
-      
-      // Update status to live immediately for this demo
-      await liveService.updateStatus(session.id, 'live');
-      
-      navigate(`/live/${session.dyte_meeting_id}`);
-    } catch (err: any) {
-      setToast({ message: `Failed to start session: ${err.message}`, type: 'info' });
+    if (!scheduleForm.title.trim()) {
+      setToast({ message: 'Please enter a session title', type: 'info' });
+      return;
     }
-  };
+    if (!scheduleForm.imageUrl) {
+      setToast({ message: 'Please upload a thumbnail image first', type: 'info' });
+      return;
+    }
+    if (scheduleForm.type !== 'instant' && !scheduleForm.time) {
+      setToast({ message: 'Please select a broadcast start time', type: 'info' });
+      return;
+    }
 
-  const handleScheduleSession = async () => {
-    if (!user || !scheduleForm.title || !scheduleForm.time) return;
     try {
-      setToast({ message: 'Scheduling Transmission Node...', type: 'info' });
-      await liveService.createSession(
+      setToast({ 
+        message: scheduleForm.type === 'instant' ? 'Initializing broadcast...' : 'Scheduling broadcast...', 
+        type: 'info' 
+      });
+      
+      const scheduledTime = scheduleForm.type === 'instant' 
+        ? new Date().toISOString() 
+        : new Date(scheduleForm.time).toISOString();
+      
+      const session = await liveService.createSession(
         'global',
         user.id,
-        scheduleForm.title,
-        new Date(scheduleForm.time).toISOString()
+        scheduleForm.title.trim(),
+        scheduledTime,
+        scheduleForm.type === 'recurring' ? scheduleForm.recurring : 'none',
+        scheduleForm.imageUrl,
+        scheduleForm.description.trim()
       );
-      setToast({ message: 'Session Scheduled Successfully!', type: 'success' });
-      setShowScheduleModal(false);
-      // Refresh sessions
-      const { data } = await (liveService as any).getCourseSessions('global');
-      if (data) setActiveSessions(data);
+
+      if (scheduleForm.type === 'instant') {
+        await liveService.updateStatus(session.id, 'live');
+        if (window.innerWidth >= 768) {
+          window.open(`/live/${session.dyte_meeting_id}`, '_blank');
+        } else {
+          navigate(`/live/${session.dyte_meeting_id}`);
+        }
+      } else {
+        setToast({ message: 'Session Scheduled Successfully!', type: 'success' });
+        setScheduleForm({
+          title: '',
+          description: '',
+          time: '',
+          type: 'instant',
+          recurring: 'none',
+          imageUrl: ''
+        });
+        fetchSessions();
+        setShareMeeting(session);
+      }
     } catch (err: any) {
-      setToast({ message: `Scheduling Failed: ${err.message}`, type: 'info' });
+      console.error('[LiveStudio] Scheduling failed:', err);
+      setToast({ message: `Failed to create session: ${err.message || err.toString()}`, type: 'info' });
     }
   };
 
-  const handleJoinSession = (dyteMeetingId: string) => {
-    navigate(`/live/${dyteMeetingId}`);
+  const handleLaunchScheduled = async (session: LiveSession) => {
+    try {
+      setToast({ message: 'Launching scheduled session...', type: 'info' });
+      await liveService.updateStatus(session.id, 'live');
+      if (window.innerWidth >= 768) {
+        window.open(`/live/${session.dyte_meeting_id}`, '_blank');
+      } else {
+        navigate(`/live/${session.dyte_meeting_id}`);
+      }
+    } catch (err: any) {
+      setToast({ message: `Launch failed: ${err.message}`, type: 'info' });
+    }
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-12 animate-in fade-in duration-700 pb-20">
+    <div className="w-full space-y-12 animate-in fade-in duration-700 pb-20 font-sans">
       {/* Premium Studio Header */}
       <PageHeader 
         title={
-          <>Live <span className="text-emerald-400 italic">Studio</span></>
+          <>Live <span className="text-emerald-500 italic">Studio</span></>
         }
         description="Connect with your audience in real-time. High-fidelity video, interactive chat, and crystal clear screen sharing."
         tag="Live Social Transmission"
         icon={Radio}
-        rightContent={
-          <div className="flex flex-col sm:flex-row gap-4">
-            {user?.role === 'tutor' && (
-              <Button 
-                onClick={handleStartSession}
-                className="h-16 px-8 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-sm uppercase tracking-widest shadow-xl shadow-emerald-500/30 transition-all flex items-center gap-3"
-              >
-                <Plus size={20} strokeWidth={3} /> Start Live Node
-              </Button>
-            )}
-            <Button 
-              onClick={() => {
-                setScheduleForm({ title: '', time: '' });
-                setShowScheduleModal(true);
-              }}
-              variant="outline"
-              className="h-16 px-8 rounded-2xl bg-white/5 border-white/10 text-white font-black text-sm uppercase tracking-widest hover:bg-white/10 backdrop-blur-xl transition-all"
-            >
-              <Calendar size={20} /> Schedule Video
-            </Button>
-          </div>
-        }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-        {/* Active Nodes Gallery */}
-        <div className="lg:col-span-2 space-y-8">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-lg shadow-red-500/50" />
-              <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.3em]">Active Transmissions</h2>
-            </div>
-            <span className="text-[10px] font-black text-slate-400 bg-slate-50 px-3 py-1 rounded-full uppercase tracking-widest">
-              {activeSessions.length} Nodes Online
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {loading ? (
-              [1, 2, 3, 4].map(i => (
-                <Card key={i} className="h-56 animate-pulse bg-slate-100 border-none rounded-[2.5rem]" />
-              ))
-            ) : activeSessions.length === 0 ? (
-              <div className="col-span-full py-32 text-center bg-slate-50/50 rounded-[3.5rem] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-6 group">
-                 <div className="w-24 h-24 rounded-full bg-white flex items-center justify-center text-slate-200 shadow-xl group-hover:scale-110 transition-transform duration-500">
-                    <Video size={40} />
-                 </div>
-                 <div className="space-y-1">
-                   <p className="text-slate-400 font-black uppercase tracking-[0.3em] text-[10px]">Silence in the Ether</p>
-                   <p className="text-slate-500 font-bold">No active sessions detected at this time.</p>
-                 </div>
-                 {user?.role === 'tutor' && (
-                   <Button 
-                    onClick={handleStartSession}
-                    variant="outline" 
-                    className="border-brand-primary text-brand-primary font-black rounded-xl px-8"
-                   >
-                     Be the First &rarr;
-                   </Button>
-                 )}
-              </div>
-            ) : (
-              activeSessions.map((session) => (
-                <Card 
-                  key={session.id}
-                  onClick={() => handleJoinSession(session.dyte_meeting_id)}
-                  className="group p-0 overflow-hidden border-none bg-white shadow-2xl shadow-slate-200/50 rounded-[2.5rem] hover:translate-y-[-8px] transition-all duration-500 cursor-pointer"
-                >
-                  <div className="relative aspect-[16/10] bg-slate-950">
-                    <img 
-                      src={`https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&q=80&w=600`} 
-                      className="w-full h-full object-cover opacity-60 group-hover:scale-110 transition-transform duration-1000" 
-                      alt="Session cover" 
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent" />
-                    <div className="absolute top-6 left-6 flex gap-2">
-                       <span className="px-3 py-1 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest rounded-full animate-pulse">Live</span>
-                       <span className="px-3 py-1 bg-black/40 backdrop-blur-md text-white text-[10px] font-black uppercase tracking-widest rounded-full border border-white/10">1.2k Viewers</span>
-                    </div>
-                  </div>
-                  <div className="p-8">
-                    <h3 className="text-xl font-black text-slate-900 group-hover:text-emerald-600 transition-colors line-clamp-1">{session.title}</h3>
-                    <div className="flex items-center justify-between mt-6 pt-6 border-t border-slate-50">
-                      <div className="flex items-center gap-3">
-                         <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-black text-slate-400 text-xs uppercase">T</div>
-                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Host Node Activated</p>
-                      </div>
-                      <ArrowRight size={20} className="text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-2 transition-all" />
-                    </div>
-                  </div>
-                </Card>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Studio Sidebar */}
-        <div className="space-y-8">
-           <Card className="bg-slate-950 p-10 rounded-[3rem] border-none text-white shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl" />
-              <h3 className="text-xs font-black uppercase tracking-[0.3em] text-emerald-400 mb-8">Studio Analytics</h3>
-              <div className="space-y-6">
-                 <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                       <p className="text-2xl font-black">12.8k</p>
-                       <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total Viewers Today</p>
-                    </div>
-                    <Users size={32} className="text-slate-800 group-hover:text-emerald-500/20 transition-colors" />
-                 </div>
-                 <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                       <p className="text-2xl font-black">450</p>
-                       <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Communities</p>
-                    </div>
-                    <Layout size={32} className="text-slate-800 group-hover:text-emerald-500/20 transition-colors" />
-                 </div>
-              </div>
-           </Card>
-
-           <Card className="p-10 rounded-[3rem] border-2 border-slate-100 shadow-xl shadow-slate-200/50 space-y-6">
-              <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mb-2">Upcoming Sessions</h3>
-              {[1, 2, 3].map(i => (
-                <div key={i} className="flex gap-4 p-4 rounded-2xl bg-slate-50 hover:bg-white hover:shadow-lg transition-all cursor-pointer group border border-transparent hover:border-slate-100">
-                   <div className="w-12 h-12 rounded-xl bg-white flex flex-col items-center justify-center shadow-sm font-black text-slate-900 leading-none">
-                      <span className="text-lg">0{i+4}</span>
-                      <span className="text-[8px] uppercase text-emerald-600">May</span>
-                   </div>
-                   <div className="flex-1 min-w-0">
-                      <p className="text-sm font-black text-slate-800 group-hover:text-emerald-600 transition-colors truncate">System Node Architecture</p>
-                      <div className="flex items-center gap-2 mt-1">
-                         <Clock size={10} className="text-slate-400" />
-                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">14:00 GMT</span>
-                      </div>
-                   </div>
-                </div>
-              ))}
-              <Button variant="ghost" className="w-full text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-emerald-600">View Full Schedule &rarr;</Button>
-           </Card>
-        </div>
-      </div>
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
-      {/* ── Scheduling Modal ── */}
-      {showScheduleModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
-          <Card className="max-w-md w-full bg-slate-900 border border-white/10 p-10 rounded-[3rem] space-y-8 shadow-3xl">
-            <div className="space-y-2">
-              <h2 className="text-3xl font-black text-white tracking-tight">Schedule Node</h2>
-              <p className="text-slate-400 font-medium text-sm">Prepare your future transmission for the elite network.</p>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+         {/* Studio Broadcasting Desk Form */}
+         <Card className="lg:col-span-7 bg-white p-5 md:p-8 lg:p-10 rounded-[3rem] border border-slate-200 text-slate-900 shadow-xl relative overflow-hidden">
             
-            <div className="space-y-6">
+            <div className="space-y-2 border-b border-slate-100 pb-6 mb-6 text-left">
+              <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                <Video className="text-emerald-600 animate-pulse" /> Online Setup
+              </h2>
+              <p className="text-slate-500 text-xs">
+                Provide meeting details and upload a cover thumbnail to setup your broadcast room.
+              </p>
+            </div>
+
+            <form onSubmit={handleScheduleSession} className="space-y-6 text-left">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-emerald-400 ml-2">Session Title</label>
+                <label className="text-[10px] font-black tracking-widest text-emerald-600 ml-1 uppercase">Meeting Title</label>
                 <input 
                   type="text" 
-                  placeholder="e.g. Advanced Agentic Design"
+                  placeholder="e.g. Advanced Agentic Design Masterclass"
                   value={scheduleForm.title}
                   onChange={(e) => setScheduleForm({...scheduleForm, title: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-semibold"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-emerald-400 ml-2">Broadcast Time</label>
-                <input 
-                  type="datetime-local" 
-                  value={scheduleForm.time}
-                  onChange={(e) => setScheduleForm({...scheduleForm, time: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
-                />
-              </div>
-            </div>
 
-            <div className="flex gap-4 pt-4">
-              <Button 
-                variant="ghost" 
-                onClick={() => setShowScheduleModal(false)}
-                className="flex-1 py-4 text-slate-400 hover:text-white hover:bg-white/5 rounded-2xl"
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleScheduleSession}
-                className="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black rounded-2xl shadow-lg shadow-emerald-500/20"
-              >
-                Launch Node
-              </Button>
-            </div>
-          </Card>
-        </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black tracking-widest text-emerald-600 ml-1 uppercase">Meeting Details / Description</label>
+                <textarea 
+                  placeholder="What will this broadcast cover?"
+                  value={scheduleForm.description}
+                  onChange={(e) => setScheduleForm({...scheduleForm, description: e.target.value})}
+                  rows={3}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-semibold resize-none"
+                />
+              </div>
+
+              {/* Cover Image Selector & Upload */}
+              <div className="space-y-3">
+                <label className="text-[10px] font-black tracking-widest text-emerald-600 ml-1 uppercase block">Upload Meeting Cover Thumbnail</label>
+                
+                {scheduleForm.imageUrl ? (
+                  <div className="w-full max-w-sm aspect-video rounded-2xl overflow-hidden border border-slate-200 relative shadow-inner bg-slate-50">
+                     <img src={scheduleForm.imageUrl} className="w-full h-full object-cover" alt="Custom Upload" />
+                     <label className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
+                        <span className="text-white text-xs font-bold bg-black/70 px-3 py-1.5 rounded-full mb-2">Custom Thumbnail Uploaded</span>
+                        <span className="text-white text-xs font-bold bg-black/70 px-3 py-1.5 rounded-full flex items-center gap-2"><Upload size={14}/> {isUploading ? 'Uploading...' : 'Change Image'}</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+                     </label>
+                  </div>
+                ) : (
+                  <label className="w-full max-w-sm aspect-video rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-3 bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-500 p-6 transition-colors cursor-pointer group">
+                    <Upload size={32} className={cn("text-slate-350 group-hover:text-emerald-500 transition-colors", isUploading && "animate-bounce")} />
+                    <div className="text-center">
+                      <p className="text-xs font-black uppercase tracking-wider text-slate-500 group-hover:text-emerald-600 transition-colors">{isUploading ? 'Uploading...' : 'Click to Upload Thumbnail'}</p>
+                      <p className="text-[10px] font-semibold text-slate-400 mt-1">Browse your files to attach a cover image</p>
+                    </div>
+                    <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+                  </label>
+                )}
+              </div>
+
+              <div className="space-y-6 pt-4 border-t border-slate-100 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black tracking-widest text-emerald-600 ml-1 uppercase">Scheduling Option</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {(['instant', 'scheduled', 'recurring'] as const).map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => setScheduleForm({...scheduleForm, type})}
+                          className={cn(
+                            "py-3.5 rounded-xl font-black text-[10px] capitalize tracking-wider transition-all border cursor-pointer",
+                            scheduleForm.type === type 
+                              ? "bg-emerald-500 border-transparent text-white shadow-lg shadow-emerald-500/25" 
+                              : "bg-slate-50 border-slate-200 text-slate-650 hover:bg-slate-100 hover:text-slate-800"
+                          )}
+                        >
+                          {type === 'instant' ? 'Go Live' : type}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {scheduleForm.type === 'recurring' && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black tracking-widest text-emerald-600 ml-1 uppercase">Recurrence Interval</label>
+                      <select
+                        value={scheduleForm.recurring}
+                        onChange={(e: any) => setScheduleForm({...scheduleForm, recurring: e.target.value})}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-semibold cursor-pointer"
+                      >
+                        <option value="none">Select frequency...</option>
+                        <option value="daily">Daily Broadcast</option>
+                        <option value="weekly">Weekly Broadcast</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {scheduleForm.type !== 'instant' && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black tracking-widest text-emerald-600 ml-1 uppercase">Broadcast Start Time</label>
+                      <input 
+                        type="datetime-local" 
+                        value={scheduleForm.time}
+                        onChange={(e) => setScheduleForm({...scheduleForm, time: e.target.value})}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-semibold cursor-pointer"
+                      />
+                    </div>
+                  )}
+
+                  <div className="pt-4">
+                    <Button 
+                      type="submit"
+                      disabled={isUploading}
+                      className="w-full h-14 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-sm uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-500/10 border-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {scheduleForm.type === 'instant' ? (
+                        <>
+                          <Radio size={16} className="animate-pulse" /> Launch live session
+                        </>
+                      ) : (
+                        <>
+                          <Calendar size={16} /> Schedule Broadcast
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+            </form>
+         </Card>
+
+         {/* Scheduled Nodes Management */}
+          <Card className="lg:col-span-5 p-5 md:p-8 lg:p-10 rounded-[3rem] border border-slate-200 shadow-xl space-y-6 bg-white text-slate-900">
+            <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mb-2 text-left">Active Transmission Queue</h3>
+            {loading ? (
+              <div className="text-slate-400 font-bold text-xs uppercase tracking-widest py-8">Loading queue...</div>
+            ) : scheduledSessions.length === 0 ? (
+              <div className="py-16 text-center text-slate-400 text-xs font-bold border border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center gap-2">
+                <Info size={24} className="text-slate-350" />
+                <span>No transmissions scheduled.</span>
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-[580px] overflow-y-auto pr-1">
+                {scheduledSessions.map((session) => (
+                  <div 
+                    key={session.id} 
+                    className="flex flex-col gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:bg-slate-100/50 transition-all"
+                  >
+                     <div className="flex gap-4 items-start text-left">
+                       <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex flex-col items-center justify-center font-black text-emerald-600 leading-none shrink-0">
+                          <Calendar size={18} />
+                       </div>
+                       <div className="flex-1 min-w-0">
+                          <p className="text-sm font-black text-slate-800 truncate">{session.title}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                             <Clock size={10} className="text-slate-400" />
+                             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                               {new Date(session.scheduled_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                             </span>
+                          </div>
+                          {session.recurring && session.recurring !== 'none' && (
+                            <span className="inline-block mt-2 px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-500 text-[8px] font-black uppercase">
+                              {session.recurring}
+                            </span>
+                          )}
+                       </div>
+                     </div>
+                     <div className="flex gap-2">
+                       <Button 
+                         onClick={() => setShareMeeting(session)}
+                         variant="outline" 
+                         className="flex-1 h-9 rounded-xl text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 border border-slate-200 hover:bg-slate-150 transition-colors cursor-pointer"
+                       >
+                         <Share2 size={10} /> Share
+                       </Button>
+                       <Button 
+                         onClick={() => handleLaunchScheduled(session)}
+                         className="flex-1 h-9 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[9px] uppercase tracking-wider border-none shadow-md cursor-pointer"
+                       >
+                         Go Live &rarr;
+                       </Button>
+                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+         </Card>
+      </div>
+      
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+      {/* Share Modal */}
+      {shareMeeting && (
+        <ShareMeetingModal
+          isOpen={!!shareMeeting}
+          onClose={() => setShareMeeting(null)}
+          meeting={{
+            id: shareMeeting.id,
+            title: shareMeeting.title,
+            scheduled_at: shareMeeting.scheduled_at,
+            dyte_meeting_id: shareMeeting.dyte_meeting_id,
+            image_url: shareMeeting.image_url,
+            recurring: shareMeeting.recurring
+          }}
+          hostName={user?.full_name || 'Academic Scholar'}
+        />
       )}
     </div>
   );

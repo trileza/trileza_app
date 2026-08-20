@@ -1,10 +1,10 @@
 /**
- * Dyte Design System Configuration
+ * RealtimeKit Design System Configuration
  * Implements Agro-green branding and Glassmorphism effects
  */
-import { provideDyteDesignSystem } from '@dytesdk/react-ui-kit';
+import { provideRtkDesignSystem } from '@cloudflare/realtimekit-react-ui';
 
-export const DYTE_DESIGN_TOKENS = {
+export const RTK_DESIGN_TOKENS = {
   colors: {
     brand: {
       500: '#2E7D32', // Agro-green
@@ -26,28 +26,31 @@ export const DYTE_DESIGN_TOKENS = {
 };
 
 /**
- * Injects our global design tokens into the Dyte shadow DOM
+ * Injects our global design tokens into the RealtimeKit shadow DOM
  * and applies the custom glassmorphism effects.
  */
-export const applyDyteTheme = (element: HTMLElement) => {
+export const applyRtkTheme = (element: HTMLElement) => {
   if (!element) return;
 
-  provideDyteDesignSystem(element, {
+  provideRtkDesignSystem(element, {
     theme: 'dark',
-    ...DYTE_DESIGN_TOKENS,
+    ...RTK_DESIGN_TOKENS,
   });
 
   // Inject glassmorphism CSS variables directly to the element's style
-  // These will override Dyte's default panel backgrounds
   const styles = {
-    '--dyte-overlay-background': 'rgba(15, 23, 42, 0.6)',
-    '--dyte-sidebar-background': 'rgba(15, 23, 42, 0.6)',
-    '--dyte-control-bar-background': 'rgba(15, 23, 42, 0.8)',
-    '--dyte-grid-pagination-background': 'transparent',
-    '--dyte-video-background': '#020617',
+    '--rtk-overlay-background': 'rgba(15, 23, 42, 0.6)',
+    '--rtk-sidebar-background': 'rgba(15, 23, 42, 0.6)',
+    '--rtk-control-bar-background': 'rgba(15, 23, 42, 0.8)',
+    '--rtk-grid-pagination-background': 'transparent',
+    '--rtk-video-background': '#020617',
   };
 
   Object.entries(styles).forEach(([prop, value]) => {
     element.style.setProperty(prop, value);
   });
 };
+
+// Maintain compatibility alias
+export const applyDyteTheme = applyRtkTheme;
+

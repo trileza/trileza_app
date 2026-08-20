@@ -11,39 +11,41 @@ const Vault = () => {
   const showFeedback = (msg: string, type: 'success' | 'info' = 'success') => setToast({ message: msg, type });
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20 max-w-7xl mx-auto">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-20 w-full">
       {/* Global Premium Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-950 p-8 md:p-12 rounded-[2.5rem] text-white shadow-2xl shadow-emerald-900/20 relative overflow-hidden">
-        <div className="absolute -top-32 -left-32 w-80 h-80 bg-emerald-500 rounded-full blur-[100px] opacity-30 animate-pulse" />
-        <div className="absolute right-0 bottom-0 w-80 h-80 bg-brand-primary rounded-full blur-[100px] opacity-20 translate-y-1/2 translate-x-1/3" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-8 md:p-12 rounded-2xl sm:rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden" style={{
+        background: 'linear-gradient(135deg, #052e16 0%, #14532d 25%, #166534 50%, #15803d 75%, #16a34a 100%)'
+      }}>
+        <div className="absolute -top-32 -left-32 w-80 h-80 bg-emerald-500/20 rounded-full blur-[100px] animate-pulse" />
+        <div className="absolute right-0 bottom-0 w-80 h-80 bg-emerald-400/20 rounded-full blur-[100px] translate-y-1/2 translate-x-1/3" />
         
-        <div className="relative z-10 space-y-2">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-lg">
-               <Database className="text-emerald-400" size={20} />
+        <div className="relative z-10 space-y-1.5 sm:space-y-2">
+          <div className="flex items-center gap-2 mb-2 sm:mb-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-lg">
+               <Database className="text-emerald-400" size={18} />
             </div>
-            <span className="text-emerald-400 font-black tracking-[0.2em] uppercase text-xs">Knowledge Base</span>
+            <span className="text-emerald-400 font-black tracking-[0.2em] uppercase text-[10px] sm:text-xs">Knowledge Base</span>
           </div>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white">Resource Vault</h1>
-          <p className="text-slate-400 font-medium max-w-xl text-lg mt-2">Securely upload, manage, and distribute learning materials to your mentoring pods.</p>
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white">Resource Vault</h1>
+          <p className="text-emerald-100/90 font-medium max-w-xl text-xs sm:text-base md:text-lg mt-1 sm:mt-2">Securely upload, manage, and distribute learning materials to your mentoring pods.</p>
         </div>
         
-        <div className="relative z-10 hidden md:flex items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-md">
-           <div className="p-3 bg-emerald-500/20 text-emerald-400 rounded-xl"><Upload size={24}/></div>
+        <div className="relative z-10 hidden md:flex items-center gap-4 bg-white/10 border border-white/20 p-4 rounded-2xl backdrop-blur-md">
+           <div className="p-3 bg-emerald-500/20 text-emerald-300 rounded-xl"><Upload size={24}/></div>
            <div>
               <p className="font-bold text-white leading-tight">Unlimited Storage</p>
-              <p className="text-xs text-slate-400">Mentor privileges active</p>
+              <p className="text-xs text-emerald-200/80">Mentor privileges active</p>
            </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 p-1.5 bg-slate-100 rounded-2xl w-fit">
+      {/* Tabs — Stack on small screens */}
+      <div className="flex flex-col sm:flex-row gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/60 rounded-2xl w-full sm:w-fit">
         <button 
           onClick={() => setActiveTab('private')}
           className={cn(
-            "flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
-            activeTab === 'private' ? "bg-white text-slate-900 shadow-md" : "text-slate-500 hover:text-slate-900"
+            "flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all w-full sm:w-auto touch-target",
+            activeTab === 'private' ? "bg-emerald-600 text-white shadow-md" : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           )}
         >
           <Shield size={14} /> Private Vault
@@ -51,8 +53,8 @@ const Vault = () => {
         <button 
           onClick={() => setActiveTab('store')}
           className={cn(
-            "flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
-            activeTab === 'store' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
+            "flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all w-full sm:w-auto touch-target",
+            activeTab === 'store' ? "bg-slate-900 dark:bg-slate-950 text-white shadow-md border border-slate-700" : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           )}
         >
           <ShoppingBag size={14} /> Public Store Manager

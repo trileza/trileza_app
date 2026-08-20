@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Trash2, Tag, CreditCard, ShoppingBag, CheckCircle, Zap } from 'lucide-react';
 import { useCartStore } from '../../store/cartStore';
@@ -6,12 +7,15 @@ import type { CartItem } from '../../store/cartStore';
 import { useAuthStore } from '../../store/authStore';
 import { useCheckout } from '../../lib/services/paystack';
 import { nexus } from '../../lib/nexus';
+import { libraryService } from '../../lib/services/libraryService';
+
 import { cn, formatCurrency } from '../../utils';
 import { Toast } from '../ui/Toast';
 
 export const CartDrawer: React.FC = () => {
   const { items, isOpen, setIsOpen, fetchCart, removeItem, clearCart, getTotal } = useCartStore();
   const { user } = useAuthStore();
+  const navigate = useNavigate();
 
   React.useEffect(() => {
     if (user?.id) {
@@ -40,13 +44,13 @@ export const CartDrawer: React.FC = () => {
 
     if (code === 'TRILEZA20') {
       setActiveCoupon({ code, discountPercent: 20 });
-      setToast({ message: '20% off coupon applied! 🏷️', type: 'success' });
+      setToast({ message: '20% off coupon applied!', type: 'success' });
     } else if (code === 'TRILEZA50') {
       setActiveCoupon({ code, discountPercent: 50 });
-      setToast({ message: '50% off coupon applied! 🏷️', type: 'success' });
+      setToast({ message: '50% off coupon applied!', type: 'success' });
     } else if (code === 'TRILEZAFREE') {
       setActiveCoupon({ code, discountPercent: 100 });
-      setToast({ message: '100% FREE access coupon applied! 🏷️', type: 'success' });
+      setToast({ message: '100% FREE access coupon applied!', type: 'success' });
     } else {
       setCouponError('Invalid coupon code.');
     }
@@ -81,45 +85,11 @@ export const CartDrawer: React.FC = () => {
       // Upsert book access with cumulative rent triggers & borrow timers
       const booksToUpsert = items.filter(item => item.type === 'book_buy' || item.type === 'book_rent');
       for (const book of booksToUpsert) {
-        // Retrieve existing access details to accumulate rent total
-        const { data: existing } = await nexus.database
-          .from('user_library_access')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('book_id', book.id);
-        
-        let accumulatedRent = book.type === 'book_rent' ? book.price : 0;
-        let isOwn = book.type === 'book_buy';
-
-        if (existing && existing[0]) {
-          accumulatedRent += Number(existing[0].lifetime_rent_total || 0);
-          if (existing[0].access_type === 'own') {
-            isOwn = true;
-          }
+        if (book.type === 'book_rent') {
+          await libraryService.borrowBook(user.id, book.id, book.price);
+        } else {
+          await libraryService.buyBook(user.id, book.id);
         }
-
-        // Fetch retail price to verify ownership threshold
-        const { data: bookRecord } = await nexus.database
-          .from('books')
-          .select('retail_price')
-          .eq('id', book.id);
-
-        const retailPrice = bookRecord && bookRecord[0] ? Number(bookRecord[0].retail_price) : 999999;
-        
-        // Ownership Trigger: Cumulative rent matches/exceeds retail price -> UPGRADE to OWN!
-        if (accumulatedRent >= retailPrice) {
-          isOwn = true;
-        }
-
-        const { error } = await nexus.database.from('user_library_access').upsert({
-          user_id: user.id,
-          book_id: book.id,
-          access_type: isOwn ? 'own' : 'rent',
-          lifetime_rent_total: accumulatedRent,
-          expires_at: isOwn ? null : (book.type === 'book_rent' ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() : null)
-        }, { onConflict: 'user_id, book_id' });
-        
-        if (error) throw error;
       }
 
       // 3. Create real-time notification alert rows in DB
@@ -141,13 +111,17 @@ export const CartDrawer: React.FC = () => {
       
       setToast({ message: 'Checkout successful! Enjoy your new items! 🎉', type: 'success' });
       
-      // Reset cart
+      // Reset cart and navigate
       setTimeout(() => {
+        const hasBooks = booksToUpsert.length > 0;
         if (user?.id) clearCart(user.id);
         setIsOpen(false);
         setActiveCoupon(null);
         setCouponInput('');
         setIsProcessing(false);
+        if (hasBooks) {
+          navigate('/library?tab=bought');
+        }
       }, 1500);
 
     } catch (err) {
@@ -240,37 +214,52 @@ export const CartDrawer: React.FC = () => {
                   </div>
                 ) : (
                   items.map((item) => (
-                    <div
-                      key={`${item.id}-${item.type}`}
-                      className="flex items-center gap-4 p-3 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-slate-100 dark:border-slate-800/60"
-                    >
-                      <img
-                        src={item.thumbnail || 'https://api.dicebear.com/7.x/initials/svg?seed=Book'}
-                        className="w-14 h-14 rounded-xl object-cover shrink-0 bg-slate-100 dark:bg-slate-800"
-                        alt={item.title}
-                      />
-                      <div className="flex-1 min-w-0 text-left">
-                        <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">{item.title}</h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                            {item.type === 'course' ? '📚 Course' :
-                             item.type === 'mentorship' ? '🧑‍🏫 Mentor' :
-                             item.type === 'book_rent' ? '⏳ Rent' : '📖 Buy'}
-                          </span>
-                          {item.tier && (
-                            <span className="text-[10px] text-green-600 dark:text-green-400 font-bold">• {item.tier}</span>
-                          )}
+                    <div key={`${item.id}-${item.type}`} className="relative overflow-hidden rounded-2xl">
+                      {/* Swipe Delete Background Indicator */}
+                      <div className="absolute inset-0 bg-red-650 flex items-center justify-end px-6 text-white rounded-2xl">
+                        <Trash2 size={18} className="animate-pulse" />
+                      </div>
+
+                      <motion.div
+                        drag="x"
+                        dragConstraints={{ left: -100, right: 0 }}
+                        dragElastic={{ left: 0.15, right: 0 }}
+                        onDragEnd={(e, info) => {
+                          if (info.offset.x < -75 && user?.id) {
+                            removeItem(item.id, item.type, user.id);
+                            setToast({ message: `${item.title} removed from cart.`, type: 'info' });
+                          }
+                        }}
+                        className="flex items-center gap-4 p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/60 relative z-10 touch-pan-y"
+                      >
+                        <img
+                          src={item.thumbnail || 'https://api.dicebear.com/7.x/initials/svg?seed=Book'}
+                          className="w-14 h-14 rounded-xl object-cover shrink-0 bg-slate-100 dark:bg-slate-800"
+                          alt={item.title}
+                        />
+                        <div className="flex-1 min-w-0 text-left">
+                          <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">{item.title}</h4>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                              {item.type === 'course' ? 'Course' :
+                               item.type === 'mentorship' ? 'Mentor' :
+                               item.type === 'book_rent' ? 'Rent' : 'Buy'}
+                            </span>
+                            {item.tier && (
+                              <span className="text-[10px] text-green-600 dark:text-green-400 font-bold">• {item.tier}</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs font-black text-slate-900 dark:text-white">{formatCurrency(item.price)}</p>
-                        <button
-                          onClick={() => { if (user?.id) removeItem(item.id, item.type, user.id); }}
-                          className="mt-1 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-xs font-black text-slate-900 dark:text-white">{formatCurrency(item.price)}</p>
+                          <button
+                            onClick={() => { if (user?.id) removeItem(item.id, item.type, user.id); }}
+                            className="mt-1 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </motion.div>
                     </div>
                   ))
                 )}
@@ -338,11 +327,11 @@ export const CartDrawer: React.FC = () => {
                       <>Processing...</>
                     ) : finalTotal === 0 ? (
                       <>
-                        <Zap size={14} /> Claim Free Checkout ⚡
+                        <Zap size={14} /> Claim Free Checkout
                       </>
                     ) : (
                       <>
-                        <CreditCard size={14} /> Pay & Checkout 🔒
+                        <CreditCard size={14} /> Pay & Checkout
                       </>
                     )}
                   </button>

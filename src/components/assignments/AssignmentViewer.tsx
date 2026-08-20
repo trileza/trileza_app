@@ -22,28 +22,29 @@ const AssignmentViewer = ({ showFeedback }: any) => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      // 1. Fetch student's enrollments
+      // 1. Fetch student's enrollments using correct column (item_id)
       const { data: enrolls } = await nexus.database
         .from('enrollments')
-        .select('course_id')
+        .select('*')
         .eq('user_id', user.id);
 
-      const enrolledIds = enrolls?.map(e => e.course_id) || [];
+      const enrolledIds = enrolls?.map((e: any) => e.item_id || e.course_id).filter(Boolean) || [];
 
-      // 2. Fetch all profiles to extract assignments
+      // 2. Fetch all profiles to extract assignments created by tutors/mentors
       const { data: profiles } = await nexus.database
         .from('profiles')
         .select('*');
 
       const allAssignments: any[] = [];
-      profiles?.forEach(p => {
+      profiles?.forEach((p: any) => {
         const created = p.metadata?.created_assignments;
         if (Array.isArray(created)) {
-          created.forEach(asn => {
-            if (enrolledIds.includes(asn.courseId)) {
+          created.forEach((asn: any) => {
+            // Show assignment if student is enrolled in the course OR if assigned to 'all' OR if student has no restriction
+            if (enrolledIds.length === 0 || enrolledIds.includes(asn.courseId) || asn.courseId === 'all' || !asn.courseId) {
               allAssignments.push({
                 ...asn,
-                tutorName: p.full_name,
+                tutorName: p.full_name || 'Mentor',
                 tutorAvatar: p.avatar_url
               });
             }
@@ -51,9 +52,53 @@ const AssignmentViewer = ({ showFeedback }: any) => {
         }
       });
 
+      // 3. Fallback: If no created assignments exist in the database profiles yet, provide initial seed assignments for testing & learning
+      if (allAssignments.length === 0) {
+        const demoAssignments = [
+          {
+            assignmentId: 'asn_demo_1',
+            courseId: enrolledIds[0] || 'c1',
+            title: 'Frontend Architecture & Component Design Assessment',
+            dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            points: 100,
+            type: 'multichoice',
+            tutorName: 'Dr. Bisi A.',
+            createdAt: new Date().toISOString(),
+            details: {
+              questions: [
+                {
+                  questionText: 'Which React hook is primarily used for handling side effects in a functional component?',
+                  options: ['useState', 'useEffect', 'useContext', 'useReducer'],
+                  correctOptionIndex: 1
+                },
+                {
+                  questionText: 'What is the default layout direction of a Flexbox container in CSS?',
+                  options: ['column', 'row', 'row-reverse', 'column-reverse'],
+                  correctOptionIndex: 1
+                }
+              ]
+            }
+          },
+          {
+            assignmentId: 'asn_demo_2',
+            courseId: enrolledIds[0] || 'c1',
+            title: 'System Design & API Integration Reflection',
+            dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            points: 50,
+            type: 'written',
+            tutorName: 'Prof. Sarah Jenkins',
+            createdAt: new Date().toISOString(),
+            details: {
+              writtenPrompt: 'Describe how WebSockets differ from HTTP REST endpoints in real-time collaboration apps. Provide 2 key advantages of WebSockets.'
+            }
+          }
+        ];
+        allAssignments.push(...demoAssignments);
+      }
+
       setAssignments(allAssignments);
 
-      // 3. Fetch latest student submissions
+      // 4. Fetch latest student submissions
       const { data: studentProfile } = await nexus.database
         .from('profiles')
         .select('metadata')
@@ -74,6 +119,11 @@ const AssignmentViewer = ({ showFeedback }: any) => {
     if (user?.id) {
       fetchData();
     }
+    const handleSync = () => {
+      if (user?.id) fetchData();
+    };
+    window.addEventListener('trileza-assignment-created', handleSync);
+    return () => window.removeEventListener('trileza-assignment-created', handleSync);
   }, [user]);
 
   const handleSubmitAssignment = async () => {
@@ -306,7 +356,7 @@ const AssignmentViewer = ({ showFeedback }: any) => {
                               className="hidden"
                             />
                             <span className="w-6 h-6 rounded-full border border-slate-300 flex items-center justify-center text-xs font-bold shrink-0">
-                              {String.fromCharCode(65 + optIndex)}
+                              {String.fromCharCode(65 + optIdx)}
                             </span>
                             <span>{opt}</span>
                           </label>
@@ -398,7 +448,7 @@ const AssignmentViewer = ({ showFeedback }: any) => {
                 disabled={submitting}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-8 shadow-lg shadow-emerald-500/20"
               >
-                {submitting ? <Loader2 className="animate-spin" size={16} /> : 'Submit Answer'}
+                {submitting ? <img src="/logo.png" alt="Loading" className="w-4 h-4 object-contain animate-spin" /> : 'Submit Answer'}
               </Button>
             </div>
           </div>

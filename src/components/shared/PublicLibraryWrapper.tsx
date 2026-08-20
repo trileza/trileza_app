@@ -13,6 +13,7 @@ import { cn } from '../../utils';
 import { Card, Button } from '../ui';
 import { nexus } from '../../lib/nexus';
 import { useCartStore } from '../../store/cartStore';
+import { libraryService } from '../../lib/services/libraryService';
 
 interface Book {
   id: string;
@@ -28,15 +29,17 @@ interface Book {
   section: string;
   file_url?: string;
   pages?: number;
+  material_type?: string;
 }
 
 interface UserLibraryAccess {
   id: string;
   book_id: string;
-  access_type: 'rent' | 'own';
+  access_type: 'rent' | 'own' | 'borrow' | 'gift';
   lifetime_rent_total: number;
   created_at: string;
   expires_at?: string;
+  returned_at?: string;
 }
 
 const extractPdfPageCount = (arrayBuffer: ArrayBuffer): number => {
@@ -68,7 +71,7 @@ const extractPdfPageCount = (arrayBuffer: ArrayBuffer): number => {
 
 const getBookPageText = (bookId: string, pageNum: number, bookTitle: string): string => {
   const title = bookTitle || "Blueprint Guide";
-  
+
   // Custom pages for select books
   if (bookId === 'book-1' || bookId === 'b1' || bookId === 'b2') {
     const pages: Record<number, string> = {
@@ -652,13 +655,25 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({
 const PublicLibraryWrapper: React.FC = () => {
   const { user } = useAuthStore();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'borrowed' | 'bought'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'borrowed' | 'bought' | 'reservations' | 'fines'>('general');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeSection, setActiveSection] = useState('All');
+  const [activeMaterialType, setActiveMaterialType] = useState('All');
 
   const [allBooks, setAllBooks] = useState<Book[]>([]);
   const [libraryAccess, setLibraryAccess] = useState<UserLibraryAccess[]>([]);
+  const [reservations, setReservations] = useState<any[]>([]);
+  const [fines, setFines] = useState<any[]>([]);
+  const [recommendedBooks, setRecommendedBooks] = useState<Book[]>([]);
+
 
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [isReading, setIsReading] = useState(false);
@@ -671,9 +686,10 @@ const PublicLibraryWrapper: React.FC = () => {
   const [detectedPageCount, setDetectedPageCount] = useState<number | null>(null);
 
   // Detect if the file is genuinely a PDF (not an EPUB or DOCX)
-  const isPdfFile = selectedBook?.file_url && 
-    !selectedBook.file_url.toLowerCase().endsWith('.epub') && 
-    !selectedBook.file_url.toLowerCase().endsWith('.docx');
+  const fileUrlPath = selectedBook?.file_url?.split('?')[0] || '';
+  const isPdfFile = fileUrlPath && 
+    !fileUrlPath.toLowerCase().endsWith('.epub') && 
+    !fileUrlPath.toLowerCase().endsWith('.docx');
 
   // Fetch the PDF or EPUB pages from URL, convert to local Blob, and create Object URL for secure sandbox rendering
   useEffect(() => {
@@ -688,7 +704,7 @@ const PublicLibraryWrapper: React.FC = () => {
         setPdfErrorMsg('');
         setPdfUrl(null);
         setDetectedPageCount(null);
-        
+
         try {
           const steps = [
             "Establishing secure sandbox session...",
@@ -986,7 +1002,8 @@ const PublicLibraryWrapper: React.FC = () => {
   const [highlightColor, setHighlightColor] = useState('yellow');
   const [isAddingHighlight, setIsAddingHighlight] = useState(false);
   const [companionOpen, setCompanionOpen] = useState(true); // Open by default on desktop!
-  const [companionTab, setCompanionTab] = useState<'navigation' | 'highlights' | 'aids' | 'contacts'>('navigation'); // Page Navigation is default first tab!
+  const [companionTab, setCompanionTab] = useState<'navigation' | 'highlights' | 'aids' | 'contacts'>('highlights'); // Highlights is default tab now!
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [currentPage, setCurrentPage] = useState<number>(1);
   
   // Premium Zoom States & Interactions
@@ -1047,7 +1064,8 @@ const PublicLibraryWrapper: React.FC = () => {
 
   // Extract page text verbatim from PDF for Studying mode
   useEffect(() => {
-    if (!isReading || !pdfUrl || !currentPage || selectedBook?.file_url?.toLowerCase().endsWith('.epub') || selectedBook?.file_url?.toLowerCase().endsWith('.docx')) return;
+    const fileUrlPath = selectedBook?.file_url?.split('?')[0] || '';
+    if (!isReading || !pdfUrl || !currentPage || fileUrlPath.toLowerCase().endsWith('.epub') || fileUrlPath.toLowerCase().endsWith('.docx')) return;
     if (extractedPages[currentPage]) return; // Already extracted
 
     let active = true;
@@ -1363,62 +1381,30 @@ const PublicLibraryWrapper: React.FC = () => {
   const handleSaveCommentHighlight = async () => {
     if (!commentModalData || !user || !selectedBook) return;
     try {
-      // Query without .single() to be robust against missing rows (prevents throwing an exception)
-      const { data: existingList, error: selectErr } = await nexus.database
-        .from('book_highlights')
-        .select('id')
-        .eq('id', commentModalData.id);
-
-      if (selectErr) throw selectErr;
-
-      const existing = existingList && existingList.length > 0 ? existingList[0] : null;
-
-      if (existing) {
-        const { error } = await nexus.database
-          .from('book_highlights')
-          .update({ 
-            comment: commentModalNote.trim() || null,
-            color: commentModalColor
-          })
-          .eq('id', commentModalData.id);
-        if (error) throw error;
-      } else {
-        const newHighlight = {
-          id: commentModalData.id,
-          user_id: user.id,
-          book_id: selectedBook.id,
-          passage_text: commentModalData.text.trim(),
-          comment: commentModalNote.trim() || null,
-          color: commentModalColor,
-        };
-        const { error } = await nexus.database.from('book_highlights').insert([newHighlight]);
-        if (error) throw error;
-      }
-
+      await libraryService.saveHighlight({
+        id: commentModalData.id,
+        user_id: user.id,
+        book_id: selectedBook.id,
+        passage_text: commentModalData.text.trim(),
+        comment: commentModalNote.trim() || undefined,
+        color: commentModalColor
+      });
       fetchHighlights();
-      triggerNotification('Highlight note saved and added to Studying Companion!');
+      triggerNotification('Highlight note saved!');
       setCommentModalData(null);
       setCommentModalNote('');
       window.getSelection()?.removeAllRanges();
     } catch (err: any) {
       console.error(err);
-      triggerNotification('Failed to save comment note: ' + err.message, 'info');
+      triggerNotification('Failed to save comment note', 'info');
     }
   };
 
-
-
-  // Load study companion data from Postgres Database
   const fetchHighlights = async () => {
     if (!selectedBook || !user) return;
     try {
-      const { data } = await nexus.database
-        .from('book_highlights')
-        .select('*')
-        .eq('book_id', selectedBook.id)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-      if (data) setHighlights(data);
+      const data = await libraryService.listHighlights(user.id, selectedBook.id);
+      setHighlights(data);
     } catch (e) {
       console.error("Error fetching highlights:", e);
     }
@@ -1450,26 +1436,21 @@ const PublicLibraryWrapper: React.FC = () => {
     if (!highlightInput.trim() || !commentInput.trim() || !user || !selectedBook) return;
     setIsAddingHighlight(true);
     try {
-      const newHighlight = {
+      await libraryService.saveHighlight({
         id: `h-${Date.now()}`,
         user_id: user.id,
         book_id: selectedBook.id,
         passage_text: highlightInput.trim(),
         comment: commentInput.trim(),
         color: highlightColor,
-      };
-      const { error } = await nexus.database.from('book_highlights').insert([newHighlight]);
-      if (!error) {
-        setHighlightInput('');
-        setCommentInput('');
-        fetchHighlights();
-        triggerNotification('Highlight added to your Study Companion!');
-      } else {
-        throw error;
-      }
+      });
+      setHighlightInput('');
+      setCommentInput('');
+      fetchHighlights();
+      triggerNotification('Highlight added to your Study Companion!');
     } catch (err: any) {
       console.error(err);
-      triggerNotification('Failed to save highlight: ' + err.message, 'info');
+      triggerNotification('Failed to save highlight', 'info');
     } finally {
       setIsAddingHighlight(false);
     }
@@ -1477,13 +1458,9 @@ const PublicLibraryWrapper: React.FC = () => {
 
   const handleDeleteHighlight = async (id: string) => {
     try {
-      const { error } = await nexus.database.from('book_highlights').delete().eq('id', id);
-      if (!error) {
-        fetchHighlights();
-        triggerNotification('Highlight removed successfully');
-      } else {
-        throw error;
-      }
+      await libraryService.deleteHighlight(id);
+      fetchHighlights();
+      triggerNotification('Highlight removed successfully');
     } catch (err: any) {
       console.error(err);
       triggerNotification('Failed to remove highlight', 'info');
@@ -1524,43 +1501,85 @@ const PublicLibraryWrapper: React.FC = () => {
     }
   };
 
-  // Fetch from Real Database
+  // Fetch from Real Database / API
   const fetchData = async () => {
-    // 1. Fetch Books
-    const { data: booksData } = await nexus.database.from('books').select('*');
-    // 2. Fetch Reviews to filter out unapproved books
-    const { data: reviewsData } = await nexus.database.from('book_reviews').select('book_id, status');
-    
-    if (booksData) {
-      let visibleBooks = booksData;
-      if (reviewsData) {
-        const unapprovedBookIds = new Set(
-          reviewsData
-            .filter(r => r.status === 'rejected' || r.status === 'pending' || r.status === 'needs_changes')
-            .map(r => r.book_id)
-        );
-        visibleBooks = booksData.filter(b => !unapprovedBookIds.has(b.id));
+    try {
+      const booksData = await libraryService.listBooks();
+      // Deduplicate books by ID to ensure each book appears only once (Requirement 5)
+      const uniqueBooks = Array.from(new Map(booksData.map(b => [b.id, b])).values());
+      setAllBooks(uniqueBooks);
+
+      if (user?.id) {
+        const accessData = await libraryService.getAccess(user.id);
+        setLibraryAccess(accessData);
+
+        const resData = await libraryService.listReservations(user.id);
+        setReservations(resData);
+
+        const finesData = await libraryService.listFines(user.id);
+        setFines(finesData);
+
+        const recsData = await libraryService.getRecommendations(user.id);
+        setRecommendedBooks(recsData);
       }
-      setAllBooks(visibleBooks as any);
-    }
-    // 2. Fetch User Access
-    if (user?.id) {
-      const { data: accessData } = await nexus.database.from('user_library_access').select('*').eq('user_id', user.id);
-      if (accessData) {
-        setLibraryAccess(accessData as any);
-      }
+    } catch (err) {
+      console.error("Failed to fetch library data:", err);
     }
   };
 
   const { addItem } = useCartStore();
 
   useEffect(() => {
+    let realtimeSubscribed = false;
+    const realtimeChannel = 'catalog-updates';
+
     fetchData();
+
+    const handleRealtimeUpdate = (payload: any) => {
+      console.log('[Realtime] Library catalog update event received:', payload);
+      fetchData();
+    };
+
+    const subscribeToUpdates = async () => {
+      try {
+        await nexus.realtime.connect();
+        const res = await nexus.realtime.subscribe(realtimeChannel);
+        if (res.ok) {
+          realtimeSubscribed = true;
+          nexus.realtime.on('book_updated', handleRealtimeUpdate);
+          nexus.realtime.on('course_updated', handleRealtimeUpdate);
+        }
+      } catch (err) {
+        console.error('[Realtime] Library subscription failed:', err);
+      }
+    };
+
+    subscribeToUpdates();
+
     window.addEventListener('trileza-book-published', fetchData);
     window.addEventListener('trileza-payment-success', fetchData);
+
+    // Deep sync fallback (window focus, visibility change, and periodic polling)
+    window.addEventListener('focus', fetchData);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const intervalId = setInterval(fetchData, 30000);
+
     return () => {
       window.removeEventListener('trileza-book-published', fetchData);
       window.removeEventListener('trileza-payment-success', fetchData);
+      window.removeEventListener('focus', fetchData);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(intervalId);
+      if (realtimeSubscribed) {
+        nexus.realtime.off('book_updated', handleRealtimeUpdate);
+        nexus.realtime.off('course_updated', handleRealtimeUpdate);
+        nexus.realtime.unsubscribe(realtimeChannel);
+      }
     };
   }, [user?.id]);
 
@@ -1592,12 +1611,12 @@ const PublicLibraryWrapper: React.FC = () => {
   const filteredBooks = allBooks.filter(book => {
     const matchesCategory = activeCategory === 'All' || book.category === activeCategory;
     const matchesSection = activeSection === 'All' || book.section === activeSection;
-    const matchesSearch = book.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          book.author_name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = book.title.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) || 
+                          book.author_name.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
     return matchesCategory && matchesSection && matchesSearch;
   });
 
-  const rentals = libraryAccess.filter(a => a.access_type === 'rent' && (!a.expires_at || new Date(a.expires_at) > new Date()));
+  const rentals = libraryAccess.filter(a => a.access_type === 'rent' && !a.returned_at && (!a.expires_at || new Date(a.expires_at) > new Date()));
   const purchases = libraryAccess.filter(a => a.access_type === 'own');
 
   const getRemainingDays = (expiresAt?: string) => {
@@ -1778,10 +1797,23 @@ const PublicLibraryWrapper: React.FC = () => {
     }
   };
 
+  const renderFaithfulHtml = (htmlMarkup: string) => {
+    if (!htmlMarkup) return null;
+    const cleanMarkup = htmlMarkup.replace(/^__HTML__/, '');
+    return (
+      <div 
+        style={{ all: 'initial', display: 'block', width: '100%', fontFamily: 'inherit', color: 'inherit' }}
+        dangerouslySetInnerHTML={{ __html: cleanMarkup }}
+      />
+    );
+  };
+
   const renderExtractedVerbatimText = (rawText: string) => {
     if (!rawText) return null;
-    // Split text by standard double-newline paragraphs
-    const blocks = rawText.split(/\n\s*\n/);
+    // Split text by standard double-newline paragraphs, or single-newlines if no double-newlines exist
+    const blocks = rawText.includes('\n\n') || rawText.includes('\r\n\r\n') 
+      ? rawText.split(/\n\s*\n/) 
+      : rawText.split('\n').filter(b => b.trim().length > 0);
     
     const pageImageSources = extractedImages[currentPage] || [];
     
@@ -1859,6 +1891,45 @@ const PublicLibraryWrapper: React.FC = () => {
   if (isReading && selectedBook) {
     const totalPages = detectedPageCount || selectedBook.pages || 40; // Dynamic count fallback to metadata pages
     
+    const getHighlightPage = (hl: any) => {
+      const normalizedPassage = hl.passage_text.replace(/\s+/g, ' ').trim().toLowerCase();
+      
+      // Check extractedPages
+      for (const [pageNumStr, content] of Object.entries(extractedPages)) {
+        if (!content) continue;
+        const cleanContent = content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').toLowerCase();
+        if (cleanContent.includes(normalizedPassage)) {
+          return parseInt(pageNumStr);
+        }
+      }
+      
+      // Check getBookPageText fallback
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        const content = getBookPageText(selectedBook.id, pageNum, selectedBook.title);
+        if (!content) continue;
+        const cleanContent = content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').toLowerCase();
+        if (cleanContent.includes(normalizedPassage)) {
+          return pageNum;
+        }
+      }
+      
+      return 1; // Default fallback page
+    };
+
+    const getGroupedHighlights = () => {
+      const groups: Record<number, any[]> = {};
+      
+      highlights.forEach(hl => {
+        const pageNum = getHighlightPage(hl) || 1;
+        if (!groups[pageNum]) {
+          groups[pageNum] = [];
+        }
+        groups[pageNum].push(hl);
+      });
+      
+      return groups;
+    };
+
     // Combine visual-only highlights and all permanent highlights from database
     const allHls = [
       ...localVisualHighlights.map(hl => ({ ...hl, isLocal: true, comment: null })),
@@ -1989,36 +2060,46 @@ const PublicLibraryWrapper: React.FC = () => {
         )}
 
         {/* LIGHT THEMED HEADER */}
-        <header className="p-4 md:p-6 border-b border-slate-200 bg-white flex items-center justify-between gap-4 relative z-10 text-slate-850">
-          <div className="flex items-center gap-4">
+        <header className="p-3 sm:p-4 md:p-6 border-b border-slate-200 bg-white flex items-center justify-between gap-2 sm:gap-4 relative z-10 text-slate-850">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             <button 
               onClick={() => setIsReading(false)} 
-              className="p-3 hover:bg-slate-100 rounded-2xl transition-all text-slate-500 hover:text-slate-900 active:scale-95 cursor-pointer"
+              className="p-2 sm:p-3 hover:bg-slate-100 rounded-xl sm:rounded-2xl transition-all text-slate-500 hover:text-slate-900 active:scale-95 cursor-pointer shrink-0"
+              title="Close Reader"
             >
-              <X size={20} />
+              <X size={18} className="sm:w-5 sm:h-5" />
             </button>
-            <div>
-              <h2 className="text-slate-900 font-extrabold text-sm uppercase tracking-widest leading-none">{selectedBook.title}</h2>
-              <p className="text-emerald-600 text-[10px] font-black uppercase tracking-[0.12em] flex items-center gap-1.5 mt-1.5 pointer-events-none">
-                <Shield size={12} className="animate-pulse" /> SECURE READING SESSION ACTIVE
+            {!leftSidebarOpen && (
+              <button
+                onClick={() => setLeftSidebarOpen(true)}
+                className="p-2 sm:p-2.5 hover:bg-slate-100 rounded-xl transition-all text-slate-500 hover:text-slate-900 active:scale-95 cursor-pointer flex items-center justify-center border border-slate-200 bg-slate-50 shadow-sm shrink-0"
+                title="Expand Page Navigation"
+              >
+                <ChevronRight size={16} className="sm:w-4 sm:h-4" />
+              </button>
+            )}
+            <div className="min-w-0">
+              <h2 className="text-slate-900 font-extrabold text-xs sm:text-sm uppercase tracking-widest leading-tight truncate max-w-[100px] xs:max-w-[160px] sm:max-w-xs">{selectedBook.title}</h2>
+              <p className="text-emerald-600 text-[8px] sm:text-[10px] font-black uppercase tracking-[0.1em] flex items-center gap-1 mt-0.5 pointer-events-none truncate">
+                <Shield size={10} className="animate-pulse shrink-0 sm:w-3 sm:h-3" /> <span className="hidden sm:inline">SECURE READING SESSION</span><span className="sm:hidden">SECURE SESSION</span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Premium Glassmorphic Zoom Controls */}
-            <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 p-1 rounded-2xl shadow-xs">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Glassmorphic Zoom Controls */}
+            <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-100 border border-slate-200 p-0.5 sm:p-1 rounded-xl sm:rounded-2xl shadow-xs">
               <button
                 onClick={() => setZoom(z => Math.max(0.5, parseFloat((z - 0.1).toFixed(1))))}
                 disabled={zoom <= 0.5}
-                className="p-2 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent rounded-xl text-slate-500 hover:text-slate-900 transition-all cursor-pointer"
+                className="p-1.5 sm:p-2 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent rounded-lg sm:rounded-xl text-slate-500 hover:text-slate-900 transition-all cursor-pointer"
                 title="Zoom Out"
               >
-                <ZoomOut size={13} />
+                <ZoomOut size={12} className="sm:w-3.5 sm:h-3.5" />
               </button>
               <button
                 onClick={() => setZoom(1.0)}
-                className="text-[9px] font-black text-slate-600 hover:text-emerald-600 px-2 py-1 bg-white border border-slate-200/50 rounded-xl transition-all cursor-pointer min-w-[42px] text-center shadow-xs"
+                className="text-[8px] sm:text-[9px] font-black text-slate-600 hover:text-emerald-600 px-1.5 sm:px-2 py-0.5 sm:py-1 bg-white border border-slate-200/50 rounded-lg sm:rounded-xl transition-all cursor-pointer min-w-[36px] sm:min-w-[42px] text-center shadow-xs"
                 title="Reset Zoom (100%)"
               >
                 {Math.round(zoom * 100)}%
@@ -2026,21 +2107,86 @@ const PublicLibraryWrapper: React.FC = () => {
               <button
                 onClick={() => setZoom(z => Math.min(2.5, parseFloat((z + 0.1).toFixed(1))))}
                 disabled={zoom >= 2.5}
-                className="p-2 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent rounded-xl text-slate-500 hover:text-slate-900 transition-all cursor-pointer"
+                className="p-1.5 sm:p-2 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent rounded-lg sm:rounded-xl text-slate-500 hover:text-slate-900 transition-all cursor-pointer"
                 title="Zoom In"
               >
-                <ZoomIn size={13} />
+                <ZoomIn size={12} className="sm:w-3.5 sm:h-3.5" />
               </button>
             </div>
 
-            <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-250 rounded-2xl text-[10px] font-extrabold uppercase tracking-wider text-emerald-650 pointer-events-none">
-              <Unlock size={12} /> DRM Shield Engaged
+            <div className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 bg-emerald-50 border border-emerald-250 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider text-emerald-650 pointer-events-none">
+              <Unlock size={11} className="sm:w-3 sm:h-3" /> <span className="hidden sm:inline">DRM Shield Engaged</span><span className="sm:hidden">DRM</span>
             </div>
           </div>
         </header>
 
         {/* READER CONTENT AREA — Original manuscript with reading companion sidebar */}
         <div className="flex-1 overflow-hidden bg-slate-50 flex flex-col md:flex-row relative">
+            
+            {/* COLLAPSIBLE LEFT-HAND PAGE NAVIGATION SIDEBAR */}
+            {leftSidebarOpen && (
+              <>
+                <div 
+                  onClick={() => setLeftSidebarOpen(false)}
+                  className="md:hidden fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-xs animate-in fade-in"
+                />
+                <div className="fixed md:relative inset-y-0 left-0 w-72 md:w-64 border-r border-slate-200 bg-white h-full flex flex-col z-50 md:z-20 shadow-2xl md:shadow-lg animate-in slide-in-from-left duration-300 select-none">
+                  <div className="p-4 border-b border-slate-150 flex items-center justify-between bg-slate-50/50">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 font-sans">
+                      <BookOpenCheck size={13} className="text-emerald-500" /> Page Navigation
+                    </span>
+                    <button
+                      onClick={() => setLeftSidebarOpen(false)}
+                      className="p-1 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-600 transition-all cursor-pointer flex items-center justify-center"
+                      title="Collapse Sidebar"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 text-left">
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 select-none">
+                      <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                        <span>Active Page:</span>
+                        <span className="text-red-650 bg-red-50 border border-red-200 px-2 py-0.5 rounded-md font-black select-all">
+                          {currentPage} of {totalPages}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-col gap-1.5 py-1 max-h-[calc(100vh-220px)] overflow-y-auto pr-1 scrollbar-thin">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                        const isCurrent = pageNum === currentPage;
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => {
+                              setCurrentPage(pageNum);
+                              stopSpeaking();
+                              if (window.innerWidth < 768) setLeftSidebarOpen(false);
+                            }}
+                            className={cn(
+                              "w-full px-4 py-2.5 rounded-xl border text-[12px] font-bold transition-all cursor-pointer shadow-sm relative group flex items-center justify-between text-left",
+                              isCurrent 
+                                ? "bg-red-600 border-red-700 text-white font-black scale-[1.02] shadow-md shadow-red-500/20" 
+                                : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300"
+                            )}
+                          >
+                            <span>Page {pageNum}</span>
+                            {isCurrent ? (
+                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                            ) : (
+                              <span className="text-[9px] uppercase font-black tracking-widest opacity-40 group-hover:opacity-100 transition-opacity">Pg {pageNum}</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
             {/* Main Document Area — Original PDF Manuscript */}
             <div className="flex-1 overflow-hidden flex flex-col bg-slate-100/40">
               {pdfLoadingState === 'loading' ? (
@@ -2117,6 +2263,9 @@ const PublicLibraryWrapper: React.FC = () => {
                       ) : (
                         (() => {
                           const pageContent = extractedPages[currentPage] || getBookPageText(selectedBook.id, currentPage, selectedBook.title);
+                          if (pageContent && pageContent.startsWith('__HTML__')) {
+                            return renderFaithfulHtml(pageContent);
+                          }
                           const isRichJson = pageContent && pageContent.trim().startsWith('[') && pageContent.trim().endsWith(']');
                           return isRichJson ? renderRichPageBlocks(pageContent) : renderExtractedVerbatimText(pageContent);
                         })()
@@ -2140,7 +2289,6 @@ const PublicLibraryWrapper: React.FC = () => {
               {/* Sidebar Tab Navigation Controls */}
               <div className="flex border-b border-slate-150 bg-slate-50/20 text-[9px] font-extrabold uppercase tracking-wider text-slate-450 select-none overflow-x-auto scrollbar-thin">
                 {[
-                  { id: 'navigation', label: 'Pages', icon: BookOpenCheck },
                   { id: 'highlights', label: 'Highlights', icon: BookMarked },
                   { id: 'aids', label: 'Text-to-Speech', icon: Volume2 },
                   { id: 'contacts', label: 'Share', icon: Share2 }
@@ -2168,69 +2316,7 @@ const PublicLibraryWrapper: React.FC = () => {
               {/* Sidebar Content Panel (Verbatim Scrollable Container) */}
               <div className="flex-1 overflow-y-auto p-5 space-y-6">
 
-                {/* 0. PAGE NAVIGATION TAB PANEL */}
-                {companionTab === 'navigation' && (
-                  <div className="space-y-5 text-left animate-in fade-in duration-200">
-                    
-                    {/* Active Page Info & Navigation Buttons Card */}
-                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 shadow-xs">
-                      <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-450 tracking-wider">
-                        <span>Current Page:</span>
-                        <span className="text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-md font-black select-all">
-                          {currentPage} of {totalPages}
-                        </span>
-                      </div>
-                      
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => { setCurrentPage(prev => Math.max(1, prev - 1)); stopSpeaking(); }}
-                          disabled={currentPage === 1}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-40 text-slate-700 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
-                        >
-                          <ChevronLeft size={13} /> Previous
-                        </button>
-                        
-                        <button
-                          onClick={() => { setCurrentPage(prev => Math.min(totalPages, prev + 1)); stopSpeaking(); }}
-                          disabled={currentPage === totalPages}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-40 text-slate-700 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
-                        >
-                          Next <ChevronRight size={13} />
-                        </button>
-                      </div>
-                    </div>
 
-                    <div className="space-y-2.5">
-                      <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">Jump to Page:</label>
-                      <div className="grid grid-cols-4 gap-2.5 max-h-[380px] overflow-y-auto pr-1 py-1 scrollbar-thin">
-                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
-                          const isCurrent = pageNum === currentPage;
-                          return (
-                            <button
-                              key={pageNum}
-                              onClick={() => {
-                                setCurrentPage(pageNum);
-                                stopSpeaking();
-                              }}
-                              className={cn(
-                                "aspect-square flex flex-col items-center justify-center rounded-xl border text-[11px] font-bold transition-all cursor-pointer shadow-sm relative group",
-                                isCurrent 
-                                  ? "bg-red-650 border-red-750 text-white font-black scale-105 shadow-md shadow-red-500/20" 
-                                  : "bg-slate-50 border-slate-200 text-slate-650 hover:bg-slate-100 hover:border-slate-300"
-                              )}
-                            >
-                              {isCurrent && (
-                                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white" />
-                              )}
-                              <span className="text-[9px] uppercase font-black tracking-widest opacity-60">Pg</span>
-                              <span className="text-sm font-black">{pageNum}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
                 
                 {/* 1. TEXT-TO-SPEECH TAB PANEL */}
                 {companionTab === 'aids' && (
@@ -2314,7 +2400,7 @@ const PublicLibraryWrapper: React.FC = () => {
                               }}
                               className="w-full text-left text-[10px] font-bold text-slate-650 hover:text-emerald-650 py-1.5 px-2 hover:bg-emerald-50/50 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
                             >
-                              <span>📖</span> Read Full Page {currentPage}
+                              <BookOpen size={13} className="text-emerald-500 shrink-0" /> Read Full Page {currentPage}
                             </button>
                             <button
                               onClick={() => {
@@ -2331,7 +2417,7 @@ const PublicLibraryWrapper: React.FC = () => {
                                   : "text-slate-350 cursor-not-allowed opacity-60"
                               )}
                             >
-                              <span>✨</span> Read Highlighted Selection
+                              <Sparkles size={13} className="text-emerald-500 shrink-0" /> Read Highlighted Selection
                             </button>
                           </div>
                         </div>
@@ -2378,67 +2464,82 @@ const PublicLibraryWrapper: React.FC = () => {
                       <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">SAVED HIGHLIGHTS ({highlights.length})</span>
                     </div>
 
-                    {highlights.length === 0 ? (
-                      <div className="text-center py-10 space-y-2.5">
-                        <Highlighter size={20} className="mx-auto text-slate-350 animate-bounce" />
-                        <p className="text-[10px] text-slate-450 font-bold uppercase tracking-wider">No study notes saved yet</p>
-                        <p className="text-[9px] text-slate-400 font-medium">Select text on the page, click a color to highlight, or add a comment note to save permanently.</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                        {highlights.map(hl => (
-                          <div 
-                            key={hl.id} 
-                            className="p-3.5 bg-slate-50/70 border border-slate-200/60 rounded-2xl relative group space-y-2.5 hover:shadow-md hover:border-slate-300 transition-all"
-                          >
-                            <div className="flex justify-between items-start">
-                              <span 
-                                className="w-3.5 h-3.5 rounded-full shrink-0" 
-                                style={{ backgroundColor: hl.color === 'rose' ? '#f43f5e' : hl.color === 'yellow' ? '#fcd34d' : hl.color === 'green' ? '#10b981' : '#38bdf8' }}
-                              />
-                              <div className="flex gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                    {highlights.length > 0 && (
+                      <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1 text-left">
+                        {Object.entries(getGroupedHighlights())
+                          .sort(([pageA], [pageB]) => parseInt(pageA) - parseInt(pageB))
+                          .map(([pageNumStr, pageHls]) => {
+                            const pageNum = parseInt(pageNumStr);
+                            return (
+                              <div key={pageNum} className="space-y-2 border-b border-slate-100 pb-3 last:border-0">
                                 <button
                                   onClick={() => {
-                                    setShowForwardModal(hl);
+                                    setCurrentPage(pageNum);
+                                    stopSpeaking();
                                   }}
-                                  className="p-1 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all cursor-pointer"
-                                  title="Forward to contact"
+                                  className="text-[10px] font-black text-red-600 hover:text-red-700 hover:underline uppercase tracking-wider flex items-center gap-1"
                                 >
-                                  <Share2 size={11} />
+                                  <BookOpen size={12} className="text-emerald-600 shrink-0" /> Page {pageNum}
                                 </button>
-                                <button
-                                  onClick={() => handleDeleteHighlight(hl.id)}
-                                  className="p-1 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-650 transition-all cursor-pointer"
-                                  title="Delete highlight"
-                                >
-                                  <Trash2 size={11} />
-                                </button>
+                                
+                                <div className="space-y-3">
+                                  {pageHls.map((hl: any) => (
+                                    <div 
+                                      key={hl.id} 
+                                      className="p-3.5 bg-slate-50/70 border border-slate-200/60 rounded-2xl relative group space-y-2.5 hover:shadow-md hover:border-slate-300 transition-all"
+                                    >
+                                      <div className="flex justify-between items-start">
+                                        <span 
+                                          className="w-3.5 h-3.5 rounded-full shrink-0" 
+                                          style={{ backgroundColor: hl.color === 'rose' ? '#f43f5e' : hl.color === 'yellow' ? '#fcd34d' : hl.color === 'green' ? '#10b981' : '#38bdf8' }}
+                                        />
+                                        <div className="flex gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                                          <button
+                                            onClick={() => {
+                                              setShowForwardModal(hl);
+                                            }}
+                                            className="p-1 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-all cursor-pointer"
+                                            title="Forward to contact"
+                                          >
+                                            <Share2 size={11} />
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteHighlight(hl.id)}
+                                            className="p-1 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-650 transition-all cursor-pointer"
+                                            title="Delete highlight"
+                                          >
+                                            <Trash2 size={11} />
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <p className="text-[10.5px] font-serif leading-relaxed italic text-slate-800">
+                                        "{hl.passage_text}"
+                                      </p>
+
+                                      <div className="p-2 bg-white/70 border border-slate-100 rounded-xl text-[9px] font-medium text-slate-650 font-sans flex items-start gap-1">
+                                        <Sparkles size={12} className="text-amber-500 shrink-0" />
+                                        {hl.comment ? (
+                                          <span className="break-words flex-1 text-slate-700">{hl.comment}</span>
+                                        ) : (
+                                          <span 
+                                            onClick={() => {
+                                              setCommentModalData({ id: hl.id, text: hl.passage_text });
+                                              setCommentModalNote('');
+                                              setCommentModalColor(hl.color || 'yellow');
+                                            }}
+                                            className="break-words flex-1 text-slate-400 italic hover:text-slate-650 cursor-pointer"
+                                          >
+                                            Add a comment note...
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-
-                            <p className="text-[10.5px] font-serif leading-relaxed italic text-slate-800">
-                              "{hl.passage_text}"
-                            </p>
-
-                            <div className="p-2 bg-white/70 border border-slate-100 rounded-xl text-[9px] font-medium text-slate-600 font-sans flex items-start gap-1">
-                              <span className="text-amber-500 shrink-0">💡</span>
-                              {hl.comment ? (
-                                <span className="break-words flex-1 text-slate-700">{hl.comment}</span>
-                              ) : (
-                                <span 
-                                  onClick={() => {
-                                    setCommentModalData({ id: hl.id, text: hl.passage_text });
-                                    setCommentModalNote('');
-                                    setCommentModalColor(hl.color || 'yellow');
-                                  }}
-                                  className="break-words flex-1 text-slate-400 italic hover:text-slate-600 cursor-pointer"
-                                >
-                                  Add a comment note...
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                            );
+                          })}
                       </div>
                     )}
                   </div>
@@ -2580,6 +2681,33 @@ const PublicLibraryWrapper: React.FC = () => {
     );
   }
 
+  const handleReturnBook = async (bookId: string) => {
+    if (!user?.id) return;
+    try {
+      const res = await libraryService.returnBook(user.id, bookId);
+      fetchData();
+      if (res.fine_generated > 0) {
+        triggerNotification(`Book returned! Fine generated: ₦${res.fine_generated} due to late return.`, 'info');
+      } else {
+        triggerNotification('Book returned successfully!');
+      }
+    } catch (err: any) {
+      console.error(err);
+      triggerNotification('Failed to return book', 'info');
+    }
+  };
+
+  const handlePayFine = async (fineId: string) => {
+    try {
+      await libraryService.payFine(fineId);
+      fetchData();
+      triggerNotification('Fine paid successfully!');
+    } catch (err) {
+      console.error(err);
+      triggerNotification('Failed to pay fine', 'info');
+    }
+  };
+
   return (
     <div className="space-y-8 relative">
       <AnimatePresence>
@@ -2594,16 +2722,38 @@ const PublicLibraryWrapper: React.FC = () => {
         )}
       </AnimatePresence>
 
-      <div className="flex bg-slate-100 dark:bg-slate-950 p-1.5 rounded-[2rem] border border-slate-200/50 dark:border-slate-800/80">
+      {/* ═══════════ MOBILE CREATIVE TAB DROPDOWN (Requirement 2 & 4) ═══════════ */}
+      <div className="sm:hidden space-y-2">
+        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Select Library Archive View:</label>
+        <div className="relative">
+          <select
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value as any)}
+            className="w-full h-12 px-4 rounded-2xl bg-white dark:bg-slate-900 border-2 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 font-extrabold text-xs shadow-md focus:ring-2 focus:ring-emerald-500 cursor-pointer appearance-none pr-10"
+          >
+            <option value="general">General Catalog</option>
+            <option value="borrowed">Borrowed Books ({rentals.length})</option>
+            <option value="bought">Purchased Blueprints ({purchases.length})</option>
+            <option value="reservations">Active Reservations ({reservations.length})</option>
+            <option value="fines">Fines & Compliance ({fines.length})</option>
+          </select>
+          <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-500 rotate-90 pointer-events-none" size={18} />
+        </div>
+      </div>
+
+      {/* ═══════════ DESKTOP TAB NAVIGATION ═══════════ */}
+      <div className="hidden sm:flex bg-slate-100 dark:bg-slate-950 p-1.5 rounded-2xl sm:rounded-[2rem] border border-slate-200/50 dark:border-slate-800/80 overflow-x-auto no-scrollbar scroll-smooth">
         {[
-          { id: 'general', label: 'General Display (Catalog)', icon: ShoppingBag, color: 'text-indigo-400' },
-          { id: 'borrowed', label: 'Borrowed Books (Active)', icon: Clock, color: 'text-amber-400' },
-          { id: 'bought', label: 'Bought Books (Owned)', icon: Unlock, color: 'text-emerald-400' }
+          { id: 'general', label: 'General Catalog', icon: ShoppingBag, color: 'text-indigo-400' },
+          { id: 'borrowed', label: 'Borrowed Books', icon: Clock, color: 'text-amber-400' },
+          { id: 'bought', label: 'Bought Books', icon: Unlock, color: 'text-emerald-400' },
+          { id: 'reservations', label: 'Reservations', icon: BookMarked, color: 'text-rose-400' },
+          { id: 'fines', label: 'Fines', icon: ShieldAlert, color: 'text-red-400' }
         ].map((tab) => {
           const TabIcon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={cn("flex-1 flex items-center justify-center gap-2.5 py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all", isActive ? "bg-slate-950 text-white shadow-xl dark:bg-slate-900" : "text-slate-400 hover:text-slate-800")}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={cn("flex-1 min-w-max px-3.5 sm:px-5 py-3 sm:py-4 rounded-xl sm:rounded-[1.5rem] text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest transition-all cursor-pointer flex items-center justify-center gap-1.5 sm:gap-2.5 whitespace-nowrap", isActive ? "bg-slate-950 text-white shadow-xl dark:bg-slate-900" : "text-slate-500 hover:text-slate-800 dark:text-slate-400")}>
               <TabIcon size={14} className={cn(isActive ? tab.color : 'text-slate-400')} />
               <span>{tab.label}</span>
             </button>
@@ -2612,63 +2762,171 @@ const PublicLibraryWrapper: React.FC = () => {
       </div>
 
       {activeTab === 'general' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in">
-          {filteredBooks.map((book) => {
-            const isOwned = purchases.some(p => p.book_id === book.id);
-            const isBorrowed = rentals.some(r => r.book_id === book.id);
-            return (
-              <Link to={`/library/${book.id}`} key={book.id} className="block group">
-                <Card className="p-4 rounded-3xl border border-slate-100 dark:border-slate-850 group-hover:shadow-2xl group-hover:border-slate-300 dark:group-hover:border-slate-700 transition-all duration-300 flex flex-col h-full">
-                  <div className="aspect-[3/4] rounded-2xl overflow-hidden mb-4 relative shadow-md">
-                    <img src={book.cover_url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={book.title} />
-                    <div className="absolute top-3 right-3 flex flex-col gap-1.5">
-                      {isOwned && <div className="p-2 rounded-xl bg-emerald-500 text-white shadow-lg"><Unlock size={14} /></div>}
-                      {isBorrowed && !isOwned && <div className="p-2 rounded-xl bg-amber-500 text-slate-950 shadow-lg"><Clock size={14} /></div>}
-                    </div>
-                  </div>
-                  <div className="flex-1 flex flex-col justify-between space-y-3">
-                    <div>
-                      <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                        <span>{book.author_name}</span>
-                        <span className="flex items-center gap-0.5 text-amber-500"><Star size={8} /> {book.rating}</span>
+        <div className="space-y-6 sm:space-y-8 animate-in fade-in">
+          {/* Advanced Search & Filtering Panel */}
+          <div className="p-4 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-2xl sm:rounded-[2rem] shadow-sm space-y-4 sm:space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+              {/* Search Bar */}
+              <div className="relative sm:col-span-2">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search by title, author, volume..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl pl-11 pr-4 py-3 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-inner"
+                />
+              </div>
+
+              {/* Material Type Filter */}
+              <div>
+                <select
+                  value={activeMaterialType}
+                  onChange={(e) => setActiveMaterialType(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl px-3.5 py-3 text-xs text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+                >
+                  <option value="All">All Formats</option>
+                  <option value="book">E-Book</option>
+                  <option value="journal">Journal</option>
+                  <option value="article">Article</option>
+                </select>
+              </div>
+
+              {/* Category Filter */}
+              <div>
+                <select
+                  value={activeCategory}
+                  onChange={(e) => setActiveCategory(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl px-3.5 py-3 text-xs text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+                >
+                  <option value="All">All Categories</option>
+                  <option value="Case Study">Case Study</option>
+                  <option value="Research">Research</option>
+                  <option value="Template">Template</option>
+                  <option value="Academic & Textbooks">Academic & Textbooks</option>
+                  <option value="Business & Finance">Business & Finance</option>
+                  <option value="Technology">Technology</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* ML Recommendations Shelf */}
+          {recommendedBooks.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                <Sparkles size={14} className="text-amber-500 animate-pulse" /> Recommended For You
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
+                {recommendedBooks.map((book) => (
+                  <Link to={`/library/${book.id}`} key={`rec-${book.id}`} className="block group">
+                    <Card className="p-2.5 sm:p-4 rounded-2xl sm:rounded-3xl border border-slate-200/60 dark:border-slate-850 bg-slate-50/50 hover:bg-white hover:shadow-2xl transition-all duration-300 flex flex-col h-full bg-white dark:bg-slate-900">
+                      <div className="aspect-[3/4] rounded-xl sm:rounded-2xl overflow-hidden mb-2.5 sm:mb-4 relative shadow-sm">
+                        <img src={book.cover_url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="" />
                       </div>
-                      <h3 className="font-extrabold text-sm line-clamp-1 text-slate-900 dark:text-white">{book.title}</h3>
+                      <div className="flex-1 flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between text-[7.5px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                            <span className="truncate max-w-[80px] sm:max-w-[120px]">{book.author_name}</span>
+                            <span className="flex items-center gap-0.5 text-amber-500"><Star size={8} /> {book.rating}</span>
+                          </div>
+                          <h4 className="font-extrabold text-xs sm:text-sm line-clamp-1 text-slate-850 dark:text-white">{book.title}</h4>
+                        </div>
+                      </div>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Main Catalog Grid (Strictly Deduplicated) */}
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
+            {(() => {
+              const seenBookIds = new Set<string>();
+              return allBooks.filter(book => {
+                if (!book?.id || seenBookIds.has(book.id)) return false;
+                seenBookIds.add(book.id);
+
+                const matchesCategory = activeCategory === 'All' || book.category === activeCategory;
+                const matchesSection = activeSection === 'All' || book.section === activeSection;
+                const matchesMaterial = activeMaterialType === 'All' || book.material_type === activeMaterialType;
+                const matchesSearch = book.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                      book.author_name.toLowerCase().includes(searchQuery.toLowerCase());
+                return matchesCategory && matchesSection && matchesMaterial && matchesSearch;
+              }).map((book) => {
+              const isOwned = purchases.some(p => p.book_id === book.id);
+              const isBorrowed = rentals.some(r => r.book_id === book.id);
+              return (
+                <Link to={`/library/${book.id}`} key={book.id} className="block group">
+                  <Card className="p-2.5 sm:p-4 rounded-2xl sm:rounded-3xl border border-slate-100 dark:border-slate-850 group-hover:shadow-2xl group-hover:border-slate-300 dark:group-hover:border-slate-700 transition-all duration-300 flex flex-col h-full bg-white dark:bg-slate-900">
+                    <div className="aspect-[3/4] rounded-xl sm:rounded-2xl overflow-hidden mb-2.5 sm:mb-4 relative shadow-md">
+                      <img src={book.cover_url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={book.title} />
+                      <div className="absolute top-2 right-2 sm:top-3 sm:right-3 flex flex-col gap-1">
+                        {isOwned && <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-emerald-500 text-white shadow-lg"><Unlock size={12} className="sm:w-3.5 sm:h-3.5" /></div>}
+                        {isBorrowed && !isOwned && <div className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-amber-500 text-slate-950 shadow-lg"><Clock size={12} className="sm:w-3.5 sm:h-3.5" /></div>}
+                      </div>
                     </div>
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[9px] font-black uppercase text-slate-400 group-hover:text-indigo-600 transition-colors">
-                      <span>View Details</span>
-                      <span>→</span>
+                    <div className="flex-1 flex flex-col justify-between space-y-2 sm:space-y-3">
+                      <div>
+                        <div className="flex justify-between text-[7.5px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                          <span className="truncate max-w-[80px] sm:max-w-[120px]">{book.author_name}</span>
+                          <span className="flex items-center gap-0.5 text-amber-500"><Star size={8} /> {book.rating}</span>
+                        </div>
+                        <h3 className="font-extrabold text-xs sm:text-sm line-clamp-1 text-slate-900 dark:text-white flex items-center gap-1">
+                          {book.material_type !== 'book' && (
+                            <span className="px-1 py-0.5 text-[7px] sm:text-[8px] font-black tracking-widest bg-emerald-50 border border-emerald-200 text-emerald-600 rounded uppercase shrink-0">
+                              {book.material_type}
+                            </span>
+                          )}
+                          <span className="truncate">{book.title}</span>
+                        </h3>
+                      </div>
+                      <div className="pt-1.5 sm:pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[8px] sm:text-[9px] font-black uppercase text-slate-400 group-hover:text-indigo-600 transition-colors">
+                        <span>Details</span>
+                        <span>→</span>
+                      </div>
                     </div>
-                  </div>
-                </Card>
-              </Link>
-            );
-          })}
+                  </Card>
+                </Link>
+                );
+              })
+            })()}
+          </div>
         </div>
       )}
 
       {activeTab === 'borrowed' && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-in fade-in">
           {rentals.length === 0 ? (
-            <div className="col-span-full py-20 text-center">No active rentals.</div>
+            <div className="col-span-full py-20 text-center text-slate-400 font-bold uppercase text-xs">No active rentals.</div>
           ) : (
             rentals.map((rec) => {
               const book = allBooks.find(b => b.id === rec.book_id);
               if (!book) return null;
               return (
-                <Card key={book.id} className="p-5 border border-slate-100 rounded-3xl space-y-4">
+                <Card key={book.id} className="p-5 border border-slate-100 rounded-3xl space-y-4 bg-white dark:bg-slate-900">
                   <div className="flex gap-4">
                     <img src={book.cover_url} className="w-16 h-22 rounded-xl object-cover shadow" alt="" />
-                    <div>
-                      <h4 className="font-extrabold text-sm">{book.title}</h4>
-                      <p className="text-[9px] font-bold text-slate-400">By {book.author_name}</p>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-extrabold text-sm truncate">{book.title}</h4>
+                      <p className="text-[9px] font-bold text-slate-400 truncate">By {book.author_name}</p>
                       <p className="text-[9px] font-black text-amber-500 mt-1.5 uppercase tracking-wider flex items-center gap-1">
-                        ⏳ {getRemainingDays(rec.expires_at)}
+                        <Clock size={12} className="text-amber-500" /> {getRemainingDays(rec.expires_at)}
                       </p>
                     </div>
                   </div>
-                  <Button onClick={() => { setSelectedBook(book); setIsReading(true); }} className="w-full text-[9px] font-black uppercase">
-                    Read Blueprint
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button onClick={() => { setSelectedBook(book); setIsReading(true); }} className="flex-1 text-[9px] font-black uppercase cursor-pointer">
+                      Read Blueprint
+                    </Button>
+                    <Button 
+                      onClick={() => handleReturnBook(book.id)} 
+                      className="text-[9px] font-black uppercase bg-slate-200 text-slate-850 hover:bg-slate-300 cursor-pointer border-none"
+                    >
+                      Return
+                    </Button>
+                  </div>
                 </Card>
               );
             })
@@ -2679,23 +2937,88 @@ const PublicLibraryWrapper: React.FC = () => {
       {activeTab === 'bought' && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-in fade-in">
           {purchases.length === 0 ? (
-            <div className="col-span-full py-20 text-center">No purchased books yet.</div>
+            <div className="col-span-full py-20 text-center text-slate-400 font-bold uppercase text-xs">No purchased books yet.</div>
           ) : (
             purchases.map((rec) => {
               const book = allBooks.find(b => b.id === rec.book_id);
               if (!book) return null;
               return (
-                <Card key={book.id} className="p-5 border border-slate-100 rounded-3xl space-y-4">
+                <Card key={book.id} className="p-5 border border-slate-100 rounded-3xl space-y-4 bg-white dark:bg-slate-900">
                   <div className="flex gap-4">
                     <img src={book.cover_url} className="w-16 h-22 rounded-xl object-cover shadow" alt="" />
-                    <div>
-                      <h4 className="font-extrabold text-sm">{book.title}</h4>
-                      <p className="text-[9px] font-bold text-slate-400">By {book.author_name}</p>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-extrabold text-sm truncate">{book.title}</h4>
+                      <p className="text-[9px] font-bold text-slate-400 truncate">By {book.author_name}</p>
                     </div>
                   </div>
-                  <Button onClick={() => { setSelectedBook(book); setIsReading(true); }} className="w-full text-[9px] font-black uppercase bg-emerald-600 text-white hover:bg-emerald-700">
+                  <Button onClick={() => { setSelectedBook(book); setIsReading(true); }} className="w-full text-[9px] font-black uppercase bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer">
                     Read Owned Blueprint
                   </Button>
+                </Card>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {activeTab === 'reservations' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-in fade-in">
+          {reservations.length === 0 ? (
+            <div className="col-span-full py-20 text-center text-slate-400 font-bold uppercase text-xs">No active reservations.</div>
+          ) : (
+            reservations.map((res) => {
+              const book = allBooks.find(b => b.id === res.book_id);
+              if (!book) return null;
+              return (
+                <Card key={res.id} className="p-5 border border-slate-100 rounded-3xl space-y-4 bg-white dark:bg-slate-900">
+                  <div className="flex gap-4">
+                    <img src={book.cover_url} className="w-16 h-22 rounded-xl object-cover shadow" alt="" />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-extrabold text-sm truncate">{book.title}</h4>
+                      <p className="text-[9px] font-bold text-slate-400 truncate">By {book.author_name}</p>
+                      <span className={cn(
+                        "inline-block mt-2 px-2.5 py-1 text-[8px] font-black uppercase rounded-lg tracking-wider border",
+                        res.status === 'active' ? "bg-emerald-50 border-emerald-200 text-emerald-600" : "bg-amber-50 border-amber-200 text-amber-600"
+                      )}>
+                        {res.status}
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {activeTab === 'fines' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-in fade-in">
+          {fines.length === 0 ? (
+            <div className="col-span-full py-20 text-center text-slate-400 font-bold uppercase text-xs">No active late return fines. Thank you for returning books on time!</div>
+          ) : (
+            fines.map((fine) => {
+              const book = allBooks.find(b => b.id === fine.book_id);
+              if (!book) return null;
+              return (
+                <Card key={fine.id} className="p-5 border border-slate-100 rounded-3xl space-y-4 bg-white dark:bg-slate-900">
+                  <div className="flex gap-4">
+                    <img src={book.cover_url} className="w-16 h-22 rounded-xl object-cover shadow" alt="" />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-extrabold text-sm truncate">{book.title}</h4>
+                      <p className="text-[12px] font-black text-red-500 mt-1">Fine: ₦{fine.amount.toLocaleString()}</p>
+                      <span className={cn(
+                        "inline-block mt-2 px-2.5 py-1 text-[8px] font-black uppercase rounded-lg tracking-wider border",
+                        fine.status === 'paid' ? "bg-emerald-50 border-emerald-200 text-emerald-600" : "bg-red-50 border-red-200 text-red-600"
+                      )}>
+                        {fine.status}
+                      </span>
+                    </div>
+                  </div>
+                  {fine.status === 'unpaid' && (
+                    <Button onClick={() => handlePayFine(fine.id)} className="w-full text-[9px] font-black uppercase bg-red-600 text-white hover:bg-red-700 cursor-pointer">
+                      Pay Fine (₦{fine.amount})
+                    </Button>
+                  )}
                 </Card>
               );
             })

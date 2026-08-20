@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect, useRef } from 'react';
-import { DyteProvider } from '@dytesdk/react-web-core';
-import { DyteMeeting, DyteParticipantsAudio } from '@dytesdk/react-ui-kit';
-import { applyDyteTheme } from '../../utils/dyteTheme';
+import { RealtimeKitProvider } from '@cloudflare/realtimekit-react';
+import { RtkMeeting, RtkParticipantsAudio } from '@cloudflare/realtimekit-react-ui';
+import { applyRtkTheme } from '../../utils/dyteTheme';
 import DashboardLayout from '../layout/DashboardLayout';
 import { LoadingOverlay } from './LoadingOverlay';
 
@@ -25,10 +25,10 @@ const StudioLayout: React.FC<StudioLayoutProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Apply Agro-green & Glassmorphism design tokens to Dyte shadow DOM
+  // Apply Agro-green & Glassmorphism design tokens to RealtimeKit shadow DOM
   useEffect(() => {
     if (containerRef.current) {
-      applyDyteTheme(containerRef.current);
+      applyRtkTheme(containerRef.current);
     }
   }, [meeting]);
 
@@ -65,17 +65,17 @@ const StudioLayout: React.FC<StudioLayoutProps> = ({
             </div>
           }>
             {meeting && !isLoading ? (
-              <DyteProvider value={meeting}>
+              <RealtimeKitProvider value={meeting}>
                 <div className="flex flex-col h-full w-full">
-                  <DyteMeeting 
+                  <RtkMeeting 
                     meeting={meeting} 
                     mode="fill" 
                     showSetupScreen={false}
                     className="w-full h-full"
                   />
                 </div>
-                <DyteParticipantsAudio meeting={meeting} />
-              </DyteProvider>
+                <RtkParticipantsAudio meeting={meeting} />
+              </RealtimeKitProvider>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-6">
                  <div className="w-24 h-24 rounded-[2.5rem] bg-white/5 flex items-center justify-center border border-white/10 shadow-inner group-hover:scale-110 group-hover:rotate-6 transition-all duration-700">

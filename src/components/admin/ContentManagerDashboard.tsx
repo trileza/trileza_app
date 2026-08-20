@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { adminService } from '../../lib/services/admin';
 import { courseService } from '../../lib/services/courses';
 import type { CourseReview, BookReview, VideoAnnotation, CreatorProfile } from '../../types/admin';
-import { Card, Button } from '../ui';
+import { Card, Button, Toast } from '../ui';
 import { useAuthStore } from '../../store/authStore';
 import { nexus } from '../../lib/nexus';
 import { 
@@ -34,6 +34,12 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { formatCurrency, formatDate } from '../../utils';
+import PageHeader from '../shared/PageHeader';
+import Pagination from './shared/Pagination';
+import ExportToolbar from './shared/ExportToolbar';
+import ConfirmDialog from './shared/ConfirmDialog';
+import { useDebouncedValue, usePaginatedList, useMultiTableSync } from './hooks/useAdminData';
+import { exportToExcel, exportToCSV, COURSE_EXPORT_COLUMNS, BOOK_EXPORT_COLUMNS } from './hooks/useExport';
 
 const ContentManagerDashboard: React.FC = () => {
   const { user } = useAuthStore();
@@ -49,8 +55,8 @@ const ContentManagerDashboard: React.FC = () => {
   // Course modal tabs: 'video' | 'materials'
   const [courseModalTab, setCourseModalTab] = useState<'video' | 'materials'>('video');
   
-  // Sub-tabs for Course lists: 'pending' | 'approved' | 'rejected' | 'all'
-  const [courseListTab, setCourseListTab] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  // Sub-tabs for Course lists: 'pending' | 'pending_deletion' | 'approved' | 'rejected' | 'all'
+  const [courseListTab, setCourseListTab] = useState<'pending' | 'pending_deletion' | 'approved' | 'rejected' | 'all'>('pending');
   // Sub-tabs for Book lists: 'pending' | 'approved' | 'rejected' | 'all'
   const [bookListTab, setBookListTab] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
 
@@ -114,12 +120,25 @@ const ContentManagerDashboard: React.FC = () => {
 
   const [reviewNotes, setReviewNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type?: 'success' | 'error' | 'info' } | null>(null);
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+  };
+
+  // Delete confirmation dialog
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean; title: string; message: string; confirmLabel: string;
+    variant: 'danger' | 'warning' | 'info'; action: () => Promise<void>;
+  }>({ open: false, title: '', message: '', confirmLabel: 'Delete', variant: 'danger', action: async () => {} });
 
   // Filters
   const [filterInstructor, setFilterInstructor] = useState('All');
   const [filterCategory, setFilterCategory] = useState('All');
 
-  const fetchData = async () => {
+  // Debounced search
+  const debouncedFilterCategory = useDebouncedValue(filterCategory, 300);
+
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [courses, books] = await Promise.all([
@@ -133,11 +152,14 @@ const ContentManagerDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Realtime sync — auto-refresh on database changes
+  useMultiTableSync(['courses', 'books', 'course_reviews', 'book_reviews'], fetchData);
 
   const handleSelectCourse = async (course: CourseReview) => {
     setSelectedCourse(course);
@@ -197,7 +219,7 @@ const ContentManagerDashboard: React.FC = () => {
       setVideoAnnotations(prev => [...prev, saved]);
       setNewAnnotationNote('');
     } catch (err) {
-      alert('Failed to save annotation: ' + err);
+      showToast('Failed to save annotation: ' + err, 'error');
     }
   };
 
@@ -206,7 +228,7 @@ const ContentManagerDashboard: React.FC = () => {
       await adminService.deleteVideoAnnotation(annId);
       setVideoAnnotations(prev => prev.filter(a => a.id !== annId));
     } catch (err) {
-      alert('Failed to delete annotation: ' + err);
+      showToast('Failed to delete annotation: ' + err, 'error');
     }
   };
 
@@ -236,7 +258,7 @@ const ContentManagerDashboard: React.FC = () => {
   const submitCourseReview = async (status: 'approved' | 'needs_changes' | 'rejected') => {
     if (!selectedCourse || !user?.id) return;
     if ((status === 'needs_changes' || status === 'rejected') && !reviewNotes.trim()) {
-      alert('Please provide detailed auditor notes explaining what changes are needed or the reason for rejection.');
+      showToast('Please provide detailed auditor notes explaining what changes are needed or the reason for rejection.', 'info');
       return;
     }
     setSubmitting(true);
@@ -252,9 +274,9 @@ const ContentManagerDashboard: React.FC = () => {
       setSelectedCourse(null);
       setReviewNotes('');
       await fetchData();
-      alert(`Course submission successfully marked as ${status}!`);
+      showToast(`Course submission successfully marked as ${status}!`, 'success');
     } catch (err) {
-      alert('Review submission failed: ' + err);
+      showToast('Review submission failed: ' + err, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -263,7 +285,7 @@ const ContentManagerDashboard: React.FC = () => {
   const submitBookReview = async (status: 'approved' | 'rejected' | 'needs_changes') => {
     if (!selectedBook || !user?.id) return;
     if ((status === 'needs_changes' || status === 'rejected') && !reviewNotes.trim()) {
-      alert('Please provide detailed auditor notes explaining what changes are needed or the reason for rejection.');
+      showToast('Please provide detailed auditor notes explaining what changes are needed or the reason for rejection.', 'info');
       return;
     }
     setSubmitting(true);
@@ -279,9 +301,9 @@ const ContentManagerDashboard: React.FC = () => {
       setSelectedBook(null);
       setReviewNotes('');
       await fetchData();
-      alert(`Book submission successfully marked as ${status}!`);
+      showToast(`Book submission successfully marked as ${status}!`, 'success');
     } catch (err) {
-      alert('Review submission failed: ' + err);
+      showToast('Review submission failed: ' + err, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -291,7 +313,7 @@ const ContentManagerDashboard: React.FC = () => {
   const handleBulkCourseAction = async (status: 'approved' | 'rejected' | 'needs_changes') => {
     if (selectedCourseIds.length === 0 || !user?.id) return;
     if ((status === 'rejected' || status === 'needs_changes') && !bulkNotes.trim()) {
-      alert('Please provide bulk justification notes explaining changes/rejections.');
+      showToast('Please provide bulk justification notes explaining changes/rejections.', 'info');
       return;
     }
     setSubmitting(true);
@@ -323,9 +345,9 @@ const ContentManagerDashboard: React.FC = () => {
       setBulkNotes('');
       setSelectedCourse(null);
       await fetchData();
-      alert(`Successfully processed ${status} for selected courses!`);
+      showToast(`Successfully processed ${status} for selected courses!`, 'success');
     } catch (err) {
-      alert('Bulk action failed: ' + err);
+      showToast('Bulk action failed: ' + err, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -334,7 +356,7 @@ const ContentManagerDashboard: React.FC = () => {
   const handleBulkBookAction = async (status: 'approved' | 'rejected' | 'needs_changes') => {
     if (selectedBookIds.length === 0 || !user?.id) return;
     if ((status === 'rejected' || status === 'needs_changes') && !bulkNotes.trim()) {
-      alert('Please provide bulk justification notes.');
+      showToast('Please provide bulk justification notes.', 'info');
       return;
     }
     setSubmitting(true);
@@ -364,9 +386,9 @@ const ContentManagerDashboard: React.FC = () => {
       setBulkNotes('');
       setSelectedBook(null);
       await fetchData();
-      alert(`Successfully processed ${status} for selected books!`);
+      showToast(`Successfully processed ${status} for selected books!`, 'success');
     } catch (err) {
-      alert('Bulk action failed: ' + err);
+      showToast('Bulk action failed: ' + err, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -399,14 +421,14 @@ const ContentManagerDashboard: React.FC = () => {
       setCreatorMessages(prev => [...prev, msg]);
       setCreatorDmText('');
     } catch (err) {
-      alert('Failed to send message: ' + err);
+      showToast('Failed to send message: ' + err, 'error');
     }
   };
 
   const handleToggleCreatorSuspension = async (suspend: boolean) => {
     if (!creatorProfileId || !user?.id) return;
     if (suspend && !creatorSuspensionReason.trim()) {
-      alert('Please state a reason for suspending this creator.');
+      showToast('Please state a reason for suspending this creator.', 'info');
       return;
     }
     try {
@@ -418,28 +440,76 @@ const ContentManagerDashboard: React.FC = () => {
       );
       setCreatorSuspensionReason('');
       inspectCreator(creatorProfileId);
-      alert(suspend ? 'Creator account suspended!' : 'Creator account reactivated!');
+      showToast(suspend ? 'Creator account suspended!' : 'Creator account reactivated!', 'success');
     } catch (err) {
-      alert('Failed to update creator suspension: ' + err);
+      showToast('Failed to update creator suspension: ' + err, 'error');
     }
   };
 
-  // Filters processing
-  const getFilteredCourses = () => {
+  // Delete handlers
+  const handleDeleteCourse = (course: CourseReview) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Course',
+      message: `Permanently delete "${course.course_title}" and all associated reviews? This action cannot be undone.`,
+      confirmLabel: 'Delete Course',
+      variant: 'danger',
+      action: async () => {
+        if (!user?.id) return;
+        setSubmitting(true);
+        try {
+          await adminService.deleteContent(course.course_id, 'course', user.id);
+          showToast(`Course "${course.course_title}" deleted successfully.`, 'success');
+          await fetchData();
+        } catch (err) {
+          showToast('Failed to delete course: ' + err, 'error');
+        } finally {
+          setSubmitting(false);
+        }
+      },
+    });
+  };
+
+  const handleDeleteBook = (book: BookReview) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Book',
+      message: `Permanently delete "${book.book_title}" and all associated reviews? This action cannot be undone.`,
+      confirmLabel: 'Delete Book',
+      variant: 'danger',
+      action: async () => {
+        if (!user?.id) return;
+        setSubmitting(true);
+        try {
+          await adminService.deleteContent(book.book_id, 'book', user.id);
+          showToast(`Book "${book.book_title}" deleted successfully.`, 'success');
+          await fetchData();
+        } catch (err) {
+          showToast('Failed to delete book: ' + err, 'error');
+        } finally {
+          setSubmitting(false);
+        }
+      },
+    });
+  };
+
+  // Memoized filters processing (uses debounced search)
+  const currentCourseList = useMemo(() => {
     return coursesQueue.filter(c => {
       const matchesStatus = 
         courseListTab === 'pending' ? c.status === 'pending' :
+        courseListTab === 'pending_deletion' ? c.status === 'pending_deletion' :
         courseListTab === 'approved' ? c.status === 'approved' :
         courseListTab === 'rejected' ? (c.status === 'rejected' || c.status === 'needs_changes') : true;
 
       const matchesInstructor = filterInstructor === 'All' || c.submitted_by === filterInstructor || c.submitted_by_name === filterInstructor;
-      const matchesCategory = filterCategory === 'All' || c.course_title?.toLowerCase().includes(filterCategory.toLowerCase());
+      const matchesCategory = debouncedFilterCategory === 'All' || c.course_title?.toLowerCase().includes(debouncedFilterCategory.toLowerCase());
 
       return matchesStatus && matchesInstructor && matchesCategory;
     });
-  };
+  }, [coursesQueue, courseListTab, filterInstructor, debouncedFilterCategory]);
 
-  const getFilteredBooks = () => {
+  const currentBookList = useMemo(() => {
     return booksQueue.filter(b => {
       const matchesStatus = 
         bookListTab === 'pending' ? b.status === 'pending' :
@@ -447,14 +517,15 @@ const ContentManagerDashboard: React.FC = () => {
         bookListTab === 'rejected' ? (b.status === 'rejected' || b.status === 'needs_changes') : true;
 
       const matchesAuthor = filterInstructor === 'All' || b.submitted_by === filterInstructor || b.submitted_by_name === filterInstructor;
-      const matchesCategory = filterCategory === 'All' || b.book_title?.toLowerCase().includes(filterCategory.toLowerCase());
+      const matchesCategory = debouncedFilterCategory === 'All' || b.book_title?.toLowerCase().includes(debouncedFilterCategory.toLowerCase());
 
       return matchesStatus && matchesAuthor && matchesCategory;
     });
-  };
+  }, [booksQueue, bookListTab, filterInstructor, debouncedFilterCategory]);
 
-  const currentCourseList = getFilteredCourses();
-  const currentBookList = getFilteredBooks();
+  // Pagination
+  const coursesPagination = usePaginatedList(currentCourseList, 15);
+  const booksPagination = usePaginatedList(currentBookList, 15);
 
   // Unique instructors and authors for filters
   const creatorsList = Array.from(new Set([
@@ -462,91 +533,134 @@ const ContentManagerDashboard: React.FC = () => {
     ...booksQueue.map(b => b.submitted_by_name || 'Author')
   ]));
 
+  const hasSelection = !!selectedBook;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 text-left">
       
-      {/* ── Header ── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Content Management Audit</h2>
-          <p className="text-slate-550 font-bold text-xs mt-1">Full audit pipeline: timestamped video annotations, book manuscript page previews, and creator profiles.</p>
-        </div>
-        <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm flex items-center gap-2">
-          <RefreshCcw size={14} className="text-green-600 animate-spin-slow" /> Sync Queues
-        </Button>
-      </div>
-
-      {/* ── Dashboard Tabs ── */}
-      <div className="flex gap-4 border-b border-slate-200 pb-2">
-        <button
-          onClick={() => { setActiveTab('courses'); setSelectedCourse(null); setSelectedBook(null); }}
-          className={`px-4 py-2.5 rounded-t-xl font-bold text-xs tracking-wider uppercase transition-all flex items-center gap-2 ${
-            activeTab === 'courses'
-              ? 'text-green-700 border-b-4 border-green-600 bg-green-50/40'
-              : 'text-slate-550 hover:text-slate-800'
-          }`}
-        >
-          📚 Staged Courses Queue
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-green-600 text-white">
-            {coursesQueue.filter(c => c.status === 'pending').length}
-          </span>
-        </button>
-        <button
-          onClick={() => { setActiveTab('books'); setSelectedCourse(null); setSelectedBook(null); }}
-          className={`px-4 py-2.5 rounded-t-xl font-bold text-xs tracking-wider uppercase transition-all flex items-center gap-2 ${
-            activeTab === 'books'
-              ? 'text-emerald-700 border-b-4 border-emerald-600 bg-emerald-50/40'
-              : 'text-slate-550 hover:text-slate-800'
-          }`}
-        >
-          📖 Library Books Queue
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white">
-            {booksQueue.filter(b => b.status === 'pending').length}
-          </span>
-        </button>
-      </div>
-
-      {/* ── Filters Bar ── */}
-      <div className="p-4 bg-white border border-slate-200/80 rounded-2xl flex flex-wrap gap-4 items-center justify-between shadow-sm">
-        <div className="flex flex-wrap gap-4 items-center">
-          <div className="flex items-center gap-2">
-            <Filter size={13} className="text-slate-400" />
-            <span className="text-xs font-bold text-slate-500 uppercase">Creator:</span>
-            <select
-              value={filterInstructor}
-              onChange={e => setFilterInstructor(e.target.value)}
-              className="bg-white border border-slate-200 text-xs font-bold rounded-xl p-2 text-slate-700 outline-none focus:ring-2 focus:ring-green-500/20"
-            >
-              <option value="All">All Creators</option>
-              {creatorsList.map((c, idx) => <option key={idx} value={c}>{c}</option>)}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-500 uppercase">Search text:</span>
-            <input
-              type="text"
-              placeholder="Filter by title..."
-              value={filterCategory === 'All' ? '' : filterCategory}
-              onChange={e => setFilterCategory(e.target.value || 'All')}
-              className="bg-white border border-slate-200 text-xs font-bold rounded-xl p-2 text-slate-800 outline-none focus:ring-2 focus:ring-green-500/20 w-44"
+      {hasSelection ? (
+        <>
+          {selectedCourse && (
+            <PageHeader
+              title={`Course Audit: ${selectedCourse.course_title}`}
+              description={`Audit course syllabus, lectures, pricing, and video content submitted by ${selectedCourse.submitted_by_name}.`}
+              tag="Course Review"
+              icon={BookOpen}
+              rightContent={
+                <Button 
+                  onClick={() => setSelectedCourse(null)}
+                  variant="outline"
+                  className="h-10 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs"
+                >
+                  ← Back to Queue
+                </Button>
+              }
             />
-          </div>
-        </div>
-      </div>
+          )}
+          {selectedBook && (
+            <PageHeader
+              title={`Book Audit: ${selectedBook.book_title}`}
+              description={`Review manuscript pages, cover images, details, and PDF layouts submitted by ${selectedBook.submitted_by_name}.`}
+              tag="Book Review"
+              icon={BookOpenText}
+              rightContent={
+                <Button 
+                  onClick={() => setSelectedBook(null)}
+                  variant="outline"
+                  className="h-10 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs"
+                >
+                  ← Back to Queue
+                </Button>
+              }
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <PageHeader
+            title="Content Management Audit"
+            description="Full audit pipeline: timestamped video annotations, book manuscript page previews, and creator profiles."
+            tag="Content Manager"
+            icon={BookOpen}
+            rightContent={
+              <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white/15 hover:bg-white/20 border-white/20 text-white shadow-sm flex items-center gap-2 font-bold">
+                <RefreshCcw size={14} className="text-emerald-450 animate-spin-slow" /> Sync Queues
+              </Button>
+            }
+          />
 
-      {/* ── Grid Layout ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* ── Dashboard Tabs ── */}
+          <div className="flex gap-4 border-b border-slate-200 pb-2">
+            <button
+              onClick={() => { setActiveTab('courses'); setSelectedCourse(null); setSelectedBook(null); }}
+              className={`px-4 py-2.5 rounded-t-xl font-bold text-xs tracking-wider uppercase transition-all flex items-center gap-2 ${
+                activeTab === 'courses'
+                  ? 'text-green-705 border-b-4 border-green-600 bg-green-50/40'
+                  : 'text-slate-550 hover:text-slate-800'
+              }`}
+            >
+              📚 Staged Courses Queue
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-green-600 text-white">
+                {coursesQueue.filter(c => c.status === 'pending').length}
+              </span>
+            </button>
+            <button
+              onClick={() => { setActiveTab('books'); setSelectedCourse(null); setSelectedBook(null); }}
+              className={`px-4 py-2.5 rounded-t-xl font-bold text-xs tracking-wider uppercase transition-all flex items-center gap-2 ${
+                activeTab === 'books'
+                  ? 'text-emerald-700 border-b-4 border-emerald-600 bg-emerald-50/40'
+                  : 'text-slate-555 hover:text-slate-800'
+              }`}
+            >
+              📖 Library Books Queue
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white">
+                {booksQueue.filter(b => b.status === 'pending').length}
+              </span>
+            </button>
+          </div>
+
+          {/* ── Filters Bar ── */}
+          <div className="p-4 bg-white border border-slate-200/80 rounded-2xl flex flex-wrap gap-4 items-center justify-between shadow-sm">
+            <div className="flex flex-wrap gap-4 items-center">
+              <div className="flex items-center gap-2">
+                <Filter size={13} className="text-slate-400" />
+                <span className="text-xs font-bold text-slate-500 uppercase">Creator:</span>
+                <select
+                  value={filterInstructor}
+                  onChange={e => setFilterInstructor(e.target.value)}
+                  className="bg-white border border-slate-200 text-xs font-bold rounded-xl p-2 text-slate-700 outline-none focus:ring-2 focus:ring-green-550/20"
+                >
+                  <option value="All">All Creators</option>
+                  {creatorsList.map((c, idx) => <option key={idx} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500 uppercase">Search text:</span>
+                <input
+                  type="text"
+                  placeholder="Filter by title..."
+                  value={filterCategory === 'All' ? '' : filterCategory}
+                  onChange={e => setFilterCategory(e.target.value || 'All')}
+                  className="bg-white border border-slate-200 text-xs font-bold rounded-xl p-2 text-slate-800 outline-none focus:ring-2 focus:ring-green-550/20 w-44"
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className={hasSelection ? "grid grid-cols-1 lg:grid-cols-3 gap-8" : "w-full"}>
         
         {/* ── Left Columns: Queues and list views ── */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className={hasSelection ? "lg:col-span-2 space-y-6" : "w-full space-y-6"}>
           
           {activeTab === 'courses' ? (
             <div className="space-y-4">
               
               {/* Courses subtabs */}
               <div className="flex gap-2">
-                {(['pending', 'approved', 'rejected', 'all'] as const).map(tab => (
+                {(['pending', 'pending_deletion', 'approved', 'rejected', 'all'] as const).map(tab => (
                   <button
                     key={tab}
                     onClick={() => { setCourseListTab(tab); setSelectedCourse(null); }}
@@ -556,14 +670,26 @@ const ContentManagerDashboard: React.FC = () => {
                         : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
                     }`}
                   >
-                    {tab} ({
+                    {tab === 'pending_deletion' ? 'Pending Deletion' : tab} ({
                       tab === 'pending' ? coursesQueue.filter(c => c.status === 'pending').length :
+                      tab === 'pending_deletion' ? coursesQueue.filter(c => c.status === 'pending_deletion').length :
                       tab === 'approved' ? coursesQueue.filter(c => c.status === 'approved').length :
                       tab === 'rejected' ? coursesQueue.filter(c => c.status === 'rejected' || c.status === 'needs_changes').length :
                       coursesQueue.length
                     })
                   </button>
                 ))}
+              </div>
+
+              {/* Export toolbar */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-500">{currentCourseList.length} courses</span>
+                <ExportToolbar
+                  onExportExcel={() => exportToExcel(currentCourseList, COURSE_EXPORT_COLUMNS, 'trileza_courses')}
+                  onExportCSV={() => exportToCSV(currentCourseList, COURSE_EXPORT_COLUMNS, 'trileza_courses')}
+                  itemCount={currentCourseList.length}
+                  label="courses"
+                />
               </div>
 
               {/* Courses list */}
@@ -581,9 +707,9 @@ const ContentManagerDashboard: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center px-2 text-[10px] font-black uppercase text-slate-400">
                     <span>Course Title & Instructor</span>
-                    <span>Submission Date</span>
+                    <span>Actions</span>
                   </div>
-                  {currentCourseList.map(c => {
+                  {coursesPagination.paginatedItems.map(c => {
                     const isSelected = selectedCourseIds.includes(c.id);
                     return (
                       <Card
@@ -602,7 +728,7 @@ const ContentManagerDashboard: React.FC = () => {
                               setSelectedCourseIds(prev => prev.filter(id => id !== c.id));
                             }
                           }}
-                          className="w-4 h-4 text-green-600 border-slate-300 rounded focus:ring-green-550/20 cursor-pointer"
+                          className="w-4 h-4 text-green-600 border-slate-300 rounded focus:ring-green-500/20 cursor-pointer"
                         />
                         <div 
                           onClick={() => handleSelectCourse(c)}
@@ -615,13 +741,30 @@ const ContentManagerDashboard: React.FC = () => {
                               Instructor: <span className="text-green-700 underline hover:text-green-900" onClick={(e) => { e.stopPropagation(); inspectCreator(c.submitted_by); }}>{c.submitted_by_name}</span>
                             </p>
                           </div>
-                          <span className="text-[9px] text-slate-400 font-mono shrink-0">
+                          <span className="text-[9px] text-slate-400 font-mono shrink-0 mr-2">
                             {formatDistanceToNow(new Date(c.submitted_at), { addSuffix: true })}
                           </span>
                         </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteCourse(c); }}
+                          className="p-2 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 hover:text-red-700 transition-all active:scale-95 shrink-0"
+                          title="Delete course"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </Card>
                     );
                   })}
+                  <Pagination
+                    currentPage={coursesPagination.currentPage}
+                    totalPages={coursesPagination.totalPages}
+                    totalItems={coursesPagination.totalItems}
+                    startIndex={coursesPagination.totalItems === 0 ? 0 : coursesPagination.startIndex}
+                    endIndex={coursesPagination.endIndex}
+                    onPageChange={coursesPagination.goToPage}
+                    onNext={coursesPagination.nextPage}
+                    onPrev={coursesPagination.prevPage}
+                  />
                 </div>
               )}
 
@@ -672,6 +815,17 @@ const ContentManagerDashboard: React.FC = () => {
                 ))}
               </div>
 
+              {/* Export toolbar */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-500">{currentBookList.length} books</span>
+                <ExportToolbar
+                  onExportExcel={() => exportToExcel(currentBookList, BOOK_EXPORT_COLUMNS, 'trileza_books')}
+                  onExportCSV={() => exportToCSV(currentBookList, BOOK_EXPORT_COLUMNS, 'trileza_books')}
+                  itemCount={currentBookList.length}
+                  label="books"
+                />
+              </div>
+
               {/* Books list */}
               {loading ? (
                 <Card className="p-12 text-center border-slate-200 bg-white">
@@ -687,9 +841,9 @@ const ContentManagerDashboard: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center px-2 text-[10px] font-black uppercase text-slate-400">
                     <span>Book Title & Author</span>
-                    <span>Submission Date</span>
+                    <span>Actions</span>
                   </div>
-                  {currentBookList.map(b => {
+                  {booksPagination.paginatedItems.map(b => {
                     const isSelected = selectedBookIds.includes(b.id);
                     return (
                       <Card
@@ -708,7 +862,7 @@ const ContentManagerDashboard: React.FC = () => {
                               setSelectedBookIds(prev => prev.filter(id => id !== b.id));
                             }
                           }}
-                          className="w-4 h-4 text-green-600 border-slate-300 rounded focus:ring-green-550/20 cursor-pointer"
+                          className="w-4 h-4 text-green-600 border-slate-300 rounded focus:ring-green-500/20 cursor-pointer"
                         />
                         <div 
                           onClick={() => handleSelectBook(b)}
@@ -718,16 +872,33 @@ const ContentManagerDashboard: React.FC = () => {
                           <div className="min-w-0 flex-1">
                             <h4 className="font-extrabold text-sm text-slate-900 truncate">{b.book_title}</h4>
                             <p className="text-[10px] text-slate-500 mt-0.5 font-bold">
-                              Author: <span className="text-emerald-700 underline hover:text-emerald-950" onClick={(e) => { e.stopPropagation(); inspectCreator(b.submitted_by); }}>{b.submitted_by_name}</span>
+                              Author: <span className="text-emerald-700 underline hover:text-emerald-900" onClick={(e) => { e.stopPropagation(); inspectCreator(b.submitted_by); }}>{b.submitted_by_name}</span>
                             </p>
                           </div>
-                          <span className="text-[9px] text-slate-400 font-mono shrink-0">
+                          <span className="text-[9px] text-slate-400 font-mono shrink-0 mr-2">
                             {formatDistanceToNow(new Date(b.submitted_at), { addSuffix: true })}
                           </span>
                         </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteBook(b); }}
+                          className="p-2 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 hover:text-red-700 transition-all active:scale-95 shrink-0"
+                          title="Delete book"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </Card>
                     );
                   })}
+                  <Pagination
+                    currentPage={booksPagination.currentPage}
+                    totalPages={booksPagination.totalPages}
+                    totalItems={booksPagination.totalItems}
+                    startIndex={booksPagination.totalItems === 0 ? 0 : booksPagination.startIndex}
+                    endIndex={booksPagination.endIndex}
+                    onPageChange={booksPagination.goToPage}
+                    onNext={booksPagination.nextPage}
+                    onPrev={booksPagination.prevPage}
+                  />
                 </div>
               )}
 
@@ -756,9 +927,9 @@ const ContentManagerDashboard: React.FC = () => {
         </div>
         
         {/* ── Right Column: Inspect & Action Panel ── */}
-        <div className="space-y-6">
-          <Card className="bg-white border border-slate-200/80 p-6 rounded-3xl sticky top-8 shadow-sm flex flex-col min-h-[500px]">
-            {selectedBook ? (
+        {hasSelection && (
+          <div className="space-y-6">
+            <Card className="bg-white border border-slate-200/80 p-6 rounded-3xl sticky top-8 shadow-sm flex flex-col min-h-[500px]">
               <div className="space-y-6 flex-1 flex flex-col justify-between text-left">
                 <div className="space-y-5">
                   <div className="flex gap-4">
@@ -788,9 +959,13 @@ const ContentManagerDashboard: React.FC = () => {
                       <span className="text-slate-550 font-bold">Format / Pages:</span>
                       <span className="font-semibold text-slate-800">PDF • 182 Pages</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between border-b border-slate-200/60 pb-2 mb-2">
                       <span className="text-slate-550 font-bold">Uploaded:</span>
                       <span className="font-semibold text-slate-800">{formatDate(selectedBook.submitted_at)}</span>
+                    </div>
+                    <div className="pt-1">
+                      <span className="block text-slate-550 font-bold mb-1">Description:</span>
+                      <p className="text-slate-800 italic">{selectedBook.description || 'No description provided.'}</p>
                     </div>
                   </div>
 
@@ -901,23 +1076,17 @@ const ContentManagerDashboard: React.FC = () => {
                   </Button>
                 </div>
               </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4">
-                <div className="w-16 h-16 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm text-xl font-bold">
-                  🔍
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-slate-700 text-sm">Audit Detail Deck</h4>
-                  <p className="text-xs text-slate-400 mt-1.5 max-w-[200px] mx-auto leading-relaxed">
-                    Select a course or manuscript upload from the queue to start verification auditing.
-                  </p>
-                </div>
-              </div>
-            )}
           </Card>
         </div>
-
-      </div>
+      )}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+    </div>
 
       {/* ── Creator Profile Modal ── */}
       {creatorProfileId && (
@@ -1091,12 +1260,11 @@ const ContentManagerDashboard: React.FC = () => {
                   </div>
 
                 </div>
-
               </div>
             ) : null}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* ── Course Detailed Audit Modal ── */}
       {selectedCourse && (
@@ -1134,15 +1302,19 @@ const ContentManagerDashboard: React.FC = () => {
                     </div>
                     <div>
                       <span className="block text-slate-450 font-bold">Category:</span>
-                      <span className="font-bold text-slate-800">Tech & Software Engineering</span>
+                      <span className="font-bold text-slate-800">{selectedCourse.category || 'Tech & Software Engineering'}</span>
                     </div>
                     <div>
                       <span className="block text-slate-450 font-bold">Standard Price:</span>
-                      <span className="font-extrabold text-slate-900">₦25,000</span>
+                      <span className="font-extrabold text-slate-900">{selectedCourse.price_standard ? formatCurrency(selectedCourse.price_standard) : 'Free'}</span>
                     </div>
                     <div>
                       <span className="block text-slate-450 font-bold">Elite (Coaching) Price:</span>
-                      <span className="font-extrabold text-slate-900">₦75,000</span>
+                      <span className="font-extrabold text-slate-900">{selectedCourse.price_elite ? formatCurrency(selectedCourse.price_elite) : 'N/A'}</span>
+                    </div>
+                    <div className="pt-2 border-t border-slate-100">
+                      <span className="block text-slate-450 font-bold mb-1">Description:</span>
+                      <p className="text-slate-800 italic">{selectedCourse.description || 'No description provided.'}</p>
                     </div>
                     <div>
                       <span className="block text-slate-450 font-bold">Submitted Date:</span>
@@ -1453,6 +1625,20 @@ const ContentManagerDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        variant={confirmDialog.variant}
+        confirmLabel={confirmDialog.confirmLabel}
+        loading={submitting}
+        onConfirm={async () => {
+          await confirmDialog.action();
+          setConfirmDialog(prev => ({ ...prev, open: false }));
+        }}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 };

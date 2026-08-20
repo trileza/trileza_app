@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { UserRole } from '../lib/database.types';
 import { nexus } from '../lib/nexus';
+import type { AdminRole } from '../types/admin';
+import { adminService } from '../lib/services/admin';
 
 // Re-export for backward compatibility with existing imports
 export type { UserRole } from '../lib/database.types';
@@ -18,6 +20,7 @@ export interface UserProfile {
   mentor_tier?: 'provisional' | 'basic' | 'standard' | 'full';
   verification_data?: any;
   created_at: string;
+  username?: string;
   // Extended fields
   surname?: string;
   first_name?: string;
@@ -72,17 +75,62 @@ interface AuthState {
   activeRole: UserRole | null;
   loading: boolean;
   initialized: boolean;
+  isAdmin: boolean;
+  adminRoles: AdminRole[];
+  adminUser: any | null;
+  adminSessionToken: string | null;
+  pendingAdminUser: UserProfile | null;
+  tempAdminCode: string | null;
+  /** Timestamp of the last role switch (used to debounce syncProfile) */
+  _lastRoleSwitchAt: number;
+  /** True while setActiveRole is persisting to the backend */
+  _isSwitchingRole: boolean;
   setUser: (user: UserProfile | null) => void;
   setLoading: (loading: boolean) => void;
   logout: () => Promise<void>;
   initialize: () => Promise<void>;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string) => Promise<{ error: string | null; requireAdmin2FA?: boolean }>;
+  signInAdmin: (email: string, password: string) => Promise<{ error: string | null; requireAdmin2FA?: boolean; adminUser?: any }>;
   signUp: (email: string, password: string, fullName: string, role: UserRole, metadata?: any) => Promise<{ error: string | null; requireVerification?: boolean }>;
-  updateProfile: (updates: Partial<UserProfile>) => Promise<{ error: string | null }>;
+  updateProfile: (updates: Partial<UserProfile>, background?: boolean) => Promise<{ error: string | null }>;
   verifyEmail: (email: string, otp: string, metadata?: any) => Promise<{ error: string | null }>;
   resendVerificationCode: (email: string) => Promise<{ error: string | null }>;
   setActiveRole: (role: UserRole) => Promise<void>;
+  verifyAdmin2FA: (otp: string) => Promise<{ error: string | null; usedBackup?: boolean }>;
+  cancelAdmin2FA: () => Promise<void>;
+  logoutAdmin: () => Promise<void>;
+  syncProfile: () => Promise<void>;
 }
+
+export const resolveActiveRole = (user: UserProfile | null, overrideRole?: UserRole | null): UserRole | null => {
+  if (!user) return null;
+  const metadata = user.metadata || {};
+  const storedActiveRole = overrideRole || metadata.active_role;
+
+  const isMentorPermitted = 
+    user.role === 'mentor' || 
+    user.role === 'tutor' || 
+    metadata.mentor_onboarded === true || 
+    metadata.mentor_application_status === 'approved';
+
+  // Explicit active role selection takes priority if permitted
+  if (storedActiveRole === 'mentor' || storedActiveRole === 'tutor') {
+    if (isMentorPermitted) {
+      return 'mentor';
+    }
+    return 'mentee';
+  }
+
+  if (storedActiveRole === 'mentee') {
+    return 'mentee';
+  }
+
+  // Default fallback based on onboarded status
+  if (isMentorPermitted) {
+    return 'mentor';
+  }
+  return 'mentee';
+};
 
 // ─── Auth Store ───────────────────────────────────────────────────────
 export const useAuthStore = create<AuthState>((set, get) => {
@@ -121,12 +169,20 @@ export const useAuthStore = create<AuthState>((set, get) => {
     activeRole: null,
     loading: true,
     initialized: false,
+    isAdmin: false,
+    adminRoles: [],
+    adminUser: null,
+    adminSessionToken: null,
+    pendingAdminUser: null,
+    tempAdminCode: null,
+    _lastRoleSwitchAt: 0,
+    _isSwitchingRole: false,
 
     setUser: (user) => {
       const merged = user ? mergeUser(user, {}) : null;
       set({ 
         user: merged, 
-        activeRole: merged ? (merged.metadata?.active_role || merged.role) : null,
+        activeRole: resolveActiveRole(merged),
         loading: false 
       });
     },
@@ -136,28 +192,82 @@ export const useAuthStore = create<AuthState>((set, get) => {
      * Initialize auth state by checking for an existing InsForge session.
      */
     initialize: async () => {
-      // Don't re-initialize if already done
       try {
         const { data, error } = await nexus.auth.getCurrentUser();
         if (data?.user) {
-          // Fetch full profile from InsForge
-          const { data: profile } = await nexus.auth.getProfile(data.user.id);
+          const userId = data.user.id;
+          const token = sessionStorage.getItem('admin_session_token');
+
+          // Fetch profile, admin check, and session validation concurrently
+          const [profileRes, adminRolesRes, sessionDataRes] = await Promise.all([
+            nexus.auth.getProfile(userId).catch(() => ({ data: null })),
+            adminService.getAdminUsersByUserId(userId).catch(() => ({ data: null })),
+            token ? adminService.validateAdminSession(token).catch(() => ({ data: null })) : Promise.resolve({ data: null })
+          ]);
+
+          const profile = profileRes?.data;
           const merged = mergeUser(data.user, profile);
+
           if (merged) {
-            await ensureProfileInDatabase(merged);
+            // Non-blocking database sync in background
+            ensureProfileInDatabase(merged).catch(err => console.error('[Auth] Background sync error:', err));
           }
+
+          let activeAdminUser: any = null;
+          if (token && sessionDataRes?.data && (sessionDataRes.data as any).admin_users) {
+            activeAdminUser = (sessionDataRes.data as any).admin_users;
+          }
+
+          const adminRoles = adminRolesRes?.data || [];
+          const approvedRole = (adminRoles as any[])?.find((r: any) => !r.suspended);
+
+          if (activeAdminUser) {
+            set({
+              user: merged,
+              activeRole: resolveActiveRole(merged),
+              isAdmin: true,
+              adminRoles: activeAdminUser.roles || [],
+              adminUser: activeAdminUser,
+              adminSessionToken: token,
+              loading: false,
+              initialized: true
+            });
+          } else {
+            set({
+              user: merged,
+              activeRole: resolveActiveRole(merged),
+              isAdmin: false,
+              adminRoles: [],
+              adminUser: approvedRole || null,
+              adminSessionToken: null,
+              loading: false,
+              initialized: true
+            });
+          }
+        } else {
           set({ 
-            user: merged, 
-            activeRole: merged ? (merged.metadata?.active_role || merged.role) : null,
+            user: null, 
+            activeRole: null, 
+            isAdmin: false, 
+            adminRoles: [], 
+            adminUser: null, 
+            adminSessionToken: null, 
             loading: false, 
             initialized: true 
           });
-        } else {
-          set({ user: null, activeRole: null, loading: false, initialized: true });
         }
       } catch (err) {
         console.error('[Auth] Initialization error:', err);
-        set({ user: null, activeRole: null, loading: false, initialized: true });
+        set({ 
+          user: null, 
+          activeRole: null, 
+          isAdmin: false, 
+          adminRoles: [], 
+          adminUser: null, 
+          adminSessionToken: null, 
+          loading: false, 
+          initialized: true 
+        });
       }
     },
 
@@ -179,11 +289,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
         const { data: profile } = await nexus.auth.getProfile(data.user.id);
         const merged = mergeUser(data.user, profile);
         if (merged) {
-          await ensureProfileInDatabase(merged);
+          ensureProfileInDatabase(merged).catch(err => console.error('[Auth] Background sync error:', err));
         }
         set({ 
           user: merged, 
-          activeRole: merged ? (merged.metadata?.active_role || merged.role) : null,
+          activeRole: resolveActiveRole(merged),
           loading: false 
         });
         return { error: null };
@@ -198,55 +308,107 @@ export const useAuthStore = create<AuthState>((set, get) => {
      */
     signUp: async (email: string, password: string, fullName: string, role: UserRole, metadata?: any) => {
       set({ loading: true });
+      console.log('[AuthStore] signUp action started for:', email);
 
-      const { data, error } = await nexus.auth.signUp({ 
-        email, 
-        password, 
-        name: fullName 
-      });
-
-      if (error) {
-        set({ loading: false });
-        return { error: error.message };
-      }
-
-      if (data?.requireEmailVerification) {
-        set({ loading: false });
-        return { error: null, requireVerification: true };
-      }
-
-      if (data?.user) {
-        // Set initial profile data in InsForge
-        const { data: profile, error: profileError } = await nexus.auth.setProfile({
-          full_name: fullName,
-          role: role,
-          avatar_url: metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
-          created_at: new Date().toISOString(),
-          ...metadata
+      try {
+        const { data, error } = await nexus.auth.signUp({ 
+          email, 
+          password, 
+          name: fullName 
         });
 
-        if (profileError) {
-          console.error('[Auth] Error setting initial profile:', profileError);
-          const merged = mergeUser(data.user, { full_name: fullName, role });
+        console.log('[AuthStore] signUp raw response:', { data, error });
+
+        if (error) {
+          // If the user already exists in the auth system, attempt to sign in immediately using their password.
+          // This handles cases where they manually cleared database rows but their auth record remained.
+          const errMsg = error.message?.toLowerCase() || '';
+          if (errMsg.includes('already exists') || errMsg.includes('already registered')) {
+            console.log('[AuthStore] User already exists in Auth. Attempting auto-signin recovery / verification check...');
+            
+            const { data: signInData, error: signInError } = await nexus.auth.signInWithPassword({ email, password });
+            console.log('[AuthStore] signInWithPassword response:', { signInData, signInError });
+            
+            if (!signInError && signInData?.user) {
+              // Check if email is verified
+              if (signInData.user.emailVerified) {
+                const { data: profile } = await nexus.auth.getProfile(signInData.user.id);
+                const merged = mergeUser(signInData.user, profile);
+                if (merged) {
+                  await ensureProfileInDatabase(merged);
+                }
+                set({ 
+                  user: merged, 
+                  activeRole: resolveActiveRole(merged),
+                  loading: false 
+                });
+                return { error: null };
+              } else {
+                // User exists but email is not verified yet. Transition to verification flow.
+                console.log('[AuthStore] Existing user email is not verified. Resending verification email...');
+                await nexus.auth.resendVerificationEmail({ email });
+                set({ loading: false });
+                return { error: null, requireVerification: true };
+              }
+            } else if (signInError) {
+              const signinErrMsg = signInError.message?.toLowerCase() || '';
+              // If signin fails specifically because verification is required
+              if (signinErrMsg.includes('verify') || signinErrMsg.includes('verification') || signinErrMsg.includes('not verified')) {
+                console.log('[AuthStore] Signin reports email not verified. Resending verification email...');
+                await nexus.auth.resendVerificationEmail({ email });
+                set({ loading: false });
+                return { error: null, requireVerification: true };
+              }
+            }
+          }
+
+          set({ loading: false });
+          return { error: error.message };
+        }
+
+        if (data?.requireEmailVerification) {
+          set({ loading: false });
+          return { error: null, requireVerification: true };
+        }
+
+        if (data?.user) {
+          // Set initial profile data in InsForge
+          const { data: profile, error: profileError } = await nexus.auth.setProfile({
+            full_name: fullName,
+            role: role,
+            avatar_url: metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
+            created_at: new Date().toISOString(),
+            ...metadata
+          });
+
+          if (profileError) {
+            console.error('[AuthStore] Error setting initial profile:', profileError);
+            const merged = mergeUser(data.user, { full_name: fullName, role });
+            set({ 
+              user: merged, 
+              activeRole: resolveActiveRole(merged),
+              loading: false 
+            });
+            return { error: null };
+          }
+
+          const merged = mergeUser(data.user, profile);
           set({ 
             user: merged, 
-            activeRole: merged ? (merged.metadata?.active_role || merged.role) : null,
+            activeRole: resolveActiveRole(merged),
             loading: false 
           });
           return { error: null };
         }
 
-        const merged = mergeUser(data.user, profile);
-        set({ 
-          user: merged, 
-          activeRole: merged ? (merged.metadata?.active_role || merged.role) : null,
-          loading: false 
-        });
-        return { error: null };
-      }
+        set({ loading: false });
+        return { error: 'Sign up successful, but could not retrieve user data. Please try signing in.' };
 
-      set({ loading: false });
-      return { error: 'Sign up successful, but could not retrieve user data. Please try signing in.' };
+      } catch (err: any) {
+        console.error('[AuthStore] Exception in signUp action:', err);
+        set({ loading: false });
+        return { error: err?.message || 'An unexpected error occurred during signup action.' };
+      }
     },
 
     /**
@@ -292,7 +454,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         }
         set({ 
           user: merged, 
-          activeRole: merged ? (merged.metadata?.active_role || merged.role) : null,
+          activeRole: resolveActiveRole(merged),
           loading: false 
         });
         return { error: null };
@@ -319,18 +481,38 @@ export const useAuthStore = create<AuthState>((set, get) => {
      */
     logout: async () => {
       set({ loading: true });
+      const token = get().adminSessionToken;
+      if (token) {
+        try {
+          await adminService.invalidateAdminSession(token);
+        } catch (err) {
+          console.error('[Auth] Error invalidating admin session:', err);
+        }
+      }
+      sessionStorage.removeItem('admin_session_token');
+      sessionStorage.removeItem('admin_2fa_passed');
       await nexus.auth.signOut();
-      set({ user: null, activeRole: null, loading: false });
+      set({ 
+        user: null, 
+        activeRole: null, 
+        isAdmin: false, 
+        adminRoles: [], 
+        adminUser: null, 
+        adminSessionToken: null, 
+        loading: false 
+      });
     },
 
     /**
      * Update the current user's profile in InsForge.
      */
-    updateProfile: async (updates: Partial<UserProfile>) => {
+    updateProfile: async (updates: Partial<UserProfile>, background = false) => {
       const currentUser = get().user;
       if (!currentUser) return { error: 'Not authenticated' };
 
-      set({ loading: true });
+      if (!background) {
+        set({ loading: true });
+      }
       
       // Update via auth client
       const { data, error } = await nexus.auth.setProfile(updates);
@@ -347,33 +529,41 @@ export const useAuthStore = create<AuthState>((set, get) => {
       }
 
       if (error) {
-        set({ loading: false });
+        if (!background) {
+          set({ loading: false });
+        }
         return { error: error.message };
       }
 
       if (data) {
-        // Ensure the local state is updated with both the previous data and the new updates
+        // Ensure local state preserves optimistic active_role from updates
+        const targetActiveRole = updates?.metadata?.active_role || currentUser?.metadata?.active_role || get().activeRole;
+        const mergedMetadata = {
+          ...currentUser?.metadata,
+          ...(data as any)?.metadata,
+          ...updates?.metadata,
+          ...(targetActiveRole ? { active_role: targetActiveRole } : {})
+        };
+
         const mergedUser = { 
           ...currentUser, 
           ...data,
-          // Explicitly merge updates as well in case 'data' from server is partial
-          ...updates 
+          ...updates,
+          metadata: mergedMetadata
         } as any as UserProfile;
+
+        const resolvedRole = resolveActiveRole(mergedUser);
         set({ 
           user: mergedUser, 
-          activeRole: mergedUser ? (mergedUser.metadata?.active_role || mergedUser.role) : null,
-          loading: false 
+          activeRole: resolvedRole,
+          ...(background ? {} : { loading: false })
         });
-      } else {
-        // Even if no data returned, update local state with requested updates for immediate feedback
-        const mergedUser = { ...currentUser, ...updates } as any as UserProfile;
-        set({ 
-          user: mergedUser, 
-          activeRole: mergedUser ? (mergedUser.metadata?.active_role || mergedUser.role) : null,
-          loading: false 
-        });
+        return { error: null };
       }
-      
+
+      if (!background) {
+        set({ loading: false });
+      }
       return { error: null };
     },
 
@@ -384,15 +574,282 @@ export const useAuthStore = create<AuthState>((set, get) => {
       const currentUser = get().user;
       if (!currentUser) return;
       
-      set({ activeRole: role });
-      
-      // Persist to user metadata
-      await get().updateProfile({
-        metadata: {
-          ...currentUser.metadata,
-          active_role: role
+      const resolvedRole = resolveActiveRole(currentUser, role) || role;
+      const now = Date.now();
+
+      // Optimistically update local active role and metadata immediately (<100ms)
+      // Also set switching guard flags to prevent syncProfile from reverting
+      set({ 
+        activeRole: resolvedRole,
+        _isSwitchingRole: true,
+        _lastRoleSwitchAt: now,
+        user: {
+          ...currentUser,
+          metadata: {
+            ...currentUser.metadata,
+            active_role: resolvedRole
+          }
         }
       });
+      
+      // Persist to user metadata in the background, then release the guard
+      try {
+        await get().updateProfile({
+          metadata: {
+            ...currentUser.metadata,
+            active_role: resolvedRole
+          }
+        }, true);
+      } catch (err) {
+        console.error('[Auth] Error persisting active role:', err);
+      } finally {
+        set({ _isSwitchingRole: false, _lastRoleSwitchAt: Date.now() });
+      }
+    },
+
+    signInAdmin: async (email: string, password: string) => {
+      set({ loading: true });
+      const { data, error } = await nexus.auth.signInWithPassword({ email, password });
+      
+      if (error) {
+        set({ loading: false });
+        return { error: error.message };
+      }
+
+      if (data?.user) {
+        const { data: profile } = await nexus.auth.getProfile(data.user.id);
+        const merged = mergeUser(data.user, profile);
+        if (merged) {
+          await ensureProfileInDatabase(merged);
+        }
+
+        const { data: adminRoles, error: adminRoleErr } = await adminService.getAdminUsersByUserId(data.user.id);
+        if (adminRoleErr) {
+          set({ loading: false });
+          return { error: 'Error validating admin credentials: ' + adminRoleErr.message };
+        }
+
+        const approvedAdmin = adminRoles?.find((r: any) => r.status === 'active' || !r.suspended);
+        if (!approvedAdmin) {
+          await nexus.auth.signOut();
+          set({ loading: false });
+          return { error: 'Unauthorized. You do not have administrative access.' };
+        }
+
+        if (approvedAdmin.twofa_bypassed || !approvedAdmin.twofa_enabled) {
+          const sessionToken = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+          const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+          
+          const { error: sessionErr } = await adminService.createAdminSession(
+            approvedAdmin.id,
+            sessionToken,
+            expiresAt,
+            '127.0.0.1',
+            navigator.userAgent
+          );
+
+          if (sessionErr) {
+            set({ loading: false });
+            return { error: 'Failed to create administrative session: ' + sessionErr.message };
+          }
+
+          sessionStorage.setItem('admin_session_token', sessionToken);
+          sessionStorage.setItem('admin_2fa_passed', 'true');
+
+          set({
+            user: merged,
+            activeRole: resolveActiveRole(merged),
+            isAdmin: true,
+            adminRoles: approvedAdmin.roles || [],
+            adminUser: approvedAdmin,
+            adminSessionToken: sessionToken,
+            loading: false
+          });
+
+          return { error: null, requireAdmin2FA: false, adminUser: approvedAdmin };
+        } else {
+          const { error: codeErr } = await adminService.generate2FACode(approvedAdmin.id, approvedAdmin.twofa_email);
+          if (codeErr) {
+            set({ loading: false });
+            return { error: 'Failed to generate 2FA verification code: ' + codeErr };
+          }
+
+          set({
+            user: merged,
+            activeRole: resolveActiveRole(merged),
+            isAdmin: false,
+            adminRoles: [],
+            adminUser: approvedAdmin,
+            adminSessionToken: null,
+            pendingAdminUser: merged,
+            loading: false
+          });
+
+          return { error: null, requireAdmin2FA: true, adminUser: approvedAdmin };
+        }
+      }
+
+      set({ loading: false });
+      return { error: 'Unknown authentication error. Please try again.' };
+    },
+
+    verifyAdmin2FA: async (otp: string) => {
+      const adminRec = get().adminUser;
+      const pending = get().pendingAdminUser || get().user;
+      if (!adminRec || !pending) {
+        return { error: 'Session verification expired. Please sign in again.' };
+      }
+
+      set({ loading: true });
+
+      const res = await adminService.verify2FACode(adminRec.id, otp);
+      if (res.error) {
+        set({ loading: false });
+        return { error: res.error };
+      }
+
+      const sessionToken = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+      const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+      
+      const { error: sessionErr } = await adminService.createAdminSession(
+        adminRec.id,
+        sessionToken,
+        expiresAt,
+        '127.0.0.1',
+        navigator.userAgent
+      );
+
+      if (sessionErr) {
+        set({ loading: false });
+        return { error: 'Failed to establish administrative session: ' + sessionErr.message };
+      }
+
+      sessionStorage.setItem('admin_session_token', sessionToken);
+      sessionStorage.setItem('admin_2fa_passed', 'true');
+
+      const { data: updatedAdmin } = await nexus.database
+        .from('admin_users')
+        .select('*')
+        .eq('id', adminRec.id)
+        .single();
+
+      set({
+        user: pending,
+        activeRole: resolveActiveRole(pending),
+        pendingAdminUser: null,
+        tempAdminCode: null,
+        isAdmin: true,
+        adminRoles: updatedAdmin?.roles || adminRec.roles || [],
+        adminUser: updatedAdmin || adminRec,
+        adminSessionToken: sessionToken,
+        loading: false
+      });
+
+      return { error: null, usedBackup: res.usedBackup };
+    },
+
+    cancelAdmin2FA: async () => {
+      set({
+        adminUser: null,
+        pendingAdminUser: null,
+        tempAdminCode: null,
+        isAdmin: false,
+        adminRoles: [],
+        adminSessionToken: null
+      });
+      await nexus.auth.signOut();
+    },
+
+    syncProfile: async () => {
+      // Guard: skip sync if a role switch is in progress or happened recently
+      // This prevents the 5s polling from overwriting the optimistic activeRole
+      // before the backend persist completes.
+      if (get()._isSwitchingRole) return;
+      if (Date.now() - get()._lastRoleSwitchAt < 6000) return;
+
+      const currentUser = get().user;
+      if (!currentUser?.id) return;
+      try {
+        const { data: profile } = await nexus.database
+          .from('profiles')
+          .select('*')
+          .eq('id', currentUser.id)
+          .maybeSingle();
+
+        if (profile) {
+          const profileData = profile as any;
+          const metadata = profileData.metadata || {};
+          
+          // If suspended, handle logout immediately
+          if (metadata.suspended === true) {
+            console.log('[Sync] User suspended. Logging out...');
+            await get().logout();
+            window.location.href = `/login?suspended=true&reason=${encodeURIComponent(metadata.suspension_reason || 'N/A')}`;
+            return;
+          }
+
+          const merged = mergeUser(currentUser, profileData);
+          
+          // Preserve local activeRole if valid, or fall back to resolved role
+          let currentActiveRole = get().activeRole || resolveActiveRole(merged);
+          const isMentorPermitted = merged.metadata?.mentor_onboarded === true || merged.role === 'mentor' || merged.role === 'tutor';
+
+          if (currentActiveRole === 'mentor' && !isMentorPermitted) {
+            currentActiveRole = 'mentee';
+          }
+
+          if (merged.metadata) {
+            merged.metadata.active_role = currentActiveRole;
+          }
+
+          // Compare user changes (excluding active_role since it is forced to match)
+          const hasUserChanged = (
+            merged.full_name !== currentUser.full_name ||
+            merged.avatar_url !== currentUser.avatar_url ||
+            merged.role !== currentUser.role ||
+            merged.bio !== currentUser.bio ||
+            merged.country !== currentUser.country ||
+            JSON.stringify(merged.metadata) !== JSON.stringify(currentUser.metadata)
+          );
+
+          const hasActiveRoleChanged = currentActiveRole !== get().activeRole;
+
+          if (hasUserChanged || hasActiveRoleChanged) {
+            console.log('[Sync] Profile updated from database:', merged);
+            set({ 
+              user: merged, 
+              activeRole: currentActiveRole 
+            });
+          }
+        }
+      } catch (err) {
+        console.error('[Sync] Error synchronizing profile:', err);
+      }
+    },
+
+    logoutAdmin: async () => {
+      set({ loading: true });
+      const token = get().adminSessionToken;
+      if (token) {
+        try {
+          await adminService.invalidateAdminSession(token);
+        } catch (err) {
+          console.error('[Auth] Error invalidating admin session:', err);
+        }
+      }
+      sessionStorage.removeItem('admin_session_token');
+      sessionStorage.removeItem('admin_2fa_passed');
+
+      set({
+        isAdmin: false,
+        adminRoles: [],
+        adminUser: null,
+        adminSessionToken: null,
+        loading: false
+      });
+
+      await nexus.auth.signOut();
+      set({ user: null, activeRole: null });
     },
 };
 });

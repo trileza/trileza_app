@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { adminService } from '../../lib/services/admin';
 import type { ComplianceRequest } from '../../types/admin';
-import { Card, Button } from '../ui';
+import { Card, Button, Toast } from '../ui';
 import { useAuthStore } from '../../store/authStore';
 import { nexus } from '../../lib/nexus';
 import { 
@@ -18,6 +18,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import PageHeader from '../shared/PageHeader';
 
 const ComplianceOfficerDashboard: React.FC = () => {
   const { user } = useAuthStore();
@@ -33,6 +34,11 @@ const ComplianceOfficerDashboard: React.FC = () => {
   const [gdprData, setGdprData] = useState<any>(null);
   const [loadingGdpr, setLoadingGdpr] = useState(false);
   const [showJsonTree, setShowJsonTree] = useState(false);
+
+  const [toast, setToast] = useState<{ message: string; type?: 'success' | 'error' | 'info' } | null>(null);
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+  };
 
   // DMCA takedown options
   const [executeTakedown, setExecuteTakedown] = useState(false);
@@ -67,7 +73,7 @@ const ComplianceOfficerDashboard: React.FC = () => {
   const handleResolveRequest = async (status: 'resolved' | 'dismissed' | 'under_review') => {
     if (!selectedReq || !user?.id) return;
     if (!resolutionNotes.trim()) {
-      alert('Please provide resolution notes for the ledger.');
+      showToast('Please provide resolution notes for the ledger.', 'info');
       return;
     }
     setSubmitting(true);
@@ -95,9 +101,9 @@ const ComplianceOfficerDashboard: React.FC = () => {
       setGdprData(null);
       setExecuteTakedown(false);
       await fetchData();
-      alert(`Compliance request successfully updated to ${status}!`);
+      showToast(`Compliance request successfully updated to ${status}!`, 'success');
     } catch (err) {
-      alert('Resolution submission failed: ' + err);
+      showToast('Resolution submission failed: ' + err, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -112,7 +118,7 @@ const ComplianceOfficerDashboard: React.FC = () => {
       setGdprData(compiled);
       setShowJsonTree(true);
     } catch (err) {
-      alert('GDPR Compilation failed: ' + err);
+      showToast('GDPR Compilation failed: ' + err, 'error');
     } finally {
       setLoadingGdpr(false);
     }
@@ -142,42 +148,63 @@ const ComplianceOfficerDashboard: React.FC = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 text-left">
       
-      {/* ── Header ── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Compliance & Audit Control</h2>
-          <p className="text-slate-550 font-bold text-xs mt-1">Resolve copyright claims, process GDPR user deletion requests, and audit terms violations.</p>
-        </div>
-        <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm flex items-center gap-2">
-          <RefreshCcw size={14} className="text-green-600" /> Refresh Node
-        </Button>
-      </div>
+      {selectedReq ? (
+        <PageHeader 
+          title={`Compliance Audit: ${selectedReq.type.replace('_', ' ').toUpperCase()}`} 
+          description="Verify incident report details, claimant filings, and execute takedown or resolution signoffs."
+          tag="Compliance Case Details"
+          icon={Scale}
+          rightContent={
+            <Button 
+              onClick={() => setSelectedReq(null)}
+              variant="outline"
+              className="h-10 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs"
+            >
+              ← Back to Queue
+            </Button>
+          }
+        />
+      ) : (
+        <PageHeader
+          title="Compliance & Audit Control"
+          description="Resolve copyright claims, process GDPR user deletion requests, and audit terms violations."
+          tag="Compliance Officer"
+          icon={Scale}
+          rightContent={
+            <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white/15 hover:bg-white/20 border-white/20 text-white shadow-sm flex items-center gap-2 font-bold">
+              <RefreshCcw size={14} className="text-emerald-450 animate-spin-slow" /> Refresh data
+            </Button>
+          }
+        />
+      )}
 
       {/* ── Compliance Metrics ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: 'Active Compliance Cases', value: pendingRequests.length, icon: Scale, color: 'text-purple-700 bg-purple-50 border-purple-250/60' },
-          { label: 'Copyright DMCA Claims', value: copyrightCount, icon: AlertOctagon, color: 'text-rose-700 bg-rose-50 border-rose-250/60' },
-          { label: 'GDPR User Requests', value: gdprCount, icon: Trash2, color: 'text-indigo-700 bg-indigo-50 border-indigo-250/60' },
-          { label: 'Terms / Safety Violations', value: termsCount, icon: AlertOctagon, color: 'text-amber-700 bg-amber-50 border-amber-250/60' },
-        ].map((stat, i) => (
-          <Card key={i} className="bg-white border-slate-200/60 p-5 rounded-2xl flex flex-col justify-between shadow-sm hover:shadow-md transition-all">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-black text-slate-450 uppercase tracking-widest">{stat.label}</span>
-              <div className={`p-2 rounded-xl border ${stat.color}`}>
-                <stat.icon size={15} />
+      {!selectedReq && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+          {[
+            { label: 'Active Compliance Cases', value: pendingRequests.length, icon: Scale, color: 'text-purple-700 bg-purple-50 border-purple-250/60' },
+            { label: 'Copyright DMCA Claims', value: copyrightCount, icon: AlertOctagon, color: 'text-rose-700 bg-rose-50 border-rose-250/60' },
+            { label: 'GDPR User Requests', value: gdprCount, icon: Trash2, color: 'text-indigo-700 bg-indigo-50 border-indigo-250/60' },
+            { label: 'Terms / Safety Violations', value: termsCount, icon: AlertOctagon, color: 'text-amber-700 bg-amber-50 border-amber-250/60' },
+          ].map((stat, i) => (
+            <Card key={i} className="bg-white border-slate-200/60 p-5 rounded-2xl flex flex-col justify-between shadow-sm hover:shadow-md transition-all">
+              <div className="flex justify-between items-start">
+                <span className="text-[10px] font-black text-slate-450 uppercase tracking-widest">{stat.label}</span>
+                <div className={`p-2 rounded-xl border ${stat.color}`}>
+                  <stat.icon size={15} />
+                </div>
               </div>
-            </div>
-            <p className="text-xl font-black text-slate-900 mt-3">{stat.value}</p>
-          </Card>
-        ))}
-      </div>
+              <p className="text-xl font-black text-slate-900 mt-3">{stat.value}</p>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* ── Grid Layout ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className={selectedReq ? "grid grid-cols-1 lg:grid-cols-3 gap-8" : "w-full"}>
         
         {/* Left Columns: Queues */}
-        <div className="lg:col-span-2 space-y-8">
+        <div className={selectedReq ? "lg:col-span-2 space-y-8" : "w-full space-y-8"}>
           
           {/* Active Queue */}
           <div className="space-y-4">
@@ -247,7 +274,8 @@ const ComplianceOfficerDashboard: React.FC = () => {
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">Compliance History ({historyRequests.length})</h3>
             
             <Card className="overflow-hidden bg-white border border-slate-200/80 rounded-2xl p-0 shadow-sm">
-              <table className="w-full text-left border-collapse">
+              <div className="overflow-x-auto w-full no-scrollbar">
+                <table className="w-full text-left border-collapse min-w-[650px]">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500 bg-slate-50/50 text-[9px] uppercase font-black tracking-widest">
                     <th className="p-4">Case info</th>
@@ -282,16 +310,17 @@ const ComplianceOfficerDashboard: React.FC = () => {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </div>
             </Card>
           </div>
 
         </div>
 
         {/* Right Column: Case action deck */}
-        <div className="space-y-6">
-          <Card className="bg-white border border-slate-200/80 p-6 rounded-3xl sticky top-8 shadow-sm flex flex-col min-h-[450px]">
-            {selectedReq ? (
+        {selectedReq && (
+          <div className="space-y-6">
+            <Card className="bg-white border border-slate-200/80 p-6 rounded-3xl sticky top-8 shadow-sm flex flex-col min-h-[450px]">
               <div className="space-y-6 flex-1 flex flex-col justify-between text-left">
                 <div className="space-y-5">
                   <div>
@@ -451,23 +480,19 @@ const ComplianceOfficerDashboard: React.FC = () => {
                   </Button>
                 </div>
               </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4">
-                <div className="w-16 h-16 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm text-xl font-bold">
-                  ⚖️
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-slate-700 text-sm">Case Audit Panel</h4>
-                  <p className="text-xs text-slate-400 mt-1.5 max-w-[200px] mx-auto leading-relaxed">
-                    Select an active copyright, GDPR, or TOS violation case from the queue to start resolution auditing.
-                  </p>
-                </div>
-              </div>
-            )}
-          </Card>
-        </div>
+            </Card>
+          </div>
+        )}
 
       </div>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
 
     </div>
   );

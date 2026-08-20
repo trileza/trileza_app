@@ -6,3 +6,4 @@ export * from './LibraryHighlights';
 export { default as PageHeader } from './PageHeader';
 export * from './CartButton';
 export * from './CartDrawer';
+export * from '../video/TrilezaVideoPlayer';

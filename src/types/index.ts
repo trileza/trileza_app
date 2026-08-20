@@ -1,10 +1,63 @@
-export type UserRole = 'student' | 'tutor' | 'staff' | 'management' | 'mentee' | 'mentor';
+export type UserRole = 'student' | 'tutor' | 'staff' | 'management' | 'mentee' | 'mentor' | 'tenant_admin' | 'super_admin' | 'support_staff';
+
+export type TenantPlan = 'starter' | 'growth' | 'enterprise';
+
+export interface TenantSettings {
+  allow_self_registration?: boolean;
+  default_user_role?: UserRole;
+  course_hierarchy?: string[]; // e.g. ['Module', 'Topic', 'Subtopic']
+  pricing_mode?: 'custom' | 'platform_default';
+  custom_categories?: string[];
+  max_users?: number;
+  max_courses?: number;
+  support_email?: string;
+}
+
+export interface Tenant {
+  id: string;
+  name: string;
+  subdomain: string;
+  custom_domain?: string;
+  email: string;
+  status: 'active' | 'suspended' | 'pending';
+  logo_url?: string;
+  primary_color?: string;
+  secondary_color?: string;
+  plan: TenantPlan;
+  settings?: TenantSettings;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface TenantAnalytics {
+  tenant_id: string;
+  total_users: number;
+  total_students: number;
+  total_tutors: number;
+  total_courses: number;
+  total_enrollments: number;
+  total_revenue: number;
+  completion_rate: number;
+  active_learners_30d: number;
+}
+
+export interface TenantBilling {
+  tenant_id: string;
+  plan: TenantPlan;
+  monthly_subscription_fee: number;
+  per_user_fee: number;
+  total_active_users: number;
+  current_billing_cycle_amount: number;
+  next_billing_date: string;
+  status: 'paid' | 'pending' | 'overdue';
+}
 
 export interface UserProfile {
   id: string;
   email: string;
   role: UserRole;
   full_name: string;
+  tenant_id?: string;
   avatar_url?: string;
   created_at: string;
   bio?: string;
@@ -22,6 +75,9 @@ export interface Course {
   thumbnail_url: string;
   trailer_url?: string; // 30-second trailer
   tutor_id: string;
+  tenant_id?: string;
+  institution_name?: string;
+  institution_logo?: string;
   price_tiers: {
     standard: number;
     elite: number; // Includes mentorship/certification
@@ -89,6 +145,7 @@ export interface Wallet {
 export interface Transaction {
   id: string;
   wallet_id: string;
+  tenant_id?: string;
   amount: number;
   type: 'sale' | 'payout' | 'commission';
   status: 'pending' | 'completed' | 'failed';
@@ -124,3 +181,4 @@ export interface QuizQuestion {
   feedback: string;
   remedial_video_url?: string;
 }
+

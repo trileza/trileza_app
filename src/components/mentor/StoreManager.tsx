@@ -6,8 +6,8 @@ import {
   TrendingUp, 
   DollarSign, 
   BookOpen, 
-  MoreVertical,
-  Edit3,
+  MoreVertical, 
+  Edit3, 
   Trash2,
   Eye,
   ExternalLink,
@@ -21,8 +21,12 @@ import {
   Hash,
   Layers,
   UserPlus,
-  Image
+  Image,
+  FileType,
+  CheckCircle,
+  AlertTriangle
 } from 'lucide-react';
+import { cn, executeWithAutoRefresh } from '../../utils';
 import { Card, Button } from '../ui';
 import { nexus } from '../../lib/nexus';
 import { useAuthStore } from '../../store/authStore';
@@ -51,6 +55,91 @@ interface StoreItem {
   co_authors?: string;
   edition?: string;
 }
+
+interface FormatSuggestion {
+  best: string;
+  alternatives: string[];
+  reason: string;
+  warning: string;
+}
+
+const formatSuggestions: Record<string, FormatSuggestion> = {
+  'journal': {
+    best: 'PDF',
+    alternatives: ['DOCX', 'TeX'],
+    reason: 'PDF preserves complex academic formatting, figures, tables, and references exactly as intended. Recommended for citation and print.',
+    warning: 'Journal Papers typically require precise formatting. PDF ensures your paper appears exactly as submitted.'
+  },
+  'conference': {
+    best: 'PDF',
+    alternatives: ['DOCX', 'TeX'],
+    reason: 'PDF ensures your conference paper appears exactly as submitted, with proper template formatting and page limits.',
+    warning: 'Conference papers often have strict formatting requirements. PDF guarantees your paper meets the template.'
+  },
+  'magazine': {
+    best: 'PDF',
+    alternatives: ['DOCX'],
+    reason: 'PDF preserves the visual design, color layout, images, and typography that define your magazine\'s brand.',
+    warning: 'Magazines rely heavily on visual design. PDF captures every detail exactly as intended.'
+  },
+  'book_text': {
+    best: 'EPUB',
+    alternatives: ['PDF', 'DOCX'],
+    reason: 'EPUB provides the best reading experience on all devices with reflowable text, adjustable fonts, and chapter navigation.',
+    warning: 'EPUB is the industry standard for text-heavy books. It ensures your readers have the best experience on any device.'
+  },
+  'book_picture': {
+    best: 'PDF',
+    alternatives: ['Fixed-EPUB'],
+    reason: 'PDF preserves images, artwork, and layouts exactly. Essential for picture books, art books, and illustrated works.',
+    warning: 'Picture books require fixed layouts. PDF ensures images appear exactly as designed, page-by-page.'
+  },
+  'thesis': {
+    best: 'PDF',
+    alternatives: ['DOCX'],
+    reason: 'PDF maintains the strict formatting requirements, complex tables, and academic structure required for thesis submission.',
+    warning: 'Theses have strict formatting guidelines. PDF preserves your formatting exactly for submission and archival.'
+  },
+  'report': {
+    best: 'PDF',
+    alternatives: ['DOCX'],
+    reason: 'PDF preserves professional formatting, charts, tables, and branding for official reports and whitepapers.',
+    warning: 'Reports require professional presentation. PDF ensures your charts and tables display correctly.'
+  },
+  'manual': {
+    best: 'PDF',
+    alternatives: ['DOCX'],
+    reason: 'PDF preserves technical diagrams, step-by-step layouts, and instructions exactly as designed.',
+    warning: 'Manuals need precise diagrams and instructions. PDF ensures technical details are preserved.'
+  },
+  'newsletter': {
+    best: 'PDF',
+    alternatives: ['DOCX'],
+    reason: 'PDF preserves the newsletter\'s visual identity, columns, images, and layout.',
+    warning: 'Newsletters are visually designed. PDF captures the design exactly as intended.'
+  },
+  'other': {
+    best: 'PDF',
+    alternatives: ['DOCX', 'EPUB', 'TXT'],
+    reason: 'PDF ensures universal compatibility and exact reproduction of your content.',
+    warning: 'For maximum compatibility and exact reproduction, PDF is recommended.'
+  }
+};
+
+const getMaterialTypeLabel = (type: string) => {
+  switch (type) {
+    case 'journal': return 'Journal Paper';
+    case 'conference': return 'Conference Paper';
+    case 'magazine': return 'Magazine';
+    case 'book_text': return 'Book (Text-heavy)';
+    case 'book_picture': return 'Book (Picture/Art)';
+    case 'thesis': return 'Thesis/Dissertation';
+    case 'report': return 'Report/Whitepaper';
+    case 'manual': return 'Manual/Guide';
+    case 'newsletter': return 'Newsletter';
+    default: return 'Other';
+  }
+};
 
 const StoreManager: React.FC = () => {
   const { user } = useAuthStore();
@@ -81,6 +170,61 @@ const StoreManager: React.FC = () => {
   const [realSampleFile, setRealSampleFile] = useState<File | null>(null);
   const [realThumbnailFile, setRealThumbnailFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fileType, setFileType] = useState('epub');
+  const [materialType, setMaterialType] = useState('book_text');
+  const [formatWarning, setFormatWarning] = useState<string | null>(null);
+  const [bypassWarning, setBypassWarning] = useState(false);
+
+
+
+  const handleFileChange = (file: File | null) => {
+    setRealBookFile(file);
+    setBypassWarning(false);
+
+    if (!file) {
+      setFormatWarning(null);
+      return;
+    }
+
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const suggestion = formatSuggestions[materialType];
+    if (suggestion) {
+      const bestFormat = suggestion.best.toLowerCase();
+      if (extension !== bestFormat) {
+        setFormatWarning(
+          `You uploaded a ${extension.toUpperCase()} file. For ${getMaterialTypeLabel(materialType)}, ${suggestion.best} is recommended. ${suggestion.warning}`
+        );
+      } else {
+        setFormatWarning(null);
+      }
+    }
+  };
+
+  const handleMaterialTypeChange = (newType: string) => {
+    setMaterialType(newType);
+    setBypassWarning(false);
+
+    const suggestion = formatSuggestions[newType];
+    if (suggestion) {
+      setFileType(suggestion.best.toLowerCase());
+    }
+
+    if (realBookFile) {
+      const extension = realBookFile.name.split('.').pop()?.toLowerCase();
+      if (suggestion) {
+        const bestFormat = suggestion.best.toLowerCase();
+        if (extension !== bestFormat) {
+          setFormatWarning(
+            `You uploaded a ${extension.toUpperCase()} file. For ${getMaterialTypeLabel(newType)}, ${suggestion.best} is recommended. ${suggestion.warning}`
+          );
+        } else {
+          setFormatWarning(null);
+        }
+      }
+    } else {
+      setFormatWarning(null);
+    }
+  };
 
   useEffect(() => {
     fetchItems();
@@ -104,6 +248,8 @@ const StoreManager: React.FC = () => {
   const showFeedback = (msg: string, type: 'success' | 'info' | 'error' = 'success') => 
     setToast({ message: msg, type });
 
+
+
   const handleCreateItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -116,67 +262,28 @@ const StoreManager: React.FC = () => {
       return;
     }
 
+    if (!realBookFile) {
+      showFeedback('Please select a book file to upload.', 'error');
+      return;
+    }
+
+    if (formatWarning && !bypassWarning) {
+      showFeedback('Please address the file format warning before uploading or click "Continue Anyway".', 'error');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      // 1. Upload and convert manuscript to standard compliant EPUB 3 format
-      let fileUrl = formData.file_url;
-      let bookFileName = '';
-      if (realBookFile) {
-        try {
-          const conversionFormData = new FormData();
-          conversionFormData.append('file', realBookFile);
-          conversionFormData.append('userId', user.id);
-          
-          const headers = nexus.getHttpClient().getHeaders();
-          const authHeader = headers['Authorization'] || headers['authorization'] || '';
-          const rawToken = authHeader.replace(/^Bearer\s+/i, '');
-          const userToken = rawToken === import.meta.env.VITE_INSFORGE_ANON_KEY ? '' : rawToken;
-          
-          const conversionRes = await fetch('https://25t8cbg8.functions.insforge.app/convert-manuscript', {
-            method: 'POST',
-            body: conversionFormData,
-            headers: {
-              'Authorization': `Bearer ${import.meta.env.VITE_INSFORGE_ANON_KEY}`,
-              'X-User-Token': userToken
-            }
-          });
-          
-          if (!conversionRes.ok) {
-            let errMsg = `Server returned status ${conversionRes.status}`;
-            try {
-              const errData = await conversionRes.json();
-              if (errData && errData.error) {
-                errMsg = errData.error;
-              } else if (errData && errData.message) {
-                errMsg = errData.message;
-              }
-            } catch (_) {}
-            throw new Error(errMsg);
-          }
-          
-          const conversionData = await conversionRes.json();
-          
-          if (conversionData.originalUrl) {
-            fileUrl = conversionData.originalUrl; // Use the uploaded original file URL to preserve high-fidelity native layouts (PDF/DOCX)
-            bookFileName = realBookFile.name;
-          } else if (conversionData.convertedUrl) {
-            fileUrl = conversionData.convertedUrl; // Fallback to converted EPUB 3 file
-            bookFileName = realBookFile.name.replace(/\.[a-zA-Z0-9]+$/, '.epub');
-          } else {
-            throw new Error('Manuscript upload returned no valid URLs');
-          }
-        } catch (convErr: any) {
-          console.error('Manuscript conversion error:', convErr);
-          // Fallback: direct upload if conversion service itself fails
-          alert(`EPUB 3 conversion service unavailable: ${convErr.message || convErr}. Uploading original file directly.`);
-          
+      await executeWithAutoRefresh(async () => {
+        // 1. Upload book file directly to storage
+        let fileUrl = '';
+        let bookFileName = '';
+        if (realBookFile) {
           const cleanBookName = realBookFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-          
-          // Try multiple storage paths in case of RLS restrictions
           const pathsToTry = [
-            `original/${user.id}_${Date.now()}_${cleanBookName}`,
-            `books/${user.id}_${Date.now()}_${cleanBookName}`
+            `books/${user.id}_${Date.now()}_${cleanBookName}`,
+            `original/${user.id}_${Date.now()}_${cleanBookName}`
           ];
           
           let uploadSuccess = false;
@@ -197,123 +304,124 @@ const StoreManager: React.FC = () => {
           }
           
           if (!uploadSuccess) {
-            alert('Failed to upload manuscript file due to storage permissions. The book will be created without the file attachment.');
+            showFeedback('Failed to upload manuscript file. Please try again later.', 'error');
+            return;
           }
           bookFileName = realBookFile.name;
         }
-      }
 
-      // 2. Upload sample file if selected
-      let sampleUrl = '';
-      let samplePagesName = '';
-      if (realSampleFile) {
-        const cleanSampleName = realSampleFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-        const samplePath = `samples/${user.id}_${Date.now()}_${cleanSampleName}`;
-        const { error: sampleErr } = await nexus.storage
-          .from('course-materials-trileza-784bc328')
-          .upload(samplePath, realSampleFile);
-        if (sampleErr) throw sampleErr;
+        // 2. Upload sample file if selected
+        let sampleUrl = '';
+        let samplePagesName = '';
+        if (realSampleFile) {
+          const cleanSampleName = realSampleFile.name.replace(/\.\./g, '_').replace(/^\//, '');
+          const samplePath = `samples/${user.id}_${Date.now()}_${cleanSampleName}`;
+          const { error: sampleErr } = await nexus.storage
+            .from('course-materials-trileza-784bc328')
+            .upload(samplePath, realSampleFile);
+          if (sampleErr) throw sampleErr;
 
-        sampleUrl = nexus.storage
-          .from('course-materials-trileza-784bc328')
-          .getPublicUrl(samplePath);
-        samplePagesName = realSampleFile.name;
-      }
+          sampleUrl = nexus.storage
+            .from('course-materials-trileza-784bc328')
+            .getPublicUrl(samplePath);
+          samplePagesName = realSampleFile.name;
+        }
 
-      let finalThumbnailUrl = formData.thumbnail_url.trim();
-      if (realThumbnailFile) {
-        const cleanThumbName = realThumbnailFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-        const thumbPath = `covers/${user.id}_${Date.now()}_${cleanThumbName}`;
-        const { error: thumbErr } = await nexus.storage
-          .from('course-materials-trileza-784bc328')
-          .upload(thumbPath, realThumbnailFile);
-        if (thumbErr) throw thumbErr;
-        finalThumbnailUrl = nexus.storage
-          .from('course-materials-trileza-784bc328')
-          .getPublicUrl(thumbPath);
-      }
+        let finalThumbnailUrl = formData.thumbnail_url.trim();
+        if (realThumbnailFile) {
+          const cleanThumbName = realThumbnailFile.name.replace(/\.\./g, '_').replace(/^\//, '');
+          const thumbPath = `covers/${user.id}_${Date.now()}_${cleanThumbName}`;
+          const { error: thumbErr } = await nexus.storage
+            .from('course-materials-trileza-784bc328')
+            .upload(thumbPath, realThumbnailFile);
+          if (thumbErr) throw thumbErr;
+          finalThumbnailUrl = nexus.storage
+            .from('course-materials-trileza-784bc328')
+            .getPublicUrl(thumbPath);
+        }
 
-      const priceNum = parseFloat(formData.retail_price) || 5000;
-      const rentPriceNum = Number((priceNum * 0.1).toFixed(2));
-      const generatedIsbn = formData.isbn.trim() || `978-${Math.floor(1000000000 + Math.random() * 9000000000)}`;
-      const parsedTags = formData.tags.trim()
-        ? formData.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
-        : [];
+        const priceNum = parseFloat(formData.retail_price) || 5000;
+        const rentPriceNum = Number((priceNum * 0.1).toFixed(2));
+        const generatedIsbn = formData.isbn.trim() || `978-${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+        const parsedTags = formData.tags.trim()
+          ? formData.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
+          : [];
 
-      const newItem = {
-        id: `b-${Date.now()}`,
-        title: formData.title.trim(),
-        description: formData.description.trim(),
-        category: formData.category,
-        retail_price: priceNum,
-        rental_price: rentPriceNum,
-        cover_url: finalThumbnailUrl || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400' viewBox='0 0 300 400'><rect width='300' height='400' fill='%23F1F5F9'/><g transform='translate(110, 140)' stroke='%2394A3B8' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'><rect x='0' y='0' width='80' height='100' rx='8'/><path d='M 20 30 L 60 30'/><path d='M 20 50 L 60 50'/><path d='M 20 70 L 40 70'/></g><text x='150' y='280' fill='%2394A3B8' font-family='system-ui, sans-serif' font-size='14' font-weight='800' text-anchor='middle' letter-spacing='1'>NO COVER</text></svg>",
-        author_id: user.id,
-        author_name: user.full_name,
+        const newItem = {
+          id: `b-${Date.now()}`,
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          category: formData.category,
+          retail_price: priceNum,
+          rental_price: rentPriceNum,
+          cover_url: finalThumbnailUrl || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400' viewBox='0 0 300 400'><rect width='300' height='400' fill='%23F1F5F9'/><g transform='translate(110, 140)' stroke='%2394A3B8' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'><rect x='0' y='0' width='80' height='100' rx='8'/><path d='M 20 30 L 60 30'/><path d='M 20 50 L 60 50'/><path d='M 20 70 L 40 70'/></g><text x='150' y='280' fill='%2394A3B8' font-family='system-ui, sans-serif' font-size='14' font-weight='800' text-anchor='middle' letter-spacing='1'>NO COVER</text></svg>",
+          author_id: user.id,
+          author_name: user.full_name,
+          
+          // New columns
+          language: formData.language.trim() || 'English',
+          publication_date: formData.publication_date.trim() || new Date().toISOString().split('T')[0],
+          pages: parseInt(formData.pages) || null,
+          age_rating: formData.age_rating,
+          isbn: generatedIsbn,
+          tags: parsedTags,
+          sample_pages: sampleUrl ? [sampleUrl] : [],
+          rating: 5.0,
+          section: formData.category,
+          file_url: fileUrl,
+          book_file_name: bookFileName || 'uploaded_material.pdf',
+          material_type: materialType,
+          suggested_format: formatSuggestions[materialType]?.best || 'PDF',
+          uploaded_format: realBookFile ? realBookFile.name.split('.').pop()?.toUpperCase() : 'PDF'
+        };
+
+        const { error } = await nexus.database.from('books').insert([newItem]);
+        if (error) throw error;
+
+        // Submit book for Content Manager review automatically to sync with database reviews
+        const { error: reviewErr } = await nexus.database.from('book_reviews').insert([{
+          book_id: newItem.id,
+          submitted_by: user.id,
+          status: 'pending',
+          checklist_cover: false,
+          checklist_description: false,
+          checklist_readable: false,
+          checklist_price: false,
+          checklist_no_copyright: false
+        }]);
+        if (reviewErr) throw reviewErr;
+
+        showFeedback('Item published and submitted for review successfully!');
+        setIsAdding(false);
+        setFormData({
+          title: '',
+          description: '',
+          category: 'E-book',
+          retail_price: '',
+          rental_price: '',
+          thumbnail_url: '',
+          file_url: '',
+          language: 'English',
+          publication_date: '',
+          pages: '',
+          age_rating: 'All Ages / G',
+          isbn: '',
+          tags: '',
+          co_authors: '',
+          edition: ''
+        });
+        setRealBookFile(null);
+        setRealSampleFile(null);
+        setFileType('epub');
         
-        // New columns
-        language: formData.language.trim() || 'English',
-        publication_date: formData.publication_date.trim() || new Date().toISOString().split('T')[0],
-        pages: parseInt(formData.pages) || null,
-        age_rating: formData.age_rating,
-        isbn: generatedIsbn,
-        tags: parsedTags,
-        sample_pages: sampleUrl ? [sampleUrl] : [],
-        rating: 5.0,
-        section: formData.category,
-        file_url: fileUrl,
-        book_file_name: bookFileName || 'uploaded_material.pdf'
-      };
-
-      const { error } = await nexus.database.from('books').insert([newItem]);
-      if (error) throw error;
-
-      // Submit book for Content Manager review automatically to sync with database reviews
-      const { error: reviewErr } = await nexus.database.from('book_reviews').insert([{
-        book_id: newItem.id,
-        submitted_by: user.id,
-        status: 'pending',
-        checklist_cover: false,
-        checklist_description: false,
-        checklist_readable: false,
-        checklist_price: false,
-        checklist_no_copyright: false
-      }]);
-      if (reviewErr) throw reviewErr;
-
-      showFeedback('Item published and submitted for review successfully!');
-      setIsAdding(false);
-      setFormData({
-        title: '',
-        description: '',
-        category: 'E-book',
-        retail_price: '',
-        rental_price: '',
-        thumbnail_url: '',
-        file_url: '',
-        language: 'English',
-        publication_date: '',
-        pages: '',
-        age_rating: 'All Ages / G',
-        isbn: '',
-        tags: '',
-        co_authors: '',
-        edition: ''
+        // Dispatch library update event
+        window.dispatchEvent(new Event('trileza-book-published'));
+        
+        fetchItems();
       });
-      setRealBookFile(null);
-      setRealSampleFile(null);
-      
-      // Dispatch library update event
-      window.dispatchEvent(new Event('trileza-book-published'));
-      
-      fetchItems();
     } catch (err: any) {
       console.error('Error creating item:', err);
-      if (err?.message?.includes('Invalid token') || err?.message?.includes('JWT expired')) {
-        showFeedback('Your session has expired or the token is invalid. Please log out and log back in to publish.', 'error');
-      } else {
-        showFeedback('Failed to publish item: ' + (err.message || err), 'error');
-      }
+      showFeedback('Failed to publish item: ' + (err.message || err), 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -488,7 +596,7 @@ const StoreManager: React.FC = () => {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl overflow-hidden"
           >
-            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <div className="p-5 sm:p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
                 <h2 className="text-2xl font-black text-slate-900">List New Material</h2>
                 <p className="text-slate-500 text-sm font-medium">Fill in the details to publish to the public library.</p>
@@ -498,7 +606,7 @@ const StoreManager: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleCreateItem} className="p-8 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar text-slate-700">
+            <form onSubmit={handleCreateItem} className="p-5 sm:p-8 space-y-6 sm:space-y-8 max-h-[80vh] sm:max-h-[70vh] overflow-y-auto custom-scrollbar text-slate-700">
               {/* SECTION 1: CORE INFO */}
               <div className="space-y-6">
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2 flex items-center gap-1.5">
@@ -568,7 +676,7 @@ const StoreManager: React.FC = () => {
                   <div className="space-y-2 md:col-span-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-550 ml-1">Cover Image (Attach or Link)</label>
                     
-                    <div className="flex gap-4 items-start pt-1">
+                    <div className="flex flex-col sm:flex-row gap-4 items-start pt-1">
                       {/* Visual Square Preview / Placeholder */}
                       <div className="w-28 h-28 shrink-0 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center overflow-hidden relative shadow-inner">
                         {realThumbnailFile || formData.thumbnail_url ? (
@@ -815,20 +923,68 @@ const StoreManager: React.FC = () => {
                   4. Secure Content Upload
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Primary PDF */}
+                <div className="grid grid-cols-1 gap-6">
+                  {/* Material Type Dropdown */}
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block font-sans">
-                      Primary Learning Material (PDF/EPUB/DOCX/TXT/MD) *
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 flex items-center gap-1.5">
+                      <FileType size={11} /> Material Type *
+                    </label>
+                    <select 
+                      value={materialType}
+                      onChange={(e) => handleMaterialTypeChange(e.target.value)}
+                      className="w-full h-[3.25rem] px-6 rounded-2xl bg-slate-50 border border-slate-200/60 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all appearance-none cursor-pointer text-sm"
+                    >
+                      <option value="journal">📄 Journal Paper</option>
+                      <option value="conference">📄 Conference Paper</option>
+                      <option value="magazine">📰 Magazine</option>
+                      <option value="book_text">📖 Book (Text-heavy)</option>
+                      <option value="book_picture">🖼️ Book (Picture/Art)</option>
+                      <option value="thesis">📑 Thesis/Dissertation</option>
+                      <option value="report">📊 Report/Whitepaper</option>
+                      <option value="manual">📋 Manual/Guide</option>
+                      <option value="newsletter">📬 Newsletter</option>
+                      <option value="other">📎 Other</option>
+                    </select>
+                  </div>
+
+                  {/* Smart Suggestion UI */}
+                  {materialType && formatSuggestions[materialType] && (
+                    <div className="border-l-4 border-indigo-500 bg-indigo-50/20 p-5 rounded-2xl space-y-3 border border-indigo-100/50 shadow-xs text-left animate-in fade-in slide-in-from-top duration-300">
+                      <div className="flex items-start gap-2.5">
+                        <span className="text-base text-indigo-500">💡</span>
+                        <div className="space-y-1">
+                          <h4 className="font-black text-xs text-indigo-900 uppercase tracking-wider">Format Recommendation</h4>
+                          <p className="text-[11px] text-slate-650 font-bold leading-relaxed">
+                            {formatSuggestions[materialType].reason}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1.5">
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-xl font-extrabold text-[9px] uppercase tracking-wider shadow-xs">
+                          ⭐ Best: {formatSuggestions[materialType].best}
+                        </span>
+                        {formatSuggestions[materialType].alternatives.length > 0 && (
+                          <span className="inline-flex items-center bg-slate-50 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-xl font-extrabold text-[9px] uppercase tracking-wider">
+                            ✓ Acceptable: {formatSuggestions[materialType].alternatives.join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Book File Upload */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block">
+                      Upload Book File *
                     </label>
                     <input 
                       type="file" 
                       id="store-book-file-input" 
-                      accept=".pdf,.epub,.docx,.txt,.md"
+                      accept=".pdf,.docx,.epub,.tex,.txt,.md"
                       className="hidden" 
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) setRealBookFile(file);
+                        handleFileChange(file || null);
                       }}
                     />
                     <div 
@@ -843,62 +999,72 @@ const StoreManager: React.FC = () => {
                         <UploadCloud size={24} />
                       </div>
                       <h4 className="font-black text-xs text-slate-800 truncate max-w-xs">
-                        {realBookFile ? realBookFile.name : 'Select Primary Book File'}
+                        {realBookFile ? realBookFile.name : `Click to select file`}
                       </h4>
-                      <p className="text-[10px] text-slate-400 mt-1">PDF, EPUB, DOCX, TXT, or MD. Max 50MB. DRM Protected.</p>
+                      <p className="text-[10px] text-slate-450 mt-1">Max 50MB • Accepted: PDF, DOCX, EPUB, TeX, TXT, MD • DRM Protected</p>
                     </div>
                   </div>
 
-                  {/* Sample PDF */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block font-sans">
-                      Free Preview / Sample Pages (Optional PDF)
-                    </label>
-                    <input 
-                      type="file" 
-                      id="store-sample-file-input" 
-                      accept=".pdf"
-                      className="hidden" 
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) setRealSampleFile(file);
-                      }}
-                    />
-                    <div 
-                      onClick={() => document.getElementById('store-sample-file-input')?.click()}
-                      className={`border-2 border-dashed rounded-[1.5rem] p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
-                        realSampleFile 
-                          ? 'border-emerald-400 bg-emerald-50/10' 
-                          : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100/50'
-                      }`}
-                    >
-                      <div className={`p-3 rounded-xl bg-white shadow-sm mb-3 ${realSampleFile ? 'text-emerald-500' : 'text-slate-400'}`}>
-                        <UploadCloud size={24} />
+                  {/* Format Warning Box */}
+                  {formatWarning && (
+                    <div className={cn(
+                      "border-l-4 p-4 rounded-2xl flex items-start gap-3 border transition-all text-left",
+                      bypassWarning 
+                        ? "border-emerald-500 bg-emerald-50/10 border-l-emerald-500" 
+                        : "border-amber-500 bg-amber-50/15 border-l-amber-500 shadow-sm"
+                    )}>
+                      <span className="text-base mt-0.5">{bypassWarning ? "✅" : "⚠️"}</span>
+                      <div className="space-y-2 flex-1">
+                        <h4 className={cn("font-black text-xs uppercase tracking-wider", bypassWarning ? "text-emerald-700" : "text-amber-850")}>
+                          {bypassWarning ? "Warning Bypassed" : "Format Discrepancy"}
+                        </h4>
+                        <p className="text-[11px] text-slate-650 font-bold leading-relaxed">
+                          {formatWarning}
+                        </p>
+                        {!bypassWarning && (
+                          <div className="flex gap-3 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setBypassWarning(true)}
+                              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-extrabold text-[9px] uppercase tracking-wider transition-colors shadow-xs"
+                            >
+                              Continue Anyway
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRealBookFile(null);
+                                setFormatWarning(null);
+                                const fileInput = document.getElementById('store-book-file-input') as HTMLInputElement;
+                                if (fileInput) fileInput.value = '';
+                              }}
+                              className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-250 rounded-xl font-extrabold text-[9px] uppercase tracking-wider transition-all"
+                            >
+                              Go Back
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <h4 className="font-black text-xs text-slate-800 truncate max-w-xs">
-                        {realSampleFile ? realSampleFile.name : 'Select Sample Preview File'}
-                      </h4>
-                      <p className="text-[10px] text-slate-400 mt-1">PDF file. Allow mentees to read first few pages.</p>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
               {/* SUBMIT BUTTONS */}
-              <div className="flex gap-4 pt-4 border-t border-slate-100">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4 border-t border-slate-100">
                 <Button 
                   type="button"
                   variant="outline" 
                   onClick={() => setIsAdding(false)}
                   disabled={isSubmitting}
-                  className="flex-1 rounded-2xl py-4 font-bold border-slate-200 text-slate-500 hover:text-slate-700 text-xs tracking-wider"
+                  className="w-full sm:flex-1 rounded-2xl py-4 font-bold border-slate-200 text-slate-500 hover:text-slate-700 text-xs tracking-wider"
                 >
                   Cancel
                 </Button>
                 <Button 
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 rounded-2xl py-4 font-bold bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 text-xs tracking-wider flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full sm:flex-1 rounded-2xl py-4 font-bold bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 text-xs tracking-wider flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
                     <>
@@ -916,6 +1082,8 @@ const StoreManager: React.FC = () => {
       )}
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+
     </div>
   );
 };

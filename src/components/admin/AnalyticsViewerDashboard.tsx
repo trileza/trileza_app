@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { adminService } from '../../lib/services/admin';
-import { Card, Button } from '../ui';
+import { Card, Button, Toast } from '../ui';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { formatCurrency } from '../../utils';
+import PageHeader from '../shared/PageHeader';
 
 const AnalyticsViewerDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -28,6 +29,11 @@ const AnalyticsViewerDashboard: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedDateRange, setSelectedDateRange] = useState('6months');
   const [exporting, setExporting] = useState(false);
+
+  const [toast, setToast] = useState<{ message: string; type?: 'success' | 'error' | 'info' } | null>(null);
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -63,7 +69,7 @@ const AnalyticsViewerDashboard: React.FC = () => {
     setExporting(true);
     setTimeout(() => {
       setExporting(false);
-      alert(`Platform Analytics Executive PDF Report successfully generated and downloaded for Category: ${selectedCategory}, Date Range: ${selectedDateRange}!`);
+      showToast(`Platform Analytics Executive PDF Report successfully generated and downloaded for Category: ${selectedCategory}, Date Range: ${selectedDateRange}!`, 'success');
     }, 1500);
   };
 
@@ -109,16 +115,17 @@ const AnalyticsViewerDashboard: React.FC = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 text-left">
       
-      {/* ── Header ── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Executive Analytics Deck</h2>
-          <p className="text-slate-550 font-bold text-xs mt-1">Read-only platform metrics, user demographics, and financial trends reports.</p>
-        </div>
-        <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm flex items-center gap-2">
-          <RefreshCcw size={14} className="text-green-600" /> Sync Metrics
-        </Button>
-      </div>
+      <PageHeader
+        title="Executive Analytics Deck"
+        description="Read-only platform metrics, user demographics, and financial trends reports."
+        tag="Analytics Viewer"
+        icon={BarChart3}
+        rightContent={
+          <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white/15 hover:bg-white/20 border-white/20 text-white shadow-sm flex items-center gap-2 font-bold">
+            <RefreshCcw size={14} className="text-emerald-450 animate-spin-slow" /> Sync Metrics
+          </Button>
+        }
+      />
 
       {/* ── Filters Toolbar ── */}
       <div className="p-4 bg-white border border-slate-200/80 rounded-2xl flex flex-wrap gap-4 items-center justify-between shadow-sm">
@@ -268,6 +275,14 @@ const AnalyticsViewerDashboard: React.FC = () => {
           ))}
         </div>
       </Card>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
 
     </div>
   );

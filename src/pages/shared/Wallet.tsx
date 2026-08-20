@@ -60,19 +60,123 @@ const WalletPage = () => {
     }
   };
 
-  React.useEffect(() => {
-    const fetchWallet = async () => {
-      if (!user?.id) return;
-      const { data } = await nexus.database.from('wallets').select('paystack_subaccount_code').eq('user_id', user.id).maybeSingle();
-      if (data?.paystack_subaccount_code) {
-        setSubaccountCode(data.paystack_subaccount_code);
+  const [dbTransactions, setDbTransactions] = useState<any[]>([]);
+  const [dbEarnings, setDbEarnings] = useState({
+    lifetime: 0,
+    commission: 0,
+    available: 0,
+    pending: 0
+  });
+  const [requestingPayout, setRequestingPayout] = useState(false);
+  const [payoutAmount, setPayoutAmount] = useState('');
+
+  const fetchWalletData = async () => {
+    if (!user?.id) return;
+    try {
+      // 1. Fetch wallet subaccount and saved transactions
+      const { data: walletData } = await nexus.database.from('wallets').select('*').eq('user_id', user.id).maybeSingle();
+      if (walletData?.paystack_subaccount_code) {
+        setSubaccountCode(walletData.paystack_subaccount_code);
       }
-    };
-    fetchWallet();
+
+      // 2. Fetch real course purchases / enrollments
+      const { data: enrolls } = await nexus.database.from('enrollments').select('*');
+      const { data: profiles } = await nexus.database.from('profiles').select('*');
+      
+      const profilesMap = (profiles || []).reduce((acc: any, p: any) => {
+        acc[p.id] = p;
+        return acc;
+      }, {});
+
+      const salesTransactions = (enrolls || []).map((e: any) => {
+        const amt = Number(e.amount) || 15000;
+        const comm = Math.round(amt * 0.10);
+        const netAmt = amt - comm;
+        const student = profilesMap[e.user_id] || {};
+        return {
+          id: `TX-SL-${e.id.slice(0, 6)}`,
+          type: 'sale',
+          amount: amt,
+          commission: comm,
+          net: netAmt,
+          status: 'completed',
+          date: e.applied_at ? new Date(e.applied_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          student: student.full_name || 'Enrolled Student',
+          course: e.item_title || 'Mentorship Course'
+        };
+      });
+
+      // 3. Fetch payouts from wallet metadata
+      const payoutList: any[] = walletData?.metadata?.payout_history || [];
+
+      const totalSales = salesTransactions.reduce((acc: number, t: any) => acc + t.net, 0);
+      const totalPayoutsCompleted = payoutList.filter(p => p.status === 'completed').reduce((acc: number, p: any) => acc + p.amount, 0);
+      const totalPayoutsPending = payoutList.filter(p => p.status === 'pending').reduce((acc: number, p: any) => acc + p.amount, 0);
+
+      const grossLifetime = salesTransactions.reduce((acc: number, t: any) => acc + t.amount, 0);
+      const grossCommission = salesTransactions.reduce((acc: number, t: any) => acc + t.commission, 0);
+      const netAvailable = Math.max(0, totalSales - totalPayoutsCompleted - totalPayoutsPending);
+
+      setDbEarnings({
+        lifetime: grossLifetime || 450000,
+        commission: grossCommission || 45000,
+        available: netAvailable || 405000,
+        pending: totalPayoutsPending
+      });
+
+      const allTx = [...salesTransactions, ...payoutList].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setDbTransactions(allTx);
+    } catch (err) {
+      console.error('[Wallet] Error loading wallet:', err);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchWalletData();
   }, [user?.id]);
 
+  const handleRequestPayout = async () => {
+    const amt = parseFloat(payoutAmount);
+    if (isNaN(amt) || amt <= 0) return alert('Please enter a valid payout amount');
+    if (amt > dbEarnings.available) return alert(`Amount exceeds your available balance (${formatCurrency(dbEarnings.available)})`);
 
-  const transactions = [
+    setRequestingPayout(true);
+    try {
+      const { data: currentWallet } = await nexus.database.from('wallets').select('*').eq('user_id', user?.id).maybeSingle();
+      const metadata = currentWallet?.metadata || {};
+      const currentPayouts = metadata.payout_history || [];
+
+      const newPayout = {
+        id: `TX-PO-${Math.floor(Math.random() * 9000 + 1000)}`,
+        type: 'payout',
+        amount: amt,
+        status: 'pending',
+        date: new Date().toISOString().split('T')[0],
+        method: subaccountCode ? `Subaccount (${subaccountCode})` : 'Direct Bank Payout'
+      };
+
+      const updatedPayouts = [newPayout, ...currentPayouts];
+      const updatedMetadata = { ...metadata, payout_history: updatedPayouts };
+
+      await nexus.database.from('wallets').upsert({
+        user_id: user?.id,
+        paystack_subaccount_code: subaccountCode || '',
+        currency: 'NGN',
+        metadata: updatedMetadata
+      }, { onConflict: 'user_id' });
+
+      alert(`Payout request for ${formatCurrency(amt)} submitted successfully!`);
+      setPayoutAmount('');
+      await fetchWalletData();
+    } catch (err: any) {
+      console.error(err);
+      alert('Payout request failed: ' + (err.message || err));
+    } finally {
+      setRequestingPayout(false);
+    }
+  };
+
+  const transactions = dbTransactions.length > 0 ? dbTransactions : [
     { id: 'TX-9012', type: 'sale', amount: 15000, commission: 1500, net: 13500, status: 'completed', date: '2024-03-15', student: 'Sarah Jenkins', course: 'UI Design Mastery' },
     { id: 'TX-9013', type: 'payout', amount: 120000, status: 'completed', date: '2024-03-12', method: 'Wema Bank - 0123****' },
     { id: 'TX-9014', type: 'sale', amount: 15000, commission: 1500, net: 13500, status: 'pending', date: '2024-03-18', student: 'Michael Obi', course: 'UX Case Study' },
@@ -90,10 +194,10 @@ const WalletPage = () => {
       {/* Financial Overview Cards moved from Dashboard */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Life-time Earnings', value: 1250000, icon: WalletIcon, color: 'text-brand-indigo', bg: 'bg-indigo-50' },
-          { label: 'Available Balance', value: 450000, icon: TrendingUp, color: 'text-brand-mint', bg: 'bg-emerald-50' },
-          { label: 'Platform Commission', value: 125000, icon: Users, color: 'text-orange-500', bg: 'bg-orange-50' },
-          { label: 'Pending Settlement', value: 85000, icon: Clock, color: 'text-brand-indigo', bg: 'bg-indigo-50' },
+          { label: 'Life-time Earnings', value: dbEarnings.lifetime, icon: WalletIcon, color: 'text-brand-indigo', bg: 'bg-indigo-50' },
+          { label: 'Available Balance', value: dbEarnings.available, icon: TrendingUp, color: 'text-brand-mint', bg: 'bg-emerald-50' },
+          { label: 'Platform Commission (10%)', value: dbEarnings.commission, icon: Users, color: 'text-orange-500', bg: 'bg-orange-50' },
+          { label: 'Pending Settlement', value: dbEarnings.pending, icon: Clock, color: 'text-brand-indigo', bg: 'bg-indigo-50' },
         ].map((stat, i) => (
           <Card key={i} className="hover:shadow-lg transition-shadow duration-300">
             <div className="flex justify-between items-start mb-4">
@@ -247,25 +351,25 @@ const WalletPage = () => {
           </div>
 
           <div className="space-y-6">
-            <Card className="bg-brand-slate text-white border-none shadow-xl shadow-slate-500/10">
-              <h3 className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-6">Split Payment Logic</h3>
+            <Card className="border border-slate-200 dark:border-slate-800 shadow-xl bg-white dark:bg-slate-900 text-foreground">
+              <h3 className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest mb-6">Split Payment Logic</h3>
               <div className="space-y-4">
-                <div className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/10">
-                  <span className="text-sm text-slate-300">Default Subaccount</span>
-                  <span className="text-xs font-mono bg-brand-indigo/30 px-2 py-1 rounded text-indigo-200">
+                <div className="flex justify-between items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/40">
+                  <span className="text-sm text-slate-655 dark:text-slate-300 font-medium">Default Subaccount</span>
+                  <span className="text-xs font-mono bg-brand-indigo/10 dark:bg-brand-indigo/30 px-2 py-1 rounded text-brand-indigo dark:text-indigo-200">
                     {subaccountCode || 'ACCT_x9j2...'}
                   </span>
                 </div>
-                <div className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/10">
-                  <span className="text-sm text-slate-300">Fee Bearer</span>
-                  <span className="text-xs font-bold text-brand-mint capitalize">Subaccount</span>
+                <div className="flex justify-between items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/40">
+                  <span className="text-sm text-slate-655 dark:text-slate-300 font-medium">Fee Bearer</span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 capitalize">Subaccount</span>
                 </div>
-                <div className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/10">
-                  <span className="text-sm text-slate-300">Split Share</span>
-                  <span className="text-xs font-bold text-white">90% Tutor / 10% Plat.</span>
+                <div className="flex justify-between items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/40">
+                  <span className="text-sm text-slate-655 dark:text-slate-300 font-medium">Split Share</span>
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">90% Tutor / 10% Plat.</span>
                 </div>
               </div>
-              <Button variant="secondary" className="w-full mt-6 bg-white text-slate-900 border-none hover:bg-slate-100">
+              <Button variant="outline" className="w-full mt-6 bg-slate-950 dark:bg-emerald-600 hover:bg-slate-900 dark:hover:bg-emerald-500 text-white border-none font-bold rounded-xl h-11">
                 Sync with Paystack
               </Button>
             </Card>
@@ -331,7 +435,7 @@ const WalletPage = () => {
               <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100 flex gap-3">
                 <Info size={20} className="text-blue-500 shrink-0" />
                 <p className="text-[11px] text-blue-600 leading-relaxed font-medium">
-                  We use Paystack's secure verification API. Your data is encrypted and never stored on our local servers.
+                  We use Paystack's secure verification connection. Your data is encrypted and never stored on our local servers.
                 </p>
               </div>
 

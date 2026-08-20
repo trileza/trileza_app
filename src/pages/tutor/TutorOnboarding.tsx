@@ -32,6 +32,7 @@ import {
   Link2
 } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
+import { PageHeader } from '../../components/shared';
 import { cn } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -398,13 +399,13 @@ const TutorOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={1} total={9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 1</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Account Creation</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Verify your active instructor identity and link optional social credentials.</p>
-              </div>
+              <PageHeader 
+                title="Account Creation"
+                description="Verify your active instructor identity and link optional social credentials."
+                tag="SECTION 1"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
                 {/* Social Login Options */}
@@ -437,7 +438,7 @@ const TutorOnboarding = () => {
                     </div>
                     <div className="space-y-1">
                       <h4 className="font-bold text-slate-800 dark:text-white">Active Session Verification</h4>
-                      <p className="text-xs text-slate-400">Perform an OTP security clearance to verify this active email node.</p>
+                      <p className="text-xs text-slate-400">Perform an OTP security clearance to verify this active email connection.</p>
                       <span className="text-[10px] bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500 font-mono inline-block mt-1">Active: {user?.email}</span>
                     </div>
                   </div>
@@ -491,7 +492,7 @@ const TutorOnboarding = () => {
                       <CheckCircle2 size={20} className="flex-shrink-0" />
                       <div className="text-xs">
                         <p className="font-bold">Active Instructor Verified!</p>
-                        <p className="opacity-80">Security synchronization established successfully with InsForge key node.</p>
+                        <p className="opacity-80">Security synchronization established successfully with InsForge key server.</p>
                       </div>
                     </div>
                   )}
@@ -503,7 +504,7 @@ const TutorOnboarding = () => {
                     <Info size={14} className="text-emerald-500" /> Unified Profile Structure
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-                    At Trileza, **separate student and instructor accounts are the same.** You use one unified profile; your role credentials determine whether you have access to the Mentor command center or the Mentee dashboard. Progress variables remain seamlessly mapped.
+                    At Trileza, **separate student and instructor accounts are the same.** You use one unified profile; your role credentials determine whether you have access to the Mentor Profile or the Mentee Profile. Progress variables remain seamlessly mapped.
                   </p>
                 </div>
 
@@ -529,13 +530,13 @@ const TutorOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={2} total={9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 2</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Profile & Identity (KYC)</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Declare payout-eligible legal names, tax IDs, addresses, and ID cards.</p>
-              </div>
+              <PageHeader 
+                title="Profile & Identity (KYC)"
+                description="Declare payout-eligible legal names, tax IDs, addresses, and ID cards."
+                tag="SECTION 2"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -805,13 +806,13 @@ const TutorOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={3} total={9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 3</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Expertise & Qualifications</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Verify your background, education, and specific subject specialties.</p>
-              </div>
+              <PageHeader 
+                title="Expertise & Qualifications"
+                description="Verify your background, education, and specific subject specialties."
+                tag="SECTION 3"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -868,7 +869,7 @@ const TutorOnboarding = () => {
                   <textarea 
                     value={form.teachingMotivation}
                     onChange={e => setForm({...form, teachingMotivation: e.target.value})}
-                    placeholder="Describe your passion for mentorship, your course architecture objectives, and what sets your curriculum apart..."
+                    placeholder="Describe your passion for mentorship, your Course Builder objectives, and what sets your curriculum apart..."
                     className="w-full h-24 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-[1.5rem] px-6 py-4 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all resize-none"
                   />
                 </div>
@@ -920,13 +921,13 @@ const TutorOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={4} total={9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 4</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Platform Onboarding & Training</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Complete orientation tutorials and review copyright and commission structures.</p>
-              </div>
+              <PageHeader 
+                title="Platform Onboarding & Training"
+                description="Complete orientation tutorials and review copyright and commission structures."
+                tag="SECTION 4"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
                 
@@ -1057,13 +1058,13 @@ const TutorOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={5} total={9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 5</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Initial Course Setup</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Initialize the core configuration and descriptive index tags for your initial course.</p>
-              </div>
+              <PageHeader 
+                title="Initial Course Setup"
+                description="Initialize the core configuration and descriptive index tags for your initial course."
+                tag="SECTION 5"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1293,13 +1294,13 @@ const TutorOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={6} total={9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 6</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Curriculum & Video Upload</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Construct syllabus chapters and commit original authorship guarantees.</p>
-              </div>
+              <PageHeader 
+                title="Curriculum & Video Upload"
+                description="Construct syllabus chapters and commit original authorship guarantees."
+                tag="SECTION 6"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
                 
@@ -1311,7 +1312,7 @@ const TutorOnboarding = () => {
                     {/* Section 1 */}
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase tracking-wider bg-slate-900 dark:bg-slate-800 text-white px-3 py-1 rounded-lg">Section 1: Initial Architecture</span>
+                        <span className="text-[10px] font-black uppercase tracking-wider bg-slate-900 dark:bg-slate-800 text-white px-3 py-1 rounded-lg">Section 1: Course Builder</span>
                         <span className="text-[10px] text-slate-400 font-semibold">1 Lecture</span>
                       </div>
                       
@@ -1386,13 +1387,13 @@ const TutorOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={7} total={9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 7</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Pricing & Marketplace</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Declare your price margins, generate coupons, and choose distribution networks.</p>
-              </div>
+              <PageHeader 
+                title="Pricing & Marketplace"
+                description="Declare your price margins, generate coupons, and choose distribution networks."
+                tag="SECTION 7"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
                 
@@ -1520,13 +1521,13 @@ const TutorOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={8} total={9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 8</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Communication Preferences</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Control what reports and platform analytics digests are delivered to your email.</p>
-              </div>
+              <PageHeader 
+                title="Communication Preferences"
+                description="Control what reports and platform analytics digests are delivered to your email."
+                tag="SECTION 8"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
                 
@@ -1593,13 +1594,13 @@ const TutorOnboarding = () => {
               className="space-y-6"
             >
               <StepIndicator current={9} total={9} />
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider">Section 9</span>
-                  <h2 className="text-3xl font-black text-slate-800 dark:text-white">Submission & Audit Review</h2>
-                </div>
-                <p className="text-slate-400 font-medium">Perform a quality check assurance scan and launch your instructor request.</p>
-              </div>
+              <PageHeader 
+                title="Submission & Audit Review"
+                description="Perform a quality check assurance scan and launch your instructor request."
+                tag="SECTION 9"
+                icon={Shield}
+                className="!mb-6"
+              />
 
               <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
                 
@@ -1678,8 +1679,8 @@ const TutorOnboarding = () => {
               <div className="relative w-40 h-40">
                 <div className="absolute inset-0 rounded-full border-4 border-emerald-500/10 animate-spin" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-20 h-20 bg-slate-900 dark:bg-emerald-600 rounded-full flex items-center justify-center shadow-2xl">
-                    <Award className="text-white animate-pulse" size={36} />
+                  <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                    <img src="/logo.png" alt="Trileza Logo" className="w-16 h-16 object-contain animate-pulse" />
                   </div>
                 </div>
               </div>

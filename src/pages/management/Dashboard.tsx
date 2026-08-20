@@ -11,7 +11,8 @@ import {
   Check,
   X,
   UserCheck,
-  Sparkles
+  Sparkles,
+  CheckCircle2
 } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
 import { cn } from '../../utils';
@@ -45,7 +46,11 @@ const ManagementDashboard = () => {
         .eq('status', 'pending');
 
       if (apps && !appErr) {
-        const { data: profiles } = await nexus.database.from('profiles').select('*');
+        const userIds = apps.map((app: any) => app.user_id).filter(Boolean);
+        const { data: profiles } = userIds.length > 0
+          ? await nexus.database.from('profiles').select('id, email, full_name, metadata').in('id', userIds)
+          : { data: [] };
+
         setMentorApplications(apps.map((app: any) => {
           const profile = profiles?.find(p => p.id === app.user_id);
           return {
@@ -107,10 +112,46 @@ const ManagementDashboard = () => {
         .select('*')
         .eq('status', 'pending');
 
-      // Fetch supplementary info to resolve names/titles
-      const { data: courses } = await nexus.database.from('courses').select('id, title');
-      const { data: books } = await nexus.database.from('books').select('id, title');
-      const { data: profiles } = await nexus.database.from('profiles').select('id, full_name');
+      // Gather specific IDs to fetch supplementary info selectively and avoid N+1
+      const courseIds = new Set<string>();
+      const bookIds = new Set<string>();
+      const profileIds = new Set<string>();
+
+      if (crData) {
+        crData.forEach((r: any) => {
+          if (r.course_id) courseIds.add(r.course_id);
+          if (r.submitted_by) profileIds.add(r.submitted_by);
+        });
+      }
+      if (brData) {
+        brData.forEach((r: any) => {
+          if (r.book_id) bookIds.add(r.book_id);
+          if (r.submitted_by) profileIds.add(r.submitted_by);
+        });
+      }
+      if (fcData) {
+        fcData.forEach((f: any) => {
+          if (f.target_type === 'course' && f.target_id) courseIds.add(f.target_id);
+          else if (f.target_type === 'book' && f.target_id) bookIds.add(f.target_id);
+          if (f.reporter_id) profileIds.add(f.reporter_id);
+        });
+      }
+
+      const courseIdList = Array.from(courseIds);
+      const bookIdList = Array.from(bookIds);
+      const profileIdList = Array.from(profileIds);
+
+      const { data: courses } = courseIdList.length > 0
+        ? await nexus.database.from('courses').select('id, title').in('id', courseIdList)
+        : { data: [] };
+
+      const { data: books } = bookIdList.length > 0
+        ? await nexus.database.from('books').select('id, title').in('id', bookIdList)
+        : { data: [] };
+
+      const { data: profiles } = profileIdList.length > 0
+        ? await nexus.database.from('profiles').select('id, full_name').in('id', profileIdList)
+        : { data: [] };
 
       const items: any[] = [];
 
@@ -275,18 +316,19 @@ const ManagementDashboard = () => {
 
   const handleDecideMentorApplication = async (appId: string, status: 'approved' | 'denied') => {
     try {
-      const { data: app } = await nexus.database
+      const { data: app, error: fetchAppErr } = await nexus.database
         .from('mentor_applications')
         .select('*')
         .eq('id', appId)
         .single();
 
+      if (fetchAppErr) throw fetchAppErr;
       if (!app) return;
       const userId = app.user_id;
 
       // Update mentor_applications table
       const dbStatus = status === 'approved' ? 'approved' : 'rejected';
-      await nexus.database
+      const { error: updateAppErr } = await nexus.database
         .from('mentor_applications')
         .update({
           status: dbStatus,
@@ -294,11 +336,15 @@ const ManagementDashboard = () => {
         })
         .eq('id', appId);
 
-      const { data: userProfile } = await nexus.database
+      if (updateAppErr) throw updateAppErr;
+
+      const { data: userProfile, error: fetchProfileErr } = await nexus.database
         .from('profiles')
         .select('metadata')
         .eq('id', userId)
         .single();
+
+      if (fetchProfileErr) throw fetchProfileErr;
 
       if (userProfile) {
         const currentMetadata = userProfile.metadata || {};
@@ -310,16 +356,21 @@ const ManagementDashboard = () => {
             mentor_onboarded: true,
             active_role: 'mentor',
             mentor_onboarded_at: new Date().toISOString(),
-            mentor_data: pending_mentor_data
+            mentor_data: pending_mentor_data || {
+              identity: { verified: true },
+              onboardedAt: new Date().toISOString()
+            }
           };
 
-          await nexus.database
+          const { error: profileUpdateErr } = await nexus.database
             .from('profiles')
             .update({
               role: 'mentor',
               metadata: updatedMetadata
             })
             .eq('id', userId);
+
+          if (profileUpdateErr) throw profileUpdateErr;
 
           // If current logged-in user, sync store state
           if (userId === user?.id) {
@@ -331,12 +382,14 @@ const ManagementDashboard = () => {
 
         } else {
           const { mentor_application_status, pending_mentor_data, ...cleanedMetadata } = currentMetadata;
-          await nexus.database
+          const { error: profileUpdateErr } = await nexus.database
             .from('profiles')
             .update({
               metadata: cleanedMetadata
             })
             .eq('id', userId);
+
+          if (profileUpdateErr) throw profileUpdateErr;
 
           if (userId === user?.id) {
             await updateProfile({
