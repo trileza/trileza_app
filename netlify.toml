@@ -2,6 +2,9 @@
   command = "npm run build && npm run build:admin"
   publish = "dist"
 
+[build.environment]
+  NODE_VERSION = "22"
+
 [[edge-functions]]
   path = "/share/*"
   function = "share"
