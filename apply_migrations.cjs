@@ -38,6 +38,7 @@ const ONLY = args.find(a => a.endsWith('.sql'));
  * date in the filename would sort as older and be rejected.
  */
 const ORDER = [
+  ['20260811000000', 'baseline-core-tables',       '20260811_baseline_core_tables.sql'],
   ['20260812000000', 'multi-tenant-lms',           '20260812_multi_tenant_lms.sql'],
   ['20260828000000', 'monetization-subscriptions', '20260828_monetization_subscriptions.sql'],
   ['20260829000000', 'pricing-tiers-catalog',      '20260829_pricing_tiers_catalog.sql'],
@@ -92,6 +93,14 @@ if (!BASE || !KEY) {
       let n = '?';
       try { n = (JSON.parse(body).statements || []).length; } catch { /* keep '?' */ }
       console.log(`OK (${n} statements)`);
+      continue;
+    }
+
+    // Already recorded. The API rejects any version at or below the newest
+    // applied one, so on a resumed run every earlier file lands here. That is
+    // success, not failure — skip it and carry on to the ones that are pending.
+    if (res.status === 409) {
+      console.log('SKIPPED (already applied)');
       continue;
     }
 

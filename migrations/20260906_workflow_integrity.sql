@@ -115,12 +115,20 @@ CREATE UNIQUE INDEX uniq_tenant_subdomain_ci
 
 -- Reject the addresses the platform routes on. A tenant on 'admin' or 'gate'
 -- would shadow the admin console.
+-- The platform's own default tenant legitimately occupies 'app' — that is the
+-- marketplace address every non-institutional user is served from. The rule is
+-- about what a CUSTOMER may register, so the default tenant is exempt.
+-- Without the exemption this constraint cannot be applied to any database that
+-- contains the seed row, which is every correctly built one.
 ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_subdomain_not_reserved;
 ALTER TABLE tenants ADD CONSTRAINT tenants_subdomain_not_reserved
-  CHECK (LOWER(subdomain) NOT IN (
-    'admin', 'www', 'api', 'app', 'system', 'root',
-    'gate', 'signin', 'signup', 'support', 'help', 'status'
-  ));
+  CHECK (
+    id = 'default-tenant'
+    OR LOWER(subdomain) NOT IN (
+      'admin', 'www', 'api', 'app', 'system', 'root',
+      'gate', 'signin', 'signup', 'support', 'help', 'status'
+    )
+  );
 
 -- Format rule, mirroring isValidSubdomain() in src/utils/tenant.ts.
 ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_subdomain_format;
