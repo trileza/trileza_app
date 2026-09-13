@@ -42,7 +42,7 @@ Alternatively, apply them one at a time through the migration API:
 
 ```bash
 export INSFORGE_URL="https://<project>.<region>.insforge.app"
-export INSFORGE_KEY="<insforge api key>"
+export INSFORGE_KEY="<insforge api key>"   # the ik_... key, not the anon key
 
 node apply_migrations.cjs --dry-run   # prints what would be sent
 node apply_migrations.cjs             # applies pending migrations in order
@@ -50,7 +50,14 @@ node apply_migrations.cjs             # applies pending migrations in order
 
 Each file runs in its own transaction and stops at the first failure, because
 later migrations build on earlier ones and a half-built schema is worse than
-none.
+none. Versions already recorded are skipped, so after fixing a failure you
+re-run the same command and it resumes where it stopped.
+
+Two things to know about the migration API: it records each version and
+**refuses any version at or below the newest applied one**, so a correction
+cannot be made by editing an applied file — it needs a new file with a later
+version. And migrations apply in the order listed in `apply_migrations.cjs`,
+not by filename, so a new migration must be added to that list.
 
 ### Verifying
 
@@ -78,16 +85,40 @@ ALTER TABLE <table> VALIDATE CONSTRAINT <constraint>;
 
 ## 3. Storage buckets
 
-Create these in the InsForge console:
-
 | Bucket | Visibility | Holds |
 |---|---|---|
 | `uploads` | public | avatars, thumbnails, course material |
 | `institution-kyc` | **private** | incorporation certificates, tax documents, passports, government IDs |
 
-`institution-kyc` must be private, and readable only by `compliance_officer` and
-`super_admin`. If any signed-in user can read it, every mentor on the platform
-can read every institution's identity documents.
+Create them in the console, or over the API:
+
+```bash
+curl -X POST "$INSFORGE_URL/api/storage/buckets" \
+  -H "x-api-key: $INSFORGE_KEY" -H "Content-Type: application/json" \
+  -d '{"bucketName":"uploads","isPublic":true}'
+
+curl -X POST "$INSFORGE_URL/api/storage/buckets" \
+  -H "x-api-key: $INSFORGE_KEY" -H "Content-Type: application/json" \
+  -d '{"bucketName":"institution-kyc","isPublic":false}'
+```
+
+The flag is `isPublic`, not `public`. A body sending `public` is accepted, the
+unrecognised field is ignored, and the bucket is created **public** — so always
+confirm afterwards:
+
+```bash
+curl -s -H "x-api-key: $INSFORGE_KEY" "$INSFORGE_URL/api/storage/buckets"
+```
+
+`institution-kyc` must read `"public": false`. It holds passports and tax
+documents; if any signed-in user can read it, every mentor on the platform can
+read every institution's identity papers. To correct one:
+
+```bash
+curl -X PATCH "$INSFORGE_URL/api/storage/buckets/institution-kyc" \
+  -H "x-api-key: $INSFORGE_KEY" -H "Content-Type: application/json" \
+  -d '{"isPublic":false}'
+```
 
 ## 4. Server-side secrets
 
