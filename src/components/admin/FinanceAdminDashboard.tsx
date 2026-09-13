@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { adminService } from '../../lib/services/admin';
 import type { PayoutRequest } from '../../types/admin';
 import { Card, Button, Toast } from '../ui';
@@ -6,28 +6,21 @@ import { useAuthStore } from '../../store/authStore';
 import { nexus } from '../../lib/nexus';
 import { 
   DollarSign, 
-  TrendingUp, 
   ArrowUpRight, 
-  ArrowDownLeft, 
   Clock, 
-  CheckCircle2, 
-  XCircle,
   RefreshCcw,
   Percent,
   Search,
   Undo,
-  FileText,
   Download,
-  Calendar,
-  Layers,
   Scale,
-  CreditCard,
   Printer
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { formatCurrency, formatDate } from '../../utils';
 import PageHeader from '../shared/PageHeader';
 import { format } from 'date-fns';
+import { useMultiTableSync } from './hooks/useAdminData';
 
 const FinanceAdminDashboard: React.FC = () => {
   const { user } = useAuthStore();
@@ -66,7 +59,7 @@ const FinanceAdminDashboard: React.FC = () => {
     setToast({ message, type });
   };
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [payoutData, txData] = await Promise.all([
@@ -80,11 +73,17 @@ const FinanceAdminDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Realtime sync for finance-related tables
+  useMultiTableSync(
+    ['payout_requests', 'transactions', 'wallets'],
+    fetchData
+  );
 
   const handleReviewPayout = async (status: 'approved' | 'rejected') => {
     if (!selectedPayout || !user?.id) return;
@@ -310,15 +309,15 @@ const FinanceAdminDashboard: React.FC = () => {
                   <AreaChart data={chartData}>
                     <defs>
                       <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="#43A047" stopOpacity={0.15}/>
+                        <stop offset="95%" stopColor="#43A047" stopOpacity={0}/>
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} />
                     <YAxis hide />
                     <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: 11, color: '#0f172a' }} />
-                    <Area type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
+                    <Area type="monotone" dataKey="revenue" stroke="#43A047" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>

@@ -27,6 +27,7 @@ export const BulkUserImportModal: React.FC<BulkUserImportModalProps> = ({
   const [fileName, setFileName] = useState<string>('');
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [importErrors, setImportErrors] = useState<Array<{ email: string; reason: string }>>([]);
 
   if (!isOpen) return null;
 
@@ -109,18 +110,32 @@ export const BulkUserImportModal: React.FC<BulkUserImportModalProps> = ({
 
     try {
       const res = await tenantService.bulkImportTenantUsers(tenantId, validUsers);
-      setImportStatus(`Successfully imported ${res.imported} users into institution.`);
+      setImportErrors(res.errors);
+
+      if (res.failed > 0) {
+        // Leave the modal open so the person who uploaded can read which rows
+        // were rejected and why, then re-upload just those.
+        setImportStatus(
+          `Imported ${res.imported} of ${validUsers.length}. ${res.failed} row${res.failed === 1 ? '' : 's'} could not be imported.`
+        );
+        setIsUploading(false);
+        if (res.imported > 0) onImportComplete();
+        return;
+      }
+
+      setImportStatus(`Imported ${res.imported} user${res.imported === 1 ? '' : 's'} into the institution.`);
       setTimeout(() => {
         onImportComplete();
         onClose();
         setParsedRows([]);
         setFileName('');
         setImportStatus(null);
+        setImportErrors([]);
         setIsUploading(false);
       }, 1200);
     } catch (e: any) {
       console.error(e);
-      setImportStatus('Failed to import users. Please check file format.');
+      setImportStatus(e?.message || 'Could not reach the server. Nothing was imported.');
       setIsUploading(false);
     }
   };
@@ -152,6 +167,26 @@ export const BulkUserImportModal: React.FC<BulkUserImportModalProps> = ({
 
         {/* Content Body */}
         <div className="py-6 flex-1 overflow-y-auto space-y-4">
+          {/* Rows the server rejected, with the reason for each */}
+          {importErrors.length > 0 && (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
+              <p className="text-sm font-semibold text-rose-300">
+                {importErrors.length} row{importErrors.length === 1 ? '' : 's'} not imported
+              </p>
+              <ul className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                {importErrors.map((err, i) => (
+                  <li key={`${err.email}-${i}`} className="text-xs text-rose-200/90 flex flex-wrap gap-x-2">
+                    <span className="font-mono">{err.email}</span>
+                    <span className="text-rose-300/70">— {err.reason}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-rose-300/70 mt-2">
+                Correct these rows and upload again. Successfully imported users were kept.
+              </p>
+            </div>
+          )}
+
           {/* Action Row */}
           <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
             <div>

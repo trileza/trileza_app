@@ -4,6 +4,7 @@ import { useAuthStore, resolveActiveRole } from './store/authStore';
 import { nexus } from './lib/nexus';
 import { useMeetingStore } from './store/meetingStore';
 import { liveService } from './lib/services/live';
+import { ensureRealtimeConnection } from './lib/services/realtimeEvents';
 import { useSettingsStore } from './store/settingsStore';
 import { initCapacitorNative, setNativeStatusBar, registerAndroidBackButton } from './lib/native/capacitor';
 
@@ -15,22 +16,21 @@ import { LoadingOverlay } from './components/shared';
 // Meeting Overlay (persists across sidebar navigation)
 import MeetingOverlay from './components/live/MeetingOverlay';
 
-// Primary Navigation Pages (Eagerly loaded for instant sub-50ms tab switching)
-import StudentDashboard from './pages/student/Dashboard';
-import TutorDashboard from './pages/tutor/Dashboard';
-import PublicLibrary from './pages/shared/PublicLibrary';
-import Courses from './pages/shared/Courses';
-import Community from './pages/shared/Community';
-import Messages from './pages/shared/Messages';
-import Settings from './pages/shared/Settings';
-import Wallet from './pages/shared/Wallet';
-import Assignments from './pages/shared/Assignments';
-
-// Core Auth & Onboarding Pages (Eagerly loaded for instant post-login transitions)
+// Core Auth Page (Eagerly loaded for instant post-login transition)
 import LoginPage from './pages/auth/LoginPage';
-import MenteeOnboarding from './pages/student/MenteeOnboarding';
-import Onboarding from './pages/mentor/Onboarding';
 
+// All other pages lazy-loaded for optimal code splitting and faster deploys
+const StudentDashboard = React.lazy(() => import('./pages/student/Dashboard'));
+const TutorDashboard = React.lazy(() => import('./pages/tutor/Dashboard'));
+const PublicLibrary = React.lazy(() => import('./pages/shared/PublicLibrary'));
+const Courses = React.lazy(() => import('./pages/shared/Courses'));
+const Community = React.lazy(() => import('./pages/shared/Community'));
+const Messages = React.lazy(() => import('./pages/shared/Messages'));
+const Settings = React.lazy(() => import('./pages/shared/Settings'));
+const Wallet = React.lazy(() => import('./pages/shared/Wallet'));
+const Assignments = React.lazy(() => import('./pages/shared/Assignments'));
+const MenteeOnboarding = React.lazy(() => import('./pages/student/MenteeOnboarding'));
+const Onboarding = React.lazy(() => import('./pages/mentor/Onboarding'));
 const ManagementDashboard = React.lazy(() => import('./pages/management/Dashboard'));
 const ManagementAnalytics = React.lazy(() => import('./pages/management/Analytics'));
 const AuditDetail = React.lazy(() => import('./pages/management/AuditDetail'));
@@ -50,21 +50,49 @@ const EditProfile = React.lazy(() => import('./pages/shared/EditProfile'));
 const AuthorApplication = React.lazy(() => import('./pages/shared/AuthorApplication'));
 const AuthorDashboard = React.lazy(() => import('./pages/shared/AuthorDashboard'));
 const Feeds = React.lazy(() => import('./pages/shared/Feeds'));
+const PricingPage = React.lazy(() => import('./pages/shared/PricingPage'));
+const PaymentCheckoutPage = React.lazy(() => import('./pages/shared/PaymentCheckoutPage'));
 const InstitutionalRegister = React.lazy(() => import('./pages/auth/InstitutionalRegister'));
+const InstitutionKycForm = React.lazy(() => import('./pages/auth/InstitutionKycForm'));
 const TenantAdminDashboard = React.lazy(() => import('./pages/admin/TenantAdminDashboard'));
+const InstitutionalDashboard = React.lazy(() => import('./pages/admin/InstitutionalDashboard'));
 const InstitutionDirectory = React.lazy(() => import('./pages/shared/InstitutionDirectory'));
 const InstitutionDetail = React.lazy(() => import('./pages/shared/InstitutionDetail'));
+const Gradebook = React.lazy(() => import('./pages/tutor/Gradebook'));
+const AttendanceRegister = React.lazy(() => import('./pages/tutor/AttendanceRegister'));
+const Classes = React.lazy(() => import('./pages/tutor/Classes'));
+const ParentPortal = React.lazy(() => import('./pages/guardian/ParentPortal'));
+const SchoolOps = React.lazy(() => import('./pages/admin/SchoolOps'));
+const StudentInsights = React.lazy(() => import('./pages/tutor/StudentInsights'));
+const LessonPlanner = React.lazy(() => import('./pages/tutor/LessonPlanner'));
+const ResourceBooking = React.lazy(() => import('./pages/shared/ResourceBooking'));
+const Rubrics = React.lazy(() => import('./pages/tutor/Rubrics'));
+const GuardianLinks = React.lazy(() => import('./pages/admin/GuardianLinks'));
+const Support = React.lazy(() => import('./pages/shared/Support'));
 const AdminApp = React.lazy(() => import('./AdminApp'));
 
 const App: React.FC = () => {
 
   const { user, activeRole, loading, initialized, initialize } = useAuthStore();
   const navigate = useNavigate();
+  // Must be called unconditionally, above every early return below.
+  const location = useLocation();
+
+  // Resolved here, above the early returns, because the loading gate below
+  // depends on it. No 'mentee' fallback: guessing a role and correcting it a
+  // frame later is exactly what made the dashboard flash.
+  const resolvedRole = activeRole || resolveActiveRole(user);
+  const derivedRole = (resolvedRole || '').toLowerCase();
+  const resolvedRoleReady = Boolean(resolvedRole);
 
   // Initialize Nexus auth session and Capacitor native listeners on app mount
   useEffect(() => {
     initialize();
     initCapacitorNative();
+    // Open the realtime socket up front. Publishes are dropped when no
+    // connection exists, so without this the first events of a session — the
+    // ones raised during sign-in, enrollment and checkout — never arrived.
+    ensureRealtimeConnection();
   }, [initialize]);
 
   // Register Android hardware back button handler
@@ -90,24 +118,25 @@ const App: React.FC = () => {
         const addToast = useMeetingStore.getState().addToast;
 
         for (const session of sessions) {
-          if (session.status === 'scheduled') {
-            const scheduledTime = new Date(session.scheduled_at).getTime();
-            const elapsedMs = now - scheduledTime;
+          // Only the host's own client may act on a session. This loop runs in
+          // every signed-in browser, and previously any of them would delete
+          // anyone's late session.
+          if (session.status !== 'scheduled' || session.tutor_id !== user.id) continue;
 
-            // 1. If 1 hour passed and not started, delete the session
-            if (elapsedMs >= 60 * 60 * 1000) {
-              console.log(`[Auto-Remove] Session ${session.id} ("${session.title}") auto-removed due to no-show.`);
-              await liveService.deleteSession(session.id);
-            }
-            // 2. If 30 minutes passed and user is the host, show a reminder
-            else if (elapsedMs >= 30 * 60 * 1000) {
-              if (session.tutor_id === user.id) {
-                const reminderKey = `trileza_no_show_reminder_${session.id}`;
-                if (!localStorage.getItem(reminderKey)) {
-                  localStorage.setItem(reminderKey, 'true');
-                  addToast(`Your scheduled meeting "${session.title}" will be removed in 30 minutes if not started.`, 'warning');
-                }
-              }
+          const scheduledTime = new Date(session.scheduled_at).getTime();
+          const elapsedMs = now - scheduledTime;
+
+          // 1. If 1 hour passed and not started, delete the session
+          if (elapsedMs >= 60 * 60 * 1000) {
+            console.log(`[Auto-Remove] Session ${session.id} ("${session.title}") auto-removed due to no-show.`);
+            await liveService.deleteSession(session.id);
+          }
+          // 2. If 30 minutes passed, remind the host
+          else if (elapsedMs >= 30 * 60 * 1000) {
+            const reminderKey = `trileza_no_show_reminder_${session.id}`;
+            if (!localStorage.getItem(reminderKey)) {
+              localStorage.setItem(reminderKey, 'true');
+              addToast(`Your scheduled meeting "${session.title}" will be removed in 30 minutes if not started.`, 'warning');
             }
           }
         }
@@ -178,9 +207,14 @@ const App: React.FC = () => {
         let currentActiveRole = isSwitching ? state.activeRole : (state.activeRole || resolveActiveRole(state.user));
         
         // Validate if mentor status is still active
-        const hasMentorStatus = metadata.mentor_onboarded === true || state.user?.metadata?.mentor_onboarded === true || payload.role === 'mentor' || payload.role === 'tutor';
+        const hasMentorStatus = metadata.mentor_onboarded === true || state.user?.metadata?.mentor_onboarded === true || payload.role === 'mentor' || payload.role === 'tutor' || metadata.mentor_application_status === 'approved';
         if (currentActiveRole === 'mentor' && !hasMentorStatus) {
           currentActiveRole = 'mentee';
+        }
+
+        // If newly approved by admin or metadata specifies active_role, switch activeRole
+        if (hasMentorStatus && (metadata.active_role === 'mentor' || metadata.mentor_application_status === 'approved')) {
+          currentActiveRole = 'mentor';
         }
 
         const mergedMetadata = {
@@ -251,6 +285,12 @@ const App: React.FC = () => {
     return <LoadingOverlay />;
   }
 
+  // Signed in but the role has not resolved yet. Rendering anything role-shaped
+  // here would show the wrong dashboard and then swap it.
+  if (user && !resolvedRoleReady) {
+    return <LoadingOverlay message="Loading your workspace…" />;
+  }
+
   // Subdomain / query parameter detection for Admin Portal
   // Subdomain / query parameter / path detection for Admin Portal
   const isAdminSubdomain = 
@@ -270,19 +310,41 @@ const App: React.FC = () => {
     return <AdminApp />;
   }
 
-  const location = useLocation();
-  const derivedRole = (activeRole || resolveActiveRole(user) || 'mentee').toLowerCase();
-  const isMentee = derivedRole === 'mentee';
+  const isGuardian = derivedRole === 'guardian';
+  const isMentee = derivedRole === 'mentee' && !isGuardian;
   const isMenteeOnboarded = user?.metadata?.mentee_onboarded === true;
   const isMentor = derivedRole === 'mentor' || derivedRole === 'tutor';
-  const isMentorOnboarded = user?.metadata?.mentor_onboarded === true;
+  const isMentorOnboarded = user?.metadata?.mentor_onboarded === true || 
+    user?.mentor_tier === 'free' || 
+    user?.mentor_tier === 'pro' || 
+    user?.mentor_tier === 'institutional' || 
+    user?.metadata?.mentor_application_status === 'approved' ||
+    Boolean(user?.metadata?.mentor_tier);
 
   // Onboarding Gates
   if (user) {
     if (isMentee && !isMenteeOnboarded && location.pathname !== '/mentee/onboarding') {
       return <Navigate to="/mentee/onboarding" replace />;
     }
-    if (isMentor && !isMentorOnboarded && location.pathname !== '/mentor/onboarding') {
+    // Mentor onboarding is an application, not a mandatory setup step, so this
+    // gate must never trap. It previously did: a user whose role resolved to
+    // mentor without being onboarded was redirected here, and "Cancel & Return"
+    // navigated to "/" only to be bounced straight back — which read as a dead
+    // button.
+    //
+    // Two escapes: an application already in flight (or declined), and an
+    // explicit dismissal held for the session.
+    const applicationState = user?.metadata?.mentor_application_status;
+    const hasApplied = applicationState === 'pending' || applicationState === 'rejected';
+    const dismissed = sessionStorage.getItem('trileza_mentor_onboarding_dismissed') === '1';
+
+    if (
+      isMentor &&
+      !isMentorOnboarded &&
+      !hasApplied &&
+      !dismissed &&
+      location.pathname !== '/mentor/onboarding'
+    ) {
       return <Navigate to="/mentor/onboarding" replace />;
     }
   }
@@ -294,12 +356,25 @@ const App: React.FC = () => {
           <Route path="/" element={<LoginPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signin" element={<LoginPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
           <Route path="/institution-signup" element={<InstitutionalRegister />} />
           <Route path="/institution/signup" element={<InstitutionalRegister />} />
+          {/* Registered signed-out as well, even though it needs an account.
+              Without it the catch-all silently redirects to "/", so the link
+              from registration looks broken rather than asking for a sign-in. */}
+          <Route path="/institution/verification" element={<InstitutionKycForm />} />
           <Route path="/institutions" element={<InstitutionDirectory />} />
           <Route path="/institutions/:institutionId" element={<InstitutionDetail />} />
           <Route path="/courses" element={<Courses />} />
           <Route path="/tenant-admin/:subdomain?" element={<TenantAdminDashboard />} />
+          <Route path="/superadmin/*" element={<AdminApp />} />
+          <Route path="/gate/*" element={<AdminApp />} />
+          <Route path="/content-manager/*" element={<AdminApp />} />
+          <Route path="/user-manager/*" element={<AdminApp />} />
+          <Route path="/finance-admin/*" element={<AdminApp />} />
+          <Route path="/support-agent/*" element={<AdminApp />} />
+          <Route path="/compliance-officer/*" element={<AdminApp />} />
+          <Route path="/analytics-viewer/*" element={<AdminApp />} />
           <Route path="/admin/*" element={<AdminApp />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -309,14 +384,37 @@ const App: React.FC = () => {
           <MeetingOverlay />
 
           <Routes>
+            {/* Onboarding — standalone full-screen flows, deliberately outside
+                DashboardLayout so no app chrome sits above their own header. */}
+            <Route path="/mentor/onboarding" element={<Onboarding />} />
+            <Route path="/mentee/onboarding" element={<MenteeOnboarding />} />
+
+            {/* Payment & Checkout Routes */}
+            <Route path="/checkout" element={<PaymentCheckoutPage />} />
+            <Route path="/payment" element={<PaymentCheckoutPage />} />
+            <Route path="/payment-confirmation" element={<PaymentCheckoutPage />} />
+
             {/* Multi-Tenant Institutional Routes */}
+            <Route path="/pricing" element={<PricingPage />} />
             <Route path="/institution-signup" element={<InstitutionalRegister />} />
             <Route path="/institution/signup" element={<InstitutionalRegister />} />
+            {/* Verification is signed-in only: the record is keyed to the
+                submitter, and it holds documents nobody should upload
+                anonymously. */}
+            <Route path="/institution/verification" element={<InstitutionKycForm />} />
             <Route path="/institutions" element={<InstitutionDirectory />} />
             <Route path="/institutions/:institutionId" element={<InstitutionDetail />} />
             <Route path="/tenant-admin/:subdomain?" element={<TenantAdminDashboard />} />
 
-            {/* Admin Portal Route */}
+            {/* Admin Portal Routes */}
+            <Route path="/superadmin/*" element={<AdminApp />} />
+            <Route path="/gate/*" element={<AdminApp />} />
+            <Route path="/content-manager/*" element={<AdminApp />} />
+            <Route path="/user-manager/*" element={<AdminApp />} />
+            <Route path="/finance-admin/*" element={<AdminApp />} />
+            <Route path="/support-agent/*" element={<AdminApp />} />
+            <Route path="/compliance-officer/*" element={<AdminApp />} />
+            <Route path="/analytics-viewer/*" element={<AdminApp />} />
             <Route path="/admin/*" element={<AdminApp />} />
 
             {/* Standard Portal Route */}
@@ -325,13 +423,17 @@ const App: React.FC = () => {
               element={
                 <DashboardLayout>
                   <Routes>
+                    <Route path="/pricing" element={<PricingPage />} />
+                    <Route path="/checkout" element={<PaymentCheckoutPage />} />
+                    <Route path="/payment" element={<PaymentCheckoutPage />} />
                     <Route 
                       path="/" 
                       element={
                         <React.Fragment key={derivedRole}>
-                          {derivedRole === 'mentee' ? <StudentDashboard /> : 
+                          {derivedRole === 'guardian' ? <ParentPortal /> :
+                           derivedRole === 'mentee' ? <StudentDashboard /> : 
                            (derivedRole === 'mentor' || derivedRole === 'tutor') ? <TutorDashboard /> : 
-                           (derivedRole === 'management' || derivedRole === 'staff') ? <ManagementDashboard /> :
+                           (derivedRole === 'management' || derivedRole === 'staff') ? <InstitutionalDashboard initialTab="dashboard" /> :
                            <div className="p-12 text-center">
                              <h2 className="text-2xl font-black text-slate-900 mb-2">Welcome, {user.full_name || 'Expert'}!</h2>
                              <p className="text-slate-500 font-medium mb-6">Your account (Role: {user.role || 'Unassigned'}) is being initialized.</p>
@@ -351,9 +453,10 @@ const App: React.FC = () => {
                       path="/profile" 
                       element={
                         <React.Fragment key={derivedRole}>
-                          {derivedRole === 'mentee' ? <StudentDashboard /> : 
+                          {derivedRole === 'guardian' ? <ParentPortal /> :
+                           derivedRole === 'mentee' ? <StudentDashboard /> : 
                            (derivedRole === 'mentor' || derivedRole === 'tutor') ? <TutorDashboard /> : 
-                           (derivedRole === 'management' || derivedRole === 'staff') ? <ManagementDashboard /> :
+                           (derivedRole === 'management' || derivedRole === 'staff') ? <InstitutionalDashboard initialTab="branding" /> :
                            <Navigate to="/" replace />}
                         </React.Fragment>
                       } 
@@ -380,13 +483,32 @@ const App: React.FC = () => {
                     <Route path="/assignments" element={<Assignments />} />
                     <Route path="/mentorship-assessment" element={<MentorshipAssessment />} />
                     <Route path="/mentor/profile" element={<TutorDashboard />} />
-                    <Route path="/mentor/onboarding" element={<Onboarding />} />
-                    <Route path="/mentee/onboarding" element={<MenteeOnboarding />} />
                     <Route path="/author/apply" element={<AuthorApplication />} />
                     <Route path="/author/dashboard" element={<AuthorDashboard />} />
                     <Route path="/vault" element={<Vault />} />
                     <Route path="/diagnostics" element={<Diagnostics />} />
+                    <Route path="/gradebook" element={<Gradebook />} />
+                    <Route path="/attendance" element={<AttendanceRegister />} />
+                    <Route path="/classes" element={<Classes />} />
+                    <Route path="/family" element={<ParentPortal />} />
+                    <Route path="/school" element={<SchoolOps />} />
+                    <Route path="/insights" element={<StudentInsights />} />
+                    <Route path="/lesson-plans" element={<LessonPlanner />} />
+                    <Route path="/resources" element={<ResourceBooking />} />
+                    <Route path="/rubrics" element={<Rubrics />} />
+                    <Route path="/guardians" element={<GuardianLinks />} />
+                    <Route path="/support" element={<Support />} />
+                    <Route path="/help" element={<Support />} />
                     <Route path="/settings" element={<Settings />} />
+                    <Route path="/institution/users" element={<InstitutionalDashboard initialTab="users" />} />
+                    <Route path="/institution/instructors" element={<InstitutionalDashboard initialTab="instructors" />} />
+                    <Route path="/institution/students" element={<InstitutionalDashboard initialTab="students" />} />
+                    <Route path="/institution/enrollments" element={<InstitutionalDashboard initialTab="enrollments" />} />
+                    <Route path="/institution/reports" element={<InstitutionalDashboard initialTab="reports" />} />
+                    <Route path="/institution/branding" element={<InstitutionalDashboard initialTab="branding" />} />
+                    <Route path="/institution/payouts" element={<InstitutionalDashboard initialTab="payouts" />} />
+                    <Route path="/institution/settings" element={<InstitutionalDashboard initialTab="settings" />} />
+                    <Route path="/institution/:tab" element={<InstitutionalDashboard />} />
                     <Route path="/profile/edit" element={<EditProfile />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>

@@ -66,6 +66,27 @@ export function useDebouncedValue<T>(value: T, delay = 300): T {
 }
 
 /**
+ * Admin Realtime Channel — the single broadcast channel all admin
+ * consoles and user-facing actions publish/subscribe to.
+ */
+export const ADMIN_REALTIME_CHANNEL = 'admin:all';
+
+/**
+ * All known admin realtime event names.
+ */
+const ALL_ADMIN_EVENTS: string[] = [
+  'data_changed', 'course_reviewed', 'course_submitted', 'book_reviewed',
+  'mentor_reviewed', 'mentor_application_submitted', 'author_reviewed',
+  'author_application_submitted', 'payout_reviewed', 'payout_requested', 'ticket_updated',
+  'ticket_reply', 'ticket_submitted', 'compliance_resolved', 'compliance_submitted',
+  'flag_resolved', 'content_flagged',
+  'user_suspension_changed', 'admin_role_changed', 'admin_invited',
+  'registration_reviewed', 'transaction_refunded', 'audit_logged',
+  'user_plan_upgraded', 'payment_completed', 'profile_updated',
+  'enrollment_created', 'institution_registered', 'database_update'
+];
+
+/**
  * Realtime subscription hook — subscribes to InsForge table changes.
  * Auto-cleans up on unmount. Calls `onUpdate` when data changes.
  */
@@ -148,8 +169,11 @@ export function useOptimisticAction() {
 }
 
 /**
- * Multi-table realtime subscription — subscribes to multiple InsForge tables
- * and debounces the refresh callback to avoid rapid-fire re-fetches.
+ * Multi-table realtime subscription — subscribes to the admin broadcast channel
+ * and listens for all known event types. Debounces the refresh callback at 300ms
+ * to avoid rapid-fire re-fetches when multiple events arrive in quick succession.
+ * 
+ * Also subscribes to legacy per-table channels for backward compatibility.
  */
 export function useMultiTableSync(
   tables: string[],
@@ -175,15 +199,36 @@ export function useMultiTableSync(
     const subscribe = async () => {
       try {
         await nexus.realtime.connect();
+        
+        // Subscribe to the main admin broadcast channel
+        try {
+          const mainRes = await nexus.realtime.subscribe(ADMIN_REALTIME_CHANNEL);
+          if (mainRes.ok) {
+            subscribed.add(ADMIN_REALTIME_CHANNEL);
+          }
+        } catch (_) {
+          // Main channel subscription is best-effort
+        }
+        
+        // Also subscribe to legacy per-table channels for backward compat
         for (const table of tables) {
           const channel = `admin:${table}`;
-          const res = await nexus.realtime.subscribe(channel);
-          if (res.ok) {
-            subscribed.add(channel);
+          if (channel === ADMIN_REALTIME_CHANNEL) continue;
+          try {
+            const res = await nexus.realtime.subscribe(channel);
+            if (res.ok) {
+              subscribed.add(channel);
+            }
+          } catch (_) {
+            // Non-critical
           }
         }
+        
         if (subscribed.size > 0) {
-          nexus.realtime.on('database_update', debouncedUpdate);
+          // Listen for all known admin event types
+          ALL_ADMIN_EVENTS.forEach(evt => {
+            nexus.realtime.on(evt, debouncedUpdate);
+          });
         }
       } catch (err) {
         console.warn('[MultiTableSync] Subscription error:', err);
@@ -194,10 +239,137 @@ export function useMultiTableSync(
 
     return () => {
       clearTimeout(debounceTimer);
-      nexus.realtime.off('database_update', debouncedUpdate);
+      ALL_ADMIN_EVENTS.forEach(evt => {
+        nexus.realtime.off(evt, debouncedUpdate);
+      });
       subscribed.forEach(channel => {
         try { nexus.realtime.unsubscribe(channel); } catch (_) {}
       });
     };
   }, [tables.join(','), enabled]);
 }
+
+/**
+ * Admin Realtime Hub — centralized connection hook that provides:
+ * - Single WebSocket connection shared across all admin consoles
+ * - Live event stream with last event metadata
+ * - Event counter for activity indicators
+ * - Last synced timestamp
+ * 
+ * Mount this in AdminLayout to share across all admin dashboards.
+ */
+export function useAdminRealtimeHub(enabled = true) {
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastEvent, setLastEvent] = useState<{ type: string; timestamp: Date; payload?: any } | null>(null);
+  const [eventCount, setEventCount] = useState(0);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date>(new Date());
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    let subscribed = false;
+
+    const handleEvent = (payload: any) => {
+      const eventType = payload?.meta?.event || payload?.type || 'unknown';
+      setLastEvent({ type: eventType, timestamp: new Date(), payload });
+      setEventCount(prev => prev + 1);
+      setLastSyncedAt(new Date());
+    };
+
+    const handleConnect = () => setIsConnected(true);
+    const handleDisconnect = () => setIsConnected(false);
+
+    const connect = async () => {
+      try {
+        await nexus.realtime.connect();
+        setIsConnected(true);
+
+        const res = await nexus.realtime.subscribe(ADMIN_REALTIME_CHANNEL);
+        if (res.ok) {
+          subscribed = true;
+          ALL_ADMIN_EVENTS.forEach(evt => {
+            nexus.realtime.on(evt, handleEvent);
+          });
+        }
+
+        nexus.realtime.on('connect', handleConnect);
+        nexus.realtime.on('disconnect', handleDisconnect);
+      } catch (err) {
+        console.warn('[AdminRealtimeHub] Connection error:', err);
+      }
+    };
+
+    connect();
+
+    return () => {
+      nexus.realtime.off('connect', handleConnect);
+      nexus.realtime.off('disconnect', handleDisconnect);
+      
+      if (subscribed) {
+        ALL_ADMIN_EVENTS.forEach(evt => {
+          nexus.realtime.off(evt, handleEvent);
+        });
+        try {
+          nexus.realtime.unsubscribe(ADMIN_REALTIME_CHANNEL);
+        } catch (_) {}
+      }
+    };
+  }, [enabled]);
+
+  const resetEventCount = useCallback(() => setEventCount(0), []);
+
+  return {
+    isConnected,
+    lastEvent,
+    eventCount,
+    lastSyncedAt,
+    resetEventCount,
+  };
+}
+
+/**
+ * Auto-refresh hook — combines multi-table realtime sync with
+ * a visible "last synced" timestamp and live pulse indicator.
+ * Provides manual refresh capability and connection status.
+ */
+export function useAutoRefresh(
+  fetchData: () => Promise<void> | void,
+  tables: string[] = [],
+  enabled = true
+) {
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date>(new Date());
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [liveEventCount, setLiveEventCount] = useState(0);
+  const fetchRef = useRef(fetchData);
+  fetchRef.current = fetchData;
+
+  const wrappedFetch = useCallback(async () => {
+    setIsSyncing(true);
+    try {
+      await fetchRef.current();
+      setLastSyncedAt(new Date());
+      setLiveEventCount(prev => prev + 1);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  // Wire up multi-table sync to trigger wrapped fetch
+  useMultiTableSync(
+    tables.length > 0 ? tables : ['_broadcast'],
+    wrappedFetch,
+    enabled
+  );
+
+  const manualRefresh = useCallback(async () => {
+    await wrappedFetch();
+  }, [wrappedFetch]);
+
+  return {
+    lastSyncedAt,
+    isSyncing,
+    liveEventCount,
+    manualRefresh,
+  };
+}
+

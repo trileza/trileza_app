@@ -8,9 +8,6 @@ import { nexus } from '../../lib/nexus';
 import { 
   BookOpen, 
   CheckSquare, 
-  AlertCircle, 
-  Award, 
-  HelpCircle, 
   MessageSquare,
   ThumbsUp,
   ThumbsDown,
@@ -32,7 +29,7 @@ import {
   Paperclip,
   ExternalLink
 } from 'lucide-react';
-import { formatDistanceToNow, format } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { formatCurrency, formatDate } from '../../utils';
 import PageHeader from '../shared/PageHeader';
 import Pagination from './shared/Pagination';

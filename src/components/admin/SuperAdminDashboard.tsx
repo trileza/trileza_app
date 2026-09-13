@@ -17,20 +17,14 @@ import {
   LifeBuoy, 
   Scale,
   RefreshCcw,
-  CheckCircle2,
   Wrench,
-  ShieldCheck,
-  AlertCircle,
-  Lock,
-  Slash,
-  ExternalLink,
-  FileText,
-  X,
   Trash2
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { formatDate } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
+import { isAdminRecordActive } from '../../utils/adminAuth';
+import { fetchBounded, fetchCount, ADMIN_MAX_ROWS } from './hooks/adminQuery';
 import PageHeader from '../shared/PageHeader';
 import Pagination from './shared/Pagination';
 import ExportToolbar from './shared/ExportToolbar';
@@ -73,7 +67,10 @@ const SuperAdminDashboard: React.FC = () => {
   // Stats/history for selected user
   const [courses, setCourses] = useState<any[]>([]);
   const [books, setBooks] = useState<any[]>([]);
-  const [enrollments, setEnrollments] = useState<any[]>([]);
+  // Totals only — the rows themselves were never rendered.
+  const [enrollmentCount, setEnrollmentCount] = useState<number>(0);
+  const [totalUsers, setTotalUsers] = useState<number>(0);
+  const [enrolledCounts, setEnrolledCounts] = useState<Record<string, number>>({});
   const [submitting, setSubmitting] = useState(false);
   const [suspensionReason, setSuspensionReason] = useState('');
   
@@ -114,7 +111,22 @@ const SuperAdminDashboard: React.FC = () => {
     compliancePending: 0,
   });
 
-  const getEnrolledCount = (pId: string) => enrollments.filter(e => e.student_id === pId).length;
+  /**
+   * Counted in the database, cached per user. The previous version filtered an
+   * in-memory copy of every enrollment on `student_id`, a column the table does
+   * not have — so it always reported 0.
+   */
+  const getEnrolledCount = (pId: string) => enrolledCounts[pId] ?? 0;
+
+  const loadEnrolledCount = useCallback(async (pId: string) => {
+    if (!pId || enrolledCounts[pId] !== undefined) return;
+    try {
+      const count = await fetchCount('enrollments', q => q.eq('user_id', pId));
+      setEnrolledCounts(prev => ({ ...prev, [pId]: count }));
+    } catch (err) {
+      console.error('[SuperAdmin] Could not count enrollments:', err);
+    }
+  }, [enrolledCounts]);
   const getTaughtCount = (pId: string) => courses.filter(c => c.tutor_id === pId).length;
   const getPublishedBooksCount = (pId: string) => books.filter(b => b.author_id === pId).length;
   const getProfileCompletion = (p: any) => {
@@ -234,7 +246,9 @@ const SuperAdminDashboard: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [allLogs, courseReviews, bookReviews, mentors, flags, payouts, tickets, compliance, profs, admins, coursesRes, booksRes, enrollRes, pendingRegs] = await Promise.all([
+      // Queue metrics are counted in the database; only the lists the console
+      // actually renders are fetched, and those are bounded.
+      const [allLogs, courseReviews, bookReviews, mentors, flags, payouts, tickets, compliance, profs, admins, courses, books, enrollTotal, pendingRegs] = await Promise.all([
         adminService.getAdminAuditLogs(),
         adminService.getCourseReviews(),
         adminService.getBookReviews(),
@@ -243,19 +257,20 @@ const SuperAdminDashboard: React.FC = () => {
         adminService.getPayoutRequests(),
         adminService.getSupportTickets(),
         adminService.getComplianceRequests(),
-        nexus.database.from('profiles').select('*').order('created_at', { ascending: false }),
-        nexus.database.from('admin_users').select('*, profiles(full_name, email)'),
-        nexus.database.from('courses').select('*'),
-        nexus.database.from('books').select('*'),
-        nexus.database.from('enrollments').select('*'),
+        fetchBounded<any>('profiles', q => q.order('created_at', { ascending: false })),
+        nexus.database.from('admin_users').select('*, profiles(full_name, email)').limit(ADMIN_MAX_ROWS),
+        fetchBounded<any>('courses', q => q.order('created_at', { ascending: false })),
+        fetchBounded<any>('books', q => q.order('created_at', { ascending: false })),
+        fetchCount('enrollments'),
         adminService.getPendingRegistrations()
       ]);
 
       setLogs(allLogs);
-      setProfiles(profs.data || []);
-      setCourses(coursesRes.data || []);
-      setBooks(booksRes.data || []);
-      setEnrollments(enrollRes.data || []);
+      setProfiles(profs.rows);
+      setCourses(courses.rows);
+      setBooks(books.rows);
+      setEnrollmentCount(enrollTotal);
+      setTotalUsers(profs.total);
       setPendingAdmins(pendingRegs);
       
       const adminRoleMap: Record<string, AdminRole> = {};
@@ -263,7 +278,7 @@ const SuperAdminDashboard: React.FC = () => {
       
       admins.data?.forEach((a: any) => {
         adminRoleMap[a.user_id] = a.role;
-        if (a.status === 'approved') {
+        if (isAdminRecordActive(a)) {
           approvedAdmins.push({
             ...a,
             full_name: a.profiles?.full_name || 'Admin Officer',
@@ -452,8 +467,10 @@ const SuperAdminDashboard: React.FC = () => {
         files.push({ name: obj.cv_uploaded, url: obj.cv_uploaded });
       }
       
-      if (obj.video_url) {
-        files.push({ name: 'Intro Video', url: obj.video_url });
+      // Mentor applications no longer carry an intro video. Identity documents
+      // took its place as the thing a reviewer opens.
+      if (obj.id_document_url) {
+        files.push({ name: obj.id_document_name || 'Identity document', url: obj.id_document_url });
       }
       
       if (obj.thumbnail_url) {
@@ -492,9 +509,12 @@ const SuperAdminDashboard: React.FC = () => {
 
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
-      const matchesSearch = log.admin_id.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
-                            log.reason.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
-                            log.target_id.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
+      // admin_id and reason are nullable in the consolidated audit table
+      // (server-side and imported entries may lack them).
+      const query = debouncedSearchQuery.toLowerCase();
+      const matchesSearch = (log.admin_id || '').toLowerCase().includes(query) ||
+                            (log.reason || '').toLowerCase().includes(query) ||
+                            (log.target_id || '').toLowerCase().includes(query);
       const matchesAction = filterAction === 'All' || log.action_type === filterAction;
       const matchesTarget = filterTarget === 'All' || log.target_type === filterTarget;
       return matchesSearch && matchesAction && matchesTarget;

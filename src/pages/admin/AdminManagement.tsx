@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, AlertTriangle, CheckCircle2, XCircle, Clock, Loader2, Trash2 } from 'lucide-react';
+import { Shield, AlertTriangle, CheckCircle2, XCircle, Loader2, Trash2 } from 'lucide-react';
 import PageHeader from '../../components/shared/PageHeader';
 import { adminService } from '../../lib/services/admin';
 import { useAuthStore } from '../../store/authStore';
@@ -9,7 +9,6 @@ export default function AdminManagement() {
   const { adminRoles } = useAuthStore();
   const isSuperAdmin = adminRoles?.includes('super_admin');
   
-  const [applications, setApplications] = useState<any[]>([]);
   const [admins, setAdmins] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,11 +25,7 @@ export default function AdminManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1. Load Applications
-      const apps = await adminService.getPendingAdminApplications();
-      setApplications(apps || []);
-
-      // 2. Load Active Admins
+      // Active admins
       const { data: adminData } = await nexus.database
         .from('admin_users')
         .select('*, profiles(full_name, email)')
@@ -40,7 +35,7 @@ export default function AdminManagement() {
 
       // 3. Load Audit Logs
       const { data: logData } = await nexus.database
-        .from('admin_audit_log')
+        .from('admin_audit_logs')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(20);
@@ -50,21 +45,6 @@ export default function AdminManagement() {
       console.error(err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleReview = async (id: string, status: 'approved' | 'rejected') => {
-    setActionLoadingId(id);
-    setError(null);
-    setSuccess(null);
-    try {
-      await adminService.reviewAdminApplication(id, status);
-      setSuccess(`Application has been successfully ${status}!`);
-      loadData();
-    } catch (err: any) {
-      setError(err.message || `Failed to ${status} application.`);
-    } finally {
-      setActionLoadingId(null);
     }
   };
 
@@ -84,7 +64,7 @@ export default function AdminManagement() {
     <div className="p-8 pb-32 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
       <PageHeader 
         title="Admin Management" 
-        description="Review and approve self-service admin applications, manage active administrators, and view platform audit trails" 
+        description="Manage active administrators and review the platform audit trail. Admin access is granted by invitation only." 
         tag="RBAC"
         icon={Shield}
       />
@@ -103,93 +83,7 @@ export default function AdminManagement() {
         </div>
       )}
 
-      {/* 1. Pending Applications */}
-      <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-amber-500" />
-            Pending Applications
-          </h2>
-          <span className="text-xs bg-amber-50 text-amber-600 px-3 py-1 rounded-full font-bold">
-            {applications.length} Pending
-          </span>
-        </div>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-bold border-b border-gray-100">
-              <tr>
-                <th className="px-6 py-4">Applicant</th>
-                <th className="px-6 py-4">Requested Roles</th>
-                <th className="px-6 py-4">Reason / Motivation</th>
-                <th className="px-6 py-4">Date Submitted</th>
-                <th className="px-6 py-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 text-sm">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                    <div className="flex items-center gap-2 justify-center">
-                      <Loader2 className="w-5 h-5 text-indigo-600 animate-spin" /> Loading...
-                    </div>
-                  </td>
-                </tr>
-              ) : applications.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500 font-medium">
-                    No pending admin applications found.
-                  </td>
-                </tr>
-              ) : (
-                applications.map((app) => (
-                  <tr key={app.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-bold text-gray-900">{app.profiles?.full_name || 'Unknown'}</div>
-                      <div className="text-xs text-gray-500">{app.profiles?.email}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {app.roles?.map((r: string) => (
-                          <span key={r} className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md text-xs font-bold">
-                            {r.replace('_', ' ').toUpperCase()}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-gray-600 max-w-xs truncate" title={app.reason}>
-                      {app.reason}
-                    </td>
-                    <td className="px-6 py-4 text-xs text-gray-400">
-                      {new Date(app.submitted_at).toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          disabled={actionLoadingId !== null}
-                          onClick={() => handleReview(app.id, 'approved')}
-                          className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          disabled={actionLoadingId !== null}
-                          onClick={() => handleReview(app.id, 'rejected')}
-                          className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* 2. Active Administrators */}
+      {/* 1. Active Administrators */}
       <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm">
         <div className="p-6 border-b border-gray-100">
           <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -299,7 +193,7 @@ export default function AdminManagement() {
                     </td>
                     <td className="px-6 py-4">
                       <span className="px-2 py-0.5 bg-slate-100 text-slate-800 rounded-md text-xs font-bold">
-                        {log.action.toUpperCase()}
+                        {(log.action_type || 'unknown').toUpperCase()}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-xs text-slate-500">

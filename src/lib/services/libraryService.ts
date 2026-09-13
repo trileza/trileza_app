@@ -91,6 +91,21 @@ export interface ReadingComment {
   created_at: string;
 }
 
+// A malformed value in one row (e.g. '' or legacy non-JSON text from a manual
+// edit) must not take down the whole list — JSON.parse throws synchronously,
+// which previously aborted the entire .map(mapDbBook) for every book in the
+// response, not just the bad row.
+const parseJsonArraySafe = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || value.trim() === '') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
 // Helpers to serialize and map PostgreSQL fields safely
 const mapDbBook = (b: any): Book => ({
   ...b,
@@ -98,8 +113,8 @@ const mapDbBook = (b: any): Book => ({
   rental_price: Number(b.rental_price || 0),
   rating: Number(b.rating || 0),
   pages: b.pages !== null && b.pages !== undefined ? Number(b.pages) : null,
-  tags: typeof b.tags === 'string' ? JSON.parse(b.tags) : (b.tags || []),
-  sample_pages: typeof b.sample_pages === 'string' ? JSON.parse(b.sample_pages) : (b.sample_pages || [])
+  tags: parseJsonArraySafe(b.tags),
+  sample_pages: parseJsonArraySafe(b.sample_pages)
 });
 
 const mapDbAccess = (a: any): UserLibraryAccess => ({

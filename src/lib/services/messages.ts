@@ -68,7 +68,7 @@ export const messageService = {
     let profiles: any[] = [];
     try {
       const { data } = await nexus.database
-        .from('profiles')
+        .from('public_profiles')
         .select('id, full_name, avatar_url, username, role')
         .neq('id', userId)
         .limit(30);
@@ -223,20 +223,34 @@ export const messageService = {
   },
 
   /**
-   * Search users by name, email, or username.
+   * Search users by name or username, or by exact email address.
+   *
+   * Partial email matching is gone: it let anyone enumerate every address on
+   * the platform a few letters at a time. A full address still finds its
+   * owner, and the address itself is never returned.
    */
   async searchUsers(query: string, currentUserId: string): Promise<any[]> {
-    const searchTerm = `%${query}%`;
+    const trimmed = query.trim();
+    const searchTerm = `%${trimmed}%`;
 
     const { data, error } = await nexus.database
-      .from('profiles')
-      .select('id, full_name, avatar_url, username, email, role')
+      .from('public_profiles')
+      .select('id, full_name, avatar_url, username, role')
       .neq('id', currentUserId)
-      .or(`full_name.ilike.${searchTerm},email.ilike.${searchTerm},username.ilike.${searchTerm}`)
+      .or(`full_name.ilike.${searchTerm},username.ilike.${searchTerm}`)
       .limit(15);
 
     if (error) throw error;
-    return data || [];
+    const results = data || [];
+
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      const { data: byEmail } = await nexus.database.rpc('find_user_by_email', { p_email: trimmed });
+      for (const match of (byEmail as any[]) || []) {
+        if (!results.some((r: any) => r.id === match.id)) results.unshift(match);
+      }
+    }
+
+    return results;
   },
 
   /**
@@ -244,7 +258,7 @@ export const messageService = {
    */
   async getUserProfile(userId: string) {
     const { data, error } = await nexus.database
-      .from('profiles')
+      .from('public_profiles')
       .select('id, full_name, avatar_url, username, role')
       .eq('id', userId)
       .maybeSingle();
@@ -265,7 +279,7 @@ export const messageService = {
 
     // Check availability
     const { data: existing } = await nexus.database
-      .from('profiles')
+      .from('public_profiles')
       .select('id')
       .eq('username', username)
       .neq('id', userId)
@@ -289,7 +303,7 @@ export const messageService = {
    */
   async checkUsernameAvailable(username: string, currentUserId: string): Promise<boolean> {
     const { data } = await nexus.database
-      .from('profiles')
+      .from('public_profiles')
       .select('id')
       .eq('username', username)
       .neq('id', currentUserId)

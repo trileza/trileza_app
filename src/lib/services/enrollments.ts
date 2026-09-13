@@ -1,5 +1,6 @@
 import { nexus } from '../nexus';
 import type { Enrollment } from '../database.types';
+import { publishUserEvent } from './realtimeEvents';
 
 export const enrollmentService = {
   /**
@@ -21,6 +22,7 @@ export const enrollmentService = {
       .single();
 
     if (error) throw error;
+    publishUserEvent('enrollment_created', { userId, itemId, itemType, itemTitle });
     return data;
   },
 

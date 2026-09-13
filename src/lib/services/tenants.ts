@@ -1,6 +1,13 @@
 import { nexus } from '../nexus';
 import type { Tenant, TenantAnalytics, TenantBilling, UserProfile, Course } from '../../types';
 
+/** Outcome of a CSV import, with a per-row reason for everything rejected. */
+export interface BulkImportResult {
+  imported: number;
+  failed: number;
+  errors: Array<{ email: string; reason: string }>;
+}
+
 export const INITIAL_DEFAULT_TENANT: Tenant = {
   id: 'default-tenant',
   name: 'Trileza Main LMS',
@@ -23,150 +30,96 @@ export const INITIAL_DEFAULT_TENANT: Tenant = {
   created_at: new Date().toISOString()
 };
 
-export const MOCK_TENANTS: Tenant[] = [
-  INITIAL_DEFAULT_TENANT,
-  {
-    id: 't-mit',
-    name: 'Massachusetts Institute of Technology',
-    subdomain: 'mit',
-    custom_domain: 'lms.mit.edu',
-    email: 'lms-admin@mit.edu',
-    status: 'active',
-    logo_url: 'https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&q=80&w=200',
-    primary_color: '#a31c1c',
-    plan: 'enterprise',
-    settings: {
-      allow_self_registration: true,
-      default_user_role: 'mentee',
-      course_hierarchy: ['Semester', 'Lecture', 'Lab'],
-      pricing_mode: 'custom',
-      custom_categories: ['Robotics', 'Quantum Computing', 'AI & Data Science', 'Aerospace'],
-      max_users: 25000,
-      max_courses: 1200
-    },
-    created_at: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 't-oxford',
-    name: 'Oxford Professional Academy',
-    subdomain: 'oxford',
-    custom_domain: 'learn.oxfordacademy.uk',
-    email: 'admin@oxfordacademy.uk',
-    status: 'active',
-    logo_url: 'https://images.unsplash.com/photo-1592280771190-3e2e4d571952?auto=format&fit=crop&q=80&w=200',
-    primary_color: '#002147',
-    plan: 'growth',
-    settings: {
-      allow_self_registration: true,
-      default_user_role: 'mentee',
-      course_hierarchy: ['Level', 'Unit', 'Workshop'],
-      pricing_mode: 'platform_default',
-      custom_categories: ['Executive Leadership', 'Corporate Law', 'Finance'],
-      max_users: 5000,
-      max_courses: 200
-    },
-    created_at: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 't-techcorp',
-    name: 'TechCorp Learning & Development',
-    subdomain: 'techcorp',
-    custom_domain: 'training.techcorp.io',
-    email: 'hr@techcorp.io',
-    status: 'active',
-    logo_url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=200',
-    primary_color: '#059669',
-    plan: 'starter',
-    settings: {
-      allow_self_registration: false,
-      default_user_role: 'mentee',
-      course_hierarchy: ['Track', 'Course', 'Assessment'],
-      pricing_mode: 'platform_default',
-      custom_categories: ['Cybersecurity', 'DevOps', 'Cloud Architecture'],
-      max_users: 1000,
-      max_courses: 50
-    },
-    created_at: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
-  }
-];
-
 export const tenantService = {
   /**
    * Fetch tenant by subdomain. Falls back to default tenant if not found.
    */
   async getTenantBySubdomain(subdomain: string): Promise<Tenant> {
-    try {
-      const { data, error } = await nexus.database
-        .from('tenants')
-        .select('*')
-        .eq('subdomain', subdomain.toLowerCase())
-        .single();
+    const { data, error } = await nexus.database
+      .from('tenants')
+      .select('*')
+      .eq('subdomain', subdomain.toLowerCase())
+      .maybeSingle();
 
-      if (!error && data) {
-        return data as Tenant;
-      }
-    } catch (e) {
-      console.warn('[TenantService] Failed to fetch tenant from DB, using fallback lookup:', e);
+    if (!error && data) {
+      return data as Tenant;
     }
 
-    const matched = MOCK_TENANTS.find(t => t.subdomain === subdomain.toLowerCase());
-    return matched || INITIAL_DEFAULT_TENANT;
+    // This one read keeps a fallback on purpose: it runs on every page load via
+    // TenantProvider, and an unknown subdomain is a normal condition (the
+    // marketing host, a typo). Returning the default tenant keeps the app
+    // bootable; it never masks a write.
+    if (error) {
+      console.warn('[TenantService] Subdomain lookup failed, serving default tenant:', error.message);
+    }
+    return INITIAL_DEFAULT_TENANT;
   },
 
   /**
    * Fetch all tenants (Super Admin access)
    */
   async getTenants(): Promise<Tenant[]> {
-    try {
-      const { data, error } = await nexus.database
-        .from('tenants')
-        .select('*')
-        .order('created_at', { ascending: false });
+    // Through a super-admin function, because the table's own read policy
+    // exposes active tenants only — so a plain select returned an empty
+    // approval queue no matter how many registrations were waiting, and
+    // suspended institutions vanished from the console entirely.
+    const { data, error } = await nexus.database.rpc('admin_list_tenants', { p_status: null });
 
-      if (!error && data && data.length > 0) {
-        return data as Tenant[];
-      }
-    } catch (e) {
-      console.warn('[TenantService] Database fetch error, returning mock tenants:', e);
+    if (error) {
+      throw new Error(`Could not load institutions: ${error.message}`);
     }
-    return MOCK_TENANTS;
+    return (data || []) as Tenant[];
+  },
+
+  /**
+   * Counts for one institution, computed in the database.
+   */
+  async getTenantStats(tenantId: string): Promise<{
+    users: number;
+    courses: number;
+    enrollments: number;
+    classes: number;
+    active_subscription: string | null;
+  }> {
+    const { data, error } = await nexus.database.rpc('admin_tenant_stats', { p_tenant_id: tenantId });
+    if (error) {
+      throw new Error(`Could not load institution statistics: ${error.message}`);
+    }
+    return {
+      users: 0, courses: 0, enrollments: 0, classes: 0, active_subscription: null,
+      ...((data as any) || {})
+    };
   },
 
   /**
    * Get single tenant by ID
    */
   async getTenantById(tenantId: string): Promise<Tenant | null> {
-    try {
-      const { data, error } = await nexus.database
-        .from('tenants')
-        .select('*')
-        .eq('id', tenantId)
-        .single();
+    const { data, error } = await nexus.database
+      .from('tenants')
+      .select('*')
+      .eq('id', tenantId)
+      .maybeSingle();
 
-      if (!error && data) return data as Tenant;
-    } catch (e) {
-      console.warn('[TenantService] getTenantById DB fallback');
+    if (error) {
+      throw new Error(`Could not load institution: ${error.message}`);
     }
-    return MOCK_TENANTS.find(t => t.id === tenantId) || null;
+    return (data as Tenant) || null;
   },
 
   /**
    * Fetch all active institutions for dropdown selectors & public directory
    */
   async getInstitutions(): Promise<Tenant[]> {
-    try {
-      const { data, error } = await nexus.database
-        .from('tenants')
-        .select('*')
-        .eq('status', 'active');
+    const { data, error } = await nexus.database
+      .from('tenants')
+      .select('*')
+      .eq('status', 'active');
 
-      if (!error && data && data.length > 0) {
-        return data as Tenant[];
-      }
-    } catch (e) {
-      console.warn('[TenantService] getInstitutions DB fallback');
+    if (error) {
+      throw new Error(`Could not load institutions: ${error.message}`);
     }
-    return MOCK_TENANTS.filter(t => t.status === 'active');
+    return (data || []) as Tenant[];
   },
 
   /**
@@ -184,115 +137,66 @@ export const tenantService = {
   },
 
   /**
-   * Provision a new tenant institution
+   * Submit a self-serve institution registration. It is always created
+   * 'pending' and goes live only when a super admin approves it.
+   *
+   * Runs as a database function because the tenants table only accepts writes
+   * from super admins, so a direct insert from this page was always refused.
+   * Plan limits are set server-side, not taken from the client.
    */
-  async createTenant(payload: {
+  async registerInstitution(payload: {
     name: string;
     subdomain: string;
     custom_domain?: string;
     email: string;
     plan: 'starter' | 'growth' | 'enterprise';
     primary_color?: string;
-    logo_url?: string;
-    admin_name: string;
-    admin_password?: string;
-  }): Promise<{ tenant: Tenant; adminUser?: Partial<UserProfile> }> {
-    const newTenant: Tenant = {
-      id: `t-${Date.now()}`,
-      name: payload.name,
-      subdomain: payload.subdomain.toLowerCase(),
-      custom_domain: payload.custom_domain,
-      email: payload.email,
-      status: 'active',
-      logo_url: payload.logo_url || 'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?auto=format&fit=crop&q=80&w=200',
-      primary_color: payload.primary_color || '#4f46e5',
-      plan: payload.plan,
-      settings: {
-        allow_self_registration: true,
-        default_user_role: 'mentee',
-        course_hierarchy: ['Module', 'Topic', 'Subtopic'],
-        pricing_mode: 'custom',
-        custom_categories: ['General', 'Specialized Studies', 'Certifications'],
-        max_users: payload.plan === 'enterprise' ? 50000 : payload.plan === 'growth' ? 10000 : 2000,
-        max_courses: payload.plan === 'enterprise' ? 1000 : payload.plan === 'growth' ? 250 : 50
-      },
-      created_at: new Date().toISOString()
-    };
+  }): Promise<{ id: string; subdomain: string; status: 'pending' }> {
+    const { data, error } = await nexus.database.rpc('register_institution', {
+      p_name: payload.name,
+      p_subdomain: payload.subdomain,
+      p_email: payload.email,
+      p_plan: payload.plan,
+      p_primary_color: payload.primary_color || null,
+      p_custom_domain: payload.custom_domain || null
+    });
 
-    try {
-      const { data, error } = await nexus.database
-        .from('tenants')
-        .insert([{
-          name: newTenant.name,
-          subdomain: newTenant.subdomain,
-          custom_domain: newTenant.custom_domain,
-          email: newTenant.email,
-          status: newTenant.status,
-          logo_url: newTenant.logo_url,
-          primary_color: newTenant.primary_color,
-          plan: newTenant.plan,
-          settings: newTenant.settings
-        }]);
-
-      if (error) {
-        console.error('[TenantService] Failed to insert tenant into DB:', error);
-      } else if (data && (data as any[])[0]) {
-        newTenant.id = (data as any[])[0].id;
-      }
-    } catch (e) {
-      console.warn('[TenantService] createTenant DB insert exception, using client state:', e);
+    // No catch-and-continue here. A tenant that failed to persist must not be
+    // reported as created — the caller has to be able to show a real error.
+    if (error) {
+      throw new Error(`Could not submit institution: ${error.message}`);
     }
-
-    MOCK_TENANTS.unshift(newTenant);
-
-    return {
-      tenant: newTenant,
-      adminUser: {
-        email: payload.email,
-        full_name: payload.admin_name,
-        role: 'tenant_admin',
-        tenant_id: newTenant.id
-      }
-    };
+    return data as { id: string; subdomain: string; status: 'pending' };
   },
 
   /**
    * Update tenant settings or domain details
    */
   async updateTenant(tenantId: string, updates: Partial<Tenant>): Promise<Tenant> {
-    try {
-      await nexus.database
-        .from('tenants')
-        .update(updates)
-        .eq('id', tenantId);
-    } catch (e) {
-      console.warn('[TenantService] updateTenant DB fallback');
-    }
+    const { data, error } = await nexus.database
+      .from('tenants')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', tenantId)
+      .select()
+      .single();
 
-    const idx = MOCK_TENANTS.findIndex(t => t.id === tenantId);
-    if (idx !== -1) {
-      MOCK_TENANTS[idx] = { ...MOCK_TENANTS[idx], ...updates, updated_at: new Date().toISOString() };
-      return MOCK_TENANTS[idx];
+    if (error) {
+      throw new Error(`Could not save institution settings: ${error.message}`);
     }
-    return { ...INITIAL_DEFAULT_TENANT, ...updates };
+    return data as Tenant;
   },
 
   /**
    * Delete or suspend tenant
    */
   async deleteTenant(tenantId: string): Promise<boolean> {
-    try {
-      await nexus.database
-        .from('tenants')
-        .delete()
-        .eq('id', tenantId);
-    } catch (e) {
-      console.warn('[TenantService] deleteTenant DB fallback');
-    }
+    const { error } = await nexus.database
+      .from('tenants')
+      .delete()
+      .eq('id', tenantId);
 
-    const idx = MOCK_TENANTS.findIndex(t => t.id === tenantId);
-    if (idx !== -1) {
-      MOCK_TENANTS.splice(idx, 1);
+    if (error) {
+      throw new Error(`Could not delete institution: ${error.message}`);
     }
     return true;
   },
@@ -300,88 +204,79 @@ export const tenantService = {
   /**
    * Fetch users belonging to a tenant
    */
-  async getTenantUsers(tenantId: string): Promise<UserProfile[]> {
-    try {
-      const { data, error } = await nexus.database
-        .from('profiles')
-        .select('*')
-        .eq('tenant_id', tenantId);
+  async getTenantUsers(tenantId: string, limit = 500): Promise<UserProfile[]> {
+    // No mock fallback. This list previously invented four fictional staff
+    // members ("Dr. Sarah Vance" and colleagues) whenever the query returned
+    // nothing or failed, so an institution admin looking at an empty or broken
+    // user list saw four people who do not exist and could not tell the
+    // difference. An error here must surface as an error.
+    const { data, error } = await nexus.database
+      .from('profiles')
+      .select('id, email, full_name, role, tenant_id, avatar_url, created_at, last_active_at')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
-      if (!error && data && data.length > 0) {
-        return data as UserProfile[];
-      }
-    } catch (e) {
-      console.warn('[TenantService] getTenantUsers DB fallback');
+    if (error) {
+      throw new Error(`Could not load institution members: ${error.message}`);
     }
-
-    // Mock tenant user dataset
-    return [
-      {
-        id: `u-${tenantId}-1`,
-        email: `admin@${tenantId}.edu`,
-        full_name: 'Dr. Sarah Vance',
-        role: 'tenant_admin',
-        tenant_id: tenantId,
-        created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: `u-${tenantId}-2`,
-        email: `instructor.smith@${tenantId}.edu`,
-        full_name: 'Prof. David Smith',
-        role: 'tutor',
-        tenant_id: tenantId,
-        created_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: `u-${tenantId}-3`,
-        email: `student.alex@${tenantId}.edu`,
-        full_name: 'Alex Johnson',
-        role: 'student',
-        tenant_id: tenantId,
-        created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: `u-${tenantId}-4`,
-        email: `support@${tenantId}.edu`,
-        full_name: 'Elena Rostova',
-        role: 'support_staff',
-        tenant_id: tenantId,
-        created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
-      }
-    ];
+    return (data || []) as UserProfile[];
   },
 
   /**
    * Bulk import users via parsed CSV records
    */
-  async bulkImportTenantUsers(tenantId: string, rows: Array<{ email: string; full_name: string; role: string }>): Promise<{ imported: number; failed: number }> {
-    let imported = 0;
-    let failed = 0;
+  async bulkImportTenantUsers(
+    tenantId: string,
+    rows: Array<{ email: string; full_name: string; role: string }>
+  ): Promise<BulkImportResult> {
+    const result: BulkImportResult = { imported: 0, failed: 0, errors: [] };
+    if (rows.length === 0) return result;
 
-    const payload = rows.map(r => ({
-      email: r.email,
-      full_name: r.full_name,
-      role: (r.role || 'student').toLowerCase() as UserProfile['role'],
-      tenant_id: tenantId,
-      created_at: new Date().toISOString()
-    }));
+    // Rows are inserted one at a time so a single bad address (duplicate email,
+    // malformed row) cannot silently discard the rest of the file — and so the
+    // caller gets a per-row reason it can show the person who uploaded it.
+    for (const row of rows) {
+      const email = (row.email || '').trim().toLowerCase();
+      const fullName = (row.full_name || '').trim();
 
-    try {
-      const { data, error } = await nexus.database
-        .from('profiles')
-        .insert(payload);
-
-      if (!error) {
-        imported = rows.length;
-      } else {
-        console.error('[TenantService] Bulk import DB error:', error);
-        imported = rows.length; // fallback counting for client UX
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        result.failed++;
+        result.errors.push({ email: row.email || '(blank)', reason: 'Not a valid email address' });
+        continue;
       }
-    } catch (e) {
-      imported = rows.length;
+      if (!fullName) {
+        result.failed++;
+        result.errors.push({ email, reason: 'Full name is required' });
+        continue;
+      }
+
+      const { error } = await nexus.database
+        .from('profiles')
+        .insert([{
+          id: crypto.randomUUID(),
+          email,
+          full_name: fullName,
+          role: (row.role || 'mentee').toLowerCase() as UserProfile['role'],
+          tenant_id: tenantId,
+          metadata: { invited: true, invited_at: new Date().toISOString() },
+          created_at: new Date().toISOString()
+        }]);
+
+      if (error) {
+        result.failed++;
+        result.errors.push({
+          email,
+          reason: /duplicate|unique/i.test(error.message)
+            ? 'Already a member of this institution'
+            : error.message
+        });
+      } else {
+        result.imported++;
+      }
     }
 
-    return { imported, failed };
+    return result;
   },
 
   /**
@@ -431,16 +326,54 @@ export const tenantService = {
    * Generate tenant analytics summary report
    */
   async getTenantAnalytics(tenantId: string): Promise<TenantAnalytics> {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [profilesRes, coursesRes, enrollmentsRes, transactionsRes] = await Promise.all([
+      nexus.database.from('profiles').select('id, role, last_active_at').eq('tenant_id', tenantId),
+      nexus.database.from('courses').select('id').eq('tenant_id', tenantId),
+      nexus.database.from('enrollments').select('user_id, progress, last_accessed').eq('tenant_id', tenantId),
+      nexus.database.from('transactions').select('amount, type, status').eq('tenant_id', tenantId)
+    ]);
+
+    const profiles = (profilesRes.data || []) as any[];
+    const courses = (coursesRes.data || []) as any[];
+    const enrollments = (enrollmentsRes.data || []) as any[];
+    const transactions = (transactionsRes.data || []) as any[];
+
+    const isTutor = (r: string) => r === 'mentor' || r === 'tutor';
+    const isStudent = (r: string) => r === 'mentee' || r === 'student';
+
+    // "Completed" means the learner finished the material, so measure it off
+    // progress rather than a status column that several flows never set.
+    const completed = enrollments.filter(e => Number(e.progress || 0) >= 100).length;
+    const completionRate = enrollments.length > 0
+      ? Number(((completed / enrollments.length) * 100).toFixed(1))
+      : 0;
+
+    // Active = touched a course in the last 30 days. Falls back to the profile's
+    // own activity stamp for learners who are enrolled in nothing yet.
+    const activeLearners = new Set<string>();
+    enrollments.forEach(e => {
+      if (e.last_accessed && e.last_accessed >= thirtyDaysAgo) activeLearners.add(e.user_id);
+    });
+    profiles.forEach(p => {
+      if (p.last_active_at && p.last_active_at >= thirtyDaysAgo) activeLearners.add(p.id);
+    });
+
+    const revenue = transactions
+      .filter(t => t.status === 'completed' && t.type === 'sale')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
     return {
       tenant_id: tenantId,
-      total_users: 1420,
-      total_students: 1250,
-      total_tutors: 45,
-      total_courses: 38,
-      total_enrollments: 4890,
-      total_revenue: 184500,
-      completion_rate: 87.4,
-      active_learners_30d: 910
+      total_users: profiles.length,
+      total_students: profiles.filter(p => isStudent(p.role)).length,
+      total_tutors: profiles.filter(p => isTutor(p.role)).length,
+      total_courses: courses.length,
+      total_enrollments: enrollments.length,
+      total_revenue: revenue,
+      completion_rate: completionRate,
+      active_learners_30d: activeLearners.size
     };
   },
 
@@ -453,7 +386,16 @@ export const tenantService = {
 
     const baseRate = plan === 'enterprise' ? 1499 : plan === 'growth' ? 499 : 149;
     const userFee = plan === 'enterprise' ? 2 : plan === 'growth' ? 4 : 6;
-    const activeUsers = 420;
+
+    // Billed seats are the tenant's real non-suspended profiles, not a constant.
+    const { data: seatRows } = await nexus.database
+      .from('profiles')
+      .select('id, metadata')
+      .eq('tenant_id', tenantId);
+
+    const activeUsers = (seatRows || []).filter(
+      (p: any) => p?.metadata?.suspended !== true
+    ).length;
 
     return {
       tenant_id: tenantId,

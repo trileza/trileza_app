@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { adminService } from '../../lib/services/admin';
 import type { ComplianceRequest } from '../../types/admin';
 import { Card, Button, Toast } from '../ui';
@@ -7,7 +7,6 @@ import { nexus } from '../../lib/nexus';
 import { 
   Scale, 
   AlertOctagon, 
-  HelpCircle, 
   FileCheck, 
   Trash2, 
   RefreshCcw,
@@ -15,15 +14,21 @@ import {
   Download,
   AlertTriangle,
   Eye,
-  EyeOff
+  EyeOff,
+  Building2
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import PageHeader from '../shared/PageHeader';
+import { useMultiTableSync } from './hooks/useAdminData';
+import InstitutionKycQueue from './InstitutionKycQueue';
 
 const ComplianceOfficerDashboard: React.FC = () => {
   const { user } = useAuthStore();
   const [requests, setRequests] = useState<ComplianceRequest[]>([]);
   const [loading, setLoading] = useState(true);
+
+  /** Which half of this role's work is on screen. */
+  const [view, setView] = useState<'cases' | 'kyc'>('cases');
 
   // Selected item state
   const [selectedReq, setSelectedReq] = useState<ComplianceRequest | null>(null);
@@ -43,7 +48,7 @@ const ComplianceOfficerDashboard: React.FC = () => {
   // DMCA takedown options
   const [executeTakedown, setExecuteTakedown] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const data = await adminService.getComplianceRequests();
@@ -53,11 +58,17 @@ const ComplianceOfficerDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Realtime sync for compliance requests
+  useMultiTableSync(
+    ['compliance_requests', 'flagged_content'],
+    fetchData
+  );
 
   const parseTargetFromUrl = (url?: string) => {
     if (!url) return null;
@@ -145,9 +156,34 @@ const ComplianceOfficerDashboard: React.FC = () => {
 
   const targetInfo = selectedReq ? parseTargetFromUrl(selectedReq.details.infringement_url) : null;
 
+  // Institution verification is the other half of this role's work, and it was
+  // previously unreachable — submissions arrived with nowhere to review them.
+  if (view === 'kyc') {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500 text-left">
+        <PageHeader
+          title="Institution Verification"
+          description="Review KYB submissions from institutions: entity registration, tax and banking details, authorised representative identity, and compliance declarations."
+          tag="Compliance Officer"
+          icon={Building2}
+          rightContent={
+            <Button
+              onClick={() => setView('cases')}
+              variant="outline"
+              className="h-11 rounded-xl bg-white/15 hover:bg-white/20 border-white/20 text-white shadow-sm font-bold text-xs"
+            >
+              ← Compliance cases
+            </Button>
+          }
+        />
+        <InstitutionKycQueue />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 text-left">
-      
+
       {selectedReq ? (
         <PageHeader 
           title={`Compliance Audit: ${selectedReq.type.replace('_', ' ').toUpperCase()}`} 
@@ -171,9 +207,14 @@ const ComplianceOfficerDashboard: React.FC = () => {
           tag="Compliance Officer"
           icon={Scale}
           rightContent={
-            <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white/15 hover:bg-white/20 border-white/20 text-white shadow-sm flex items-center gap-2 font-bold">
-              <RefreshCcw size={14} className="text-emerald-450 animate-spin-slow" /> Refresh data
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setView('kyc')} variant="outline" className="h-11 rounded-xl bg-white/15 hover:bg-white/20 border-white/20 text-white shadow-sm flex items-center gap-2 font-bold">
+                <Building2 size={14} /> Institution verification
+              </Button>
+              <Button onClick={fetchData} variant="outline" className="h-11 rounded-xl bg-white/15 hover:bg-white/20 border-white/20 text-white shadow-sm flex items-center gap-2 font-bold">
+                <RefreshCcw size={14} className="text-emerald-450 animate-spin-slow" /> Refresh data
+              </Button>
+            </div>
           }
         />
       )}

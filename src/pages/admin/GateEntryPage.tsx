@@ -9,8 +9,7 @@ import {
   LifeBuoy, 
   Scale, 
   BarChart3, 
-  Lock, 
-  ShieldCheck, 
+  ShieldAlert, 
   ArrowRight 
 } from 'lucide-react';
 import { cn } from '../../utils';
@@ -28,6 +27,17 @@ interface RoleContainer {
 }
 
 const ROLES: RoleContainer[] = [
+  {
+    id: 'super_admin',
+    slug: 'superadmin',
+    name: 'Super Admin',
+    description: 'Root supervisor console. Platform configuration, global metrics, multi-tenant management, and audit logs.',
+    icon: ShieldAlert,
+    color: 'text-red-400',
+    bg: 'from-red-950/25 to-red-900/10',
+    border: 'border-red-500/20 hover:border-red-500/50',
+    shadow: 'hover:shadow-red-500/15'
+  },
   {
     id: 'content_manager',
     slug: 'content-manager',
@@ -98,22 +108,13 @@ const ROLES: RoleContainer[] = [
 
 export default function GateEntryPage() {
   const navigate = useNavigate();
-  const { adminSessionToken, adminRoles } = useAuthStore();
+  const { adminSessionToken, user } = useAuthStore();
 
   const handleRoleClick = (role: RoleContainer) => {
-    if (!adminSessionToken) {
-      // Not logged in: Redirect to login with preselected role
-      navigate(`/signin?role=${role.id}`);
+    if (adminSessionToken || user) {
+      navigate(`/${role.slug}`);
     } else {
-      // Logged in: Check if they possess the role
-      const hasRole = adminRoles?.includes(role.id as any);
-      if (hasRole) {
-        // Redirection straight to dashboard
-        navigate(`/${role.slug}`);
-      } else {
-        // Redirect to apply for it
-        navigate(`/signup?role=${role.id}`);
-      }
+      navigate(`/signin?role=${role.id}`);
     }
   };
 
@@ -132,7 +133,7 @@ export default function GateEntryPage() {
           Trileza Admin <span className="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">Gate</span>
         </h1>
         <p className="text-sm sm:text-base text-slate-400 max-w-xl mx-auto font-medium leading-relaxed">
-          Select a departmental portal container to login or submit a self-service access authorization request.
+          Select a departmental portal container to login and manage operations.
         </p>
       </div>
 
@@ -172,30 +173,6 @@ export default function GateEntryPage() {
             </Card>
           );
         })}
-
-        {/* Super Admin Lockbox Card */}
-        <Card
-          className="p-8 rounded-[2rem] border border-red-500/10 bg-gradient-to-b from-red-950/10 to-red-900/5 bg-slate-900/30 backdrop-blur-xl flex flex-col justify-between relative overflow-hidden opacity-80"
-        >
-          <div className="space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-slate-950 flex items-center justify-center border border-slate-900 text-red-500">
-              <Lock size={20} />
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-lg font-black text-red-400 uppercase tracking-tight flex items-center gap-2">
-                Super Admin
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                Root supervisor console. Requires hardware tokens, secure address access, and verified signature access.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-8 flex items-center gap-1.5 text-[10px] font-black uppercase text-red-500/60 pt-4 border-t border-slate-900/40">
-            <ShieldCheck size={12} />
-            <span>Access restricted</span>
-          </div>
-        </Card>
       </div>
 
       {/* Footer */}

@@ -1,4 +1,6 @@
 import { nexus } from '../nexus';
+import { publishAdminEvent } from './realtimeEvents';
+import { generateSecureToken, generateNumericCode } from '../../utils/secureRandom';
 import type { 
   AdminRole, 
   CourseReview, 
@@ -13,12 +15,33 @@ import type {
   CreatorProfile
 } from '../../types/admin';
 
+/**
+ * Tell the affected user that a decision has been made about their work.
+ *
+ * The app subscribes to `user:${id}` and refreshes on 'profile_updated'.
+ * Several review paths were publishing only to the admin channel, so the author
+ * or vendor saw nothing until the 60-second background poll — and in the
+ * meantime the console said "approved" while their own screen said "pending".
+ */
+const notifyUser = async (userId: string | null | undefined, payload: Record<string, any>) => {
+  if (!userId) return;
+  try {
+    await nexus.realtime.publish(`user:${userId}`, 'profile_updated', payload);
+  } catch (err) {
+    console.error('[Realtime] Could not notify user of a review decision:', err);
+  }
+};
+
 export const adminService = {
   /**
-   * Log an admin action to the audit trail
+   * Log an admin action to the audit trail.
+   *
+   * `adminId` is kept for call-site compatibility only: the database stamps the
+   * acting admin from the session, so a client cannot attribute an action to
+   * someone else.
    */
   async logAdminAction(
-    adminId: string,
+    _adminId: string,
     actionType: AdminAuditLog['action_type'],
     targetType: AdminAuditLog['target_type'],
     targetId: string,
@@ -26,27 +49,7 @@ export const adminService = {
     newState: any,
     reason: string
   ) {
-    try {
-      const { data: adminUser } = await nexus.database
-        .from('admin_users')
-        .select('id')
-        .eq('user_id', adminId)
-        .limit(1)
-        .maybeSingle();
-
-      return await this.logAdminAuditLog(
-        adminUser?.id || null,
-        actionType,
-        targetType,
-        targetId,
-        previousState,
-        newState,
-        reason
-      );
-    } catch (err) {
-      console.error('[Audit Log Legacy Exception]:', err);
-      return { data: null, error: err };
-    }
+    return this.logAdminAuditLog(null, actionType, targetType, targetId, previousState, newState, reason);
   },
 
   /**
@@ -106,6 +109,10 @@ export const adminService = {
       }
     }
 
+    if (!error) {
+      publishAdminEvent('admin_role_changed', { userId, role });
+    }
+
     return { data, error };
   },
 
@@ -140,24 +147,17 @@ export const adminService = {
     }
 
     // 3. Audit Log (non-blocking)
-    try {
-      const { data: adminRec } = await nexus.database
-        .from('admin_users')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
+    await this.logAdminAuditLog(
+      null,
+      'invite_sent',
+      'admin_invite',
+      invite.id,
+      null,
+      { email, roles, note },
+      `Admin invite created for ${email}`
+    );
 
-      await nexus.database.from('admin_audit_log').insert([{
-        admin_user_id: adminRec?.id || null,
-        action: 'invite_sent',
-        target_type: 'admin_invite',
-        target_id: invite.id,
-        new_state: { email, roles, note },
-        reason: `Admin invite created for ${email}`
-      }]);
-    } catch (auditErr) {
-      console.warn('[Audit Log Error]:', auditErr);
-    }
+    publishAdminEvent('admin_invited', { email, roles });
 
     return { invite };
   },
@@ -182,7 +182,7 @@ export const adminService = {
     }
 
     // 2. Generate new token and extend expiration
-    const newToken = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+    const newToken = generateSecureToken();
     const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const { data: updatedInvite, error: updateErr } = await nexus.database
@@ -200,171 +200,17 @@ export const adminService = {
     }
 
     // 3. Audit Log
-    try {
-      const { data: adminRec } = await nexus.database
-        .from('admin_users')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      await nexus.database.from('admin_audit_log').insert([{
-        admin_user_id: adminRec?.id || null,
-        action: 'invite_resent',
-        target_type: 'admin_invite',
-        target_id: inviteId,
-        new_state: { email: invite.email },
-        reason: `Admin invite resent for ${invite.email}`
-      }]);
-    } catch (auditErr) {
-      console.warn('[Audit Log Error]:', auditErr);
-    }
+    await this.logAdminAuditLog(
+      null,
+      'invite_resent',
+      'admin_invite',
+      inviteId,
+      null,
+      { email: invite.email },
+      `Admin invite resent for ${invite.email}`
+    );
 
     return { invite: updatedInvite };
-  },
-
-  /**
-   * Submit an application for an admin role
-   */
-  async applyForAdminRole(role: AdminRole, reason: string) {
-    const { data: userData } = await nexus.auth.getCurrentUser();
-    const user = userData?.user;
-    if (!user) throw new Error('Unauthorized');
-
-    const { data, error } = await nexus.database
-      .from('admin_applications')
-      .insert([{ user_id: user.id, role, reason, status: 'pending' }])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  },
-
-  /**
-   * Get the current user's latest admin application
-   */
-  async getUserAdminApplication() {
-    const { data: userData } = await nexus.auth.getCurrentUser();
-    const user = userData?.user;
-    if (!user) return null;
-
-    const { data, error } = await nexus.database
-      .from('admin_applications')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('submitted_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-    return data;
-  },
-
-  /**
-   * Get all pending admin applications (Super Admin only)
-   */
-  async getPendingAdminApplications() {
-    const { data, error } = await nexus.database
-      .from('admin_applications')
-      .select('*, profiles(full_name, email)')
-      .eq('status', 'pending')
-      .order('submitted_at', { ascending: true });
-
-    if (error) throw error;
-    return data;
-  },
-
-  /**
-   * Approve or reject a pending admin application
-   */
-  async reviewAdminApplication(applicationId: string, status: 'approved' | 'rejected') {
-    const { data: userData } = await nexus.auth.getCurrentUser();
-    const user = userData?.user;
-    if (!user) throw new Error('Unauthorized');
-
-    // Get the application details
-    const { data: app, error: appError } = await nexus.database
-      .from('admin_applications')
-      .select('*, profiles(email)')
-      .eq('id', applicationId)
-      .single();
-
-    if (appError || !app) throw new Error('Application not found');
-
-    // Update the application status
-    const { data: updatedApp, error: updateError } = await nexus.database
-      .from('admin_applications')
-      .update({
-        status,
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: user.id
-      })
-      .eq('id', applicationId)
-      .select()
-      .single();
-
-    if (updateError) throw updateError;
-
-    // Get the reviewer's admin record for audit log
-    const { data: reviewerAdmin } = await nexus.database
-      .from('admin_users')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    // If approved, insert or update admin_users
-    if (status === 'approved') {
-      const { data: existingAdmin } = await nexus.database
-        .from('admin_users')
-        .select('roles')
-        .eq('user_id', app.user_id)
-        .maybeSingle();
-
-      const existingRolesList = existingAdmin?.roles || [];
-      const newRoles = Array.from(new Set([...existingRolesList, app.role]));
-
-      const { error: adminUserError } = await nexus.database
-        .from('admin_users')
-        .upsert([{
-          user_id: app.user_id,
-          roles: newRoles,
-          role: app.role, // primary fallback role
-          twofa_email: app.profiles?.email || '',
-          suspended: false,
-          onboarded: true
-        }]);
-
-      if (adminUserError) throw adminUserError;
-    }
-
-    // Trigger edge function for email notification (non-blocking)
-    try {
-      await nexus.functions.invoke('admin-notifications', {
-        body: {
-          action: status,
-          email: app.profiles?.email,
-          roles: [app.role]
-        }
-      });
-    } catch (emailErr) {
-      console.warn('[Notification Email Error]:', emailErr);
-    }
-
-    // Log to admin audit log
-    try {
-      await nexus.database.from('admin_audit_log').insert([{
-        admin_user_id: reviewerAdmin?.id || null,
-        action: `application_${status}`,
-        target_type: 'admin_application',
-        target_id: applicationId,
-        new_state: { status, role: app.role, user_id: app.user_id },
-        reason: `Super Admin ${status} application from ${app.profiles?.email}`
-      }]);
-    } catch (auditErr) {
-      console.warn('[Audit Log Error]:', auditErr);
-    }
-
-    return updatedApp;
   },
 
   /**
@@ -417,43 +263,17 @@ export const adminService = {
     notes: string,
     courseId: string
   ) {
-    const { data: currentReview } = await nexus.database
-      .from('course_reviews')
-      .select('*')
-      .eq('id', reviewId)
-      .single();
-
-    const { data, error } = await nexus.database
-      .from('course_reviews')
-      .update({
-        content_manager_id: contentManagerId,
-        status,
-        ...checklist,
-        notes,
-        reviewed_at: new Date().toISOString()
-      })
-      .eq('id', reviewId)
-      .select()
-      .single();
+    // One transaction: the review, the course status and the audit entry are
+    // written together or not at all. The reviewer is taken from the session.
+    const { data, error } = await nexus.database.rpc('admin_review_course', {
+      p_review_id: reviewId,
+      p_status: status,
+      p_checklist: checklist,
+      p_notes: notes
+    });
 
     if (error) throw error;
-
-    // Update main courses table status
-    const courseStatus = status === 'approved' ? 'published' : 'draft';
-    await nexus.database
-      .from('courses')
-      .update({ status: courseStatus })
-      .eq('id', courseId);
-
-    await this.logAdminAction(
-      contentManagerId,
-      status === 'approved' ? 'approve' : 'reject',
-      'course',
-      courseId,
-      currentReview,
-      { status, checklist, notes },
-      `Course review processed. Status: ${status}. Notes: ${notes}`
-    );
+    const currentReview = data as CourseReview;
 
     try {
       await nexus.realtime.publish('catalog-updates', 'course_updated', {
@@ -464,6 +284,14 @@ export const adminService = {
     } catch (realtimeErr) {
       console.error('[Realtime Publish Course Error]:', realtimeErr);
     }
+
+    publishAdminEvent('course_reviewed', { reviewId, courseId, status });
+    await notifyUser(currentReview?.submitted_by, {
+      event: 'course_reviewed',
+      courseId,
+      status,
+      notes
+    });
 
     return data;
   },
@@ -556,6 +384,14 @@ export const adminService = {
       console.error('[Realtime Publish Book Error]:', realtimeErr);
     }
 
+    publishAdminEvent('book_reviewed', { reviewId, bookId, status });
+    await notifyUser(currentReview?.submitted_by, {
+      event: 'book_reviewed',
+      bookId,
+      status,
+      notes
+    });
+
     return data;
   },
 
@@ -594,160 +430,35 @@ export const adminService = {
       checklist_profile_completeness: boolean;
       checklist_id_verification: boolean;
       checklist_qualifications: boolean;
-      checklist_intro_video: boolean;
     },
     rejectionReason: string,
     targetUserId: string
   ) {
-    const { data: currentApp, error: fetchAppError } = await nexus.database
-      .from('mentor_applications')
-      .select('*')
-      .eq('id', applicationId)
-      .single();
-
-    if (fetchAppError) throw fetchAppError;
-
-    const { data, error } = await nexus.database
-      .from('mentor_applications')
-      .update({
-        reviewed_by: reviewedBy,
-        status,
-        ...checklist,
-        rejection_reason: rejectionReason || null,
-        reviewed_at: new Date().toISOString()
-      })
-      .eq('id', applicationId)
-      .select()
-      .single();
+    // One transaction: application, profile promotion and audit entry. The
+    // applicant is taken from the application row, not from the caller.
+    const { data, error } = await nexus.database.rpc('admin_review_mentor', {
+      p_application_id: applicationId,
+      p_status: status,
+      p_checklist: checklist,
+      p_reason: rejectionReason || ''
+    });
 
     if (error) throw error;
+    const result = data as { application: MentorApplication; role: string; metadata: Record<string, any> };
+    const applicantId = result.application?.user_id || targetUserId;
 
-    // If approved, elevate user profile metadata
-    if (status === 'approved') {
-      const { data: profile, error: fetchProfileError } = await nexus.database
-        .from('profiles')
-        .select('metadata')
-        .eq('id', targetUserId)
-        .single();
-      
-      if (fetchProfileError) throw fetchProfileError;
-
-      const currentMetadata = profile?.metadata || {};
-      const { mentor_application_status, pending_mentor_data, ...rest } = currentMetadata;
-      const updatedMetadata = {
-        ...rest,
-        mentor_application_status: 'approved',
-        mentor_onboarded: true,
-        active_role: 'mentor',
-        mentor_onboarded_at: new Date().toISOString(),
-        mentor_data: pending_mentor_data || {
-          identity: { verified: true },
-          onboardedAt: new Date().toISOString()
-        }
-      };
-
-      const { error: profileError } = await nexus.database
-        .from('profiles')
-        .update({
-          role: 'mentor',
-          metadata: updatedMetadata
-        })
-        .eq('id', targetUserId);
-        
-      if (profileError) throw profileError;
-
-      try {
-        await nexus.realtime.publish(`user:${targetUserId}`, 'profile_updated', {
-          role: 'mentor',
-          metadata: updatedMetadata
-        });
-      } catch (realtimeErr) {
-        console.error('[Realtime Publish Mentor Approval Error]:', realtimeErr);
-      }
-
-    } else if (status === 'rejected') {
-      const { data: profile, error: fetchProfileError } = await nexus.database
-        .from('profiles')
-        .select('metadata')
-        .eq('id', targetUserId)
-        .single();
-        
-      if (fetchProfileError) throw fetchProfileError;
-
-      if (profile) {
-        const currentMetadata = profile.metadata || {};
-        const updatedMetadata = {
-          ...currentMetadata,
-          mentor_application_status: 'rejected',
-          rejection_reason: rejectionReason || 'Declined by administration.'
-        };
-        
-        const { error: profileError } = await nexus.database
-          .from('profiles')
-          .update({
-            metadata: updatedMetadata
-          })
-          .eq('id', targetUserId);
-          
-        if (profileError) throw profileError;
-
-        try {
-          await nexus.realtime.publish(`user:${targetUserId}`, 'profile_updated', {
-            role: 'mentee',
-            metadata: updatedMetadata
-          });
-        } catch (realtimeErr) {
-          console.error('[Realtime Publish Mentor Rejection Error]:', realtimeErr);
-        }
-      }
-    } else if (status === 'needs_info') {
-      const { data: profile, error: fetchProfileError } = await nexus.database
-        .from('profiles')
-        .select('metadata')
-        .eq('id', targetUserId)
-        .single();
-        
-      if (fetchProfileError) throw fetchProfileError;
-
-      if (profile) {
-        const currentMetadata = profile.metadata || {};
-        const updatedMetadata = {
-          ...currentMetadata,
-          mentor_application_status: 'needs_info',
-          rejection_reason: rejectionReason || 'More information requested.'
-        };
-        
-        const { error: profileError } = await nexus.database
-          .from('profiles')
-          .update({
-            metadata: updatedMetadata
-          })
-          .eq('id', targetUserId);
-          
-        if (profileError) throw profileError;
-
-        try {
-          await nexus.realtime.publish(`user:${targetUserId}`, 'profile_updated', {
-            role: 'mentee',
-            metadata: updatedMetadata
-          });
-        } catch (realtimeErr) {
-          console.error('[Realtime Publish Mentor Needs Info Error]:', realtimeErr);
-        }
-      }
+    try {
+      await nexus.realtime.publish(`user:${applicantId}`, 'profile_updated', {
+        role: status === 'approved' ? 'mentor' : 'mentee',
+        metadata: result.metadata
+      });
+    } catch (realtimeErr) {
+      console.error('[Realtime Publish Mentor Review Error]:', realtimeErr);
     }
 
-    await this.logAdminAction(
-      reviewedBy,
-      status === 'approved' ? 'approve' : 'reject',
-      'user',
-      targetUserId,
-      currentApp,
-      { status, checklist, rejectionReason },
-      `Mentor onboarding review processed. Status: ${status}. Reason: ${rejectionReason}`
-    );
+    publishAdminEvent('mentor_reviewed', { applicationId, targetUserId: applicantId, status });
 
-    return data;
+    return result.application;
   },
 
   /**
@@ -784,103 +495,29 @@ export const adminService = {
     rejectionReason: string,
     targetUserId: string
   ) {
-    const { data: currentApp } = await nexus.database
-      .from('author_applications')
-      .select('*')
-      .eq('id', applicationId)
-      .single();
-
-    const dbStatus = status === 'approved' ? 'approved' : (status === 'needs_info' ? 'needs_info' : 'denied');
-
-    const { data, error } = await nexus.database
-      .from('author_applications')
-      .update({
-        status: dbStatus,
-        rejection_reason: rejectionReason || null
-      })
-      .eq('id', applicationId)
-      .select()
-      .single();
+    // One transaction: application, profile flags and audit entry.
+    const { data, error } = await nexus.database.rpc('admin_review_author', {
+      p_application_id: applicationId,
+      p_status: status,
+      p_reason: rejectionReason || ''
+    });
 
     if (error) throw error;
+    const result = data as { status: string; user_id: string; role: string; metadata: Record<string, any> };
+    const applicantId = result.user_id || targetUserId;
 
-    // Elevate user profile metadata in profiles table
-    const { data: profile, error: fetchProfileError } = await nexus.database
-      .from('profiles')
-      .select('role, metadata, full_name')
-      .eq('id', targetUserId)
-      .single();
-
-    if (fetchProfileError) throw fetchProfileError;
-
-    const currentMetadata = profile?.metadata || {};
-
-    if (dbStatus === 'approved') {
-      const updatedMetadata = {
-        ...currentMetadata,
-        is_author: true,
-        author_profile: {
-          name: currentApp?.pen_name || profile?.full_name || 'Author',
-          category: currentApp?.category || 'General',
-          approvedAt: new Date().toISOString()
-        }
-      };
-
-      const { error: profileError } = await nexus.database
-        .from('profiles')
-        .update({
-          role: 'mentor',
-          metadata: updatedMetadata
-        })
-        .eq('id', targetUserId);
-        
-      if (profileError) throw profileError;
-
-      try {
-        await nexus.realtime.publish(`user:${targetUserId}`, 'profile_updated', {
-          role: 'mentor',
-          metadata: updatedMetadata
-        });
-      } catch (realtimeErr) {
-        console.error('[Realtime Publish Author Approval Error]:', realtimeErr);
-      }
-    } else {
-      // For rejected/denied or needs_info, clear author flags or write needs_info
-      const { is_author, author_profile, ...cleanedMetadata } = currentMetadata;
-      const updatedMetadata = dbStatus === 'needs_info'
-        ? { ...cleanedMetadata, author_application_status: 'needs_info', rejection_reason: rejectionReason || 'More information requested.' }
-        : cleanedMetadata;
-
-      const { error: profileError } = await nexus.database
-        .from('profiles')
-        .update({
-          metadata: updatedMetadata
-        })
-        .eq('id', targetUserId);
-        
-      if (profileError) throw profileError;
-
-      try {
-        await nexus.realtime.publish(`user:${targetUserId}`, 'profile_updated', {
-          role: profile?.role || 'mentee',
-          metadata: updatedMetadata
-        });
-      } catch (realtimeErr) {
-        console.error('[Realtime Publish Author Rejection Error]:', realtimeErr);
-      }
+    try {
+      await nexus.realtime.publish(`user:${applicantId}`, 'profile_updated', {
+        role: result.role || 'mentee',
+        metadata: result.metadata
+      });
+    } catch (realtimeErr) {
+      console.error('[Realtime Publish Author Review Error]:', realtimeErr);
     }
 
-    await this.logAdminAction(
-      reviewedBy,
-      dbStatus === 'approved' ? 'approve' : 'reject',
-      'user',
-      targetUserId,
-      currentApp,
-      { status: dbStatus, rejectionReason },
-      `Author application review processed. Status: ${dbStatus}. Reason: ${rejectionReason}`
-    );
+    publishAdminEvent('author_reviewed', { applicationId, targetUserId: applicantId, status: result.status });
 
-    return data;
+    return result;
   },
 
   /**
@@ -923,6 +560,8 @@ export const adminService = {
       } catch (realtimeErr) {
         console.error('[Realtime Publish Suspension Error]:', realtimeErr);
       }
+
+      publishAdminEvent('user_suspension_changed', { userId, suspended: suspend });
     }
 
     return { data, error };
@@ -973,45 +612,21 @@ export const adminService = {
     targetType: string,
     targetId: string
   ) {
-    const { data: currentFlag } = await nexus.database
-      .from('flagged_content')
-      .select('*')
-      .eq('id', flaggedId)
-      .single();
-
-    const { data, error } = await nexus.database
-      .from('flagged_content')
-      .update({
-        status,
-        resolution_notes: notes,
-        resolved_by: resolvedBy,
-        resolved_at: new Date().toISOString()
-      })
-      .eq('id', flaggedId)
-      .select()
-      .single();
+    // One transaction: the report, the action taken on the reported content,
+    // and the audit entry. It also refuses to re-resolve an already decided
+    // report, and now actually hides flagged posts and comments — the previous
+    // version handled only courses and books, so "take action" on a reported
+    // post silently did nothing while telling the moderator it had.
+    const { data, error } = await nexus.database.rpc('admin_resolve_flag', {
+      p_flag_id: flaggedId,
+      p_status: status,
+      p_notes: notes,
+      p_take_action: takeAction
+    });
 
     if (error) throw error;
 
-    if (takeAction) {
-      if (targetType === 'course') {
-        // Hide course (set to draft)
-        await nexus.database.from('courses').update({ status: 'draft' }).eq('id', targetId);
-      } else if (targetType === 'book') {
-        // Flag/hide book (simulate hide via metadata or reviews)
-        await nexus.database.from('book_reviews').update({ status: 'rejected', notes: `Flagged: ${notes}` }).eq('book_id', targetId);
-      }
-    }
-
-    await this.logAdminAction(
-      resolvedBy,
-      'resolve',
-      'flagged_content',
-      flaggedId,
-      currentFlag,
-      { status, notes, actionTaken: takeAction },
-      `Resolved flagged content. Status: ${status}. Action: ${takeAction ? 'Content Hidden' : 'Dismissed'}. Notes: ${notes}`
-    );
+    publishAdminEvent('flag_resolved', { flaggedId, status, takeAction });
 
     return data;
   },
@@ -1042,60 +657,27 @@ export const adminService = {
    * Finance Admin: Approve/Reject payout requests
    */
   async reviewPayout(payoutId: string, reviewedBy: string, status: 'approved' | 'rejected', reason: string) {
-    const { data: currentPayout } = await nexus.database
-      .from('payout_requests')
-      .select('*')
-      .eq('id', payoutId)
-      .single();
-
-    const { data, error } = await nexus.database
-      .from('payout_requests')
-      .update({
-        status,
-        reviewed_by: reviewedBy,
-        reason,
-        reviewed_at: new Date().toISOString()
-      })
-      .eq('id', payoutId)
-      .select()
-      .single();
+    // One transaction: the decision, the ledger entry and the balance deduction
+    // happen together, under a row lock, and only while the request is still
+    // pending — so a double click or a retry cannot deduct twice, and a payout
+    // larger than the wallet balance is refused.
+    const { data, error } = await nexus.database.rpc('admin_review_payout', {
+      p_payout_id: payoutId,
+      p_status: status,
+      p_reason: reason
+    });
 
     if (error) throw error;
+    const currentPayout = data as PayoutRequest;
 
-    // Log the transaction if approved
-    if (status === 'approved' && currentPayout) {
-      // Find wallet for the vendor user
-      const { data: wallet } = await nexus.database
-        .from('wallets')
-        .select('id, available_balance')
-        .eq('user_id', currentPayout.user_id)
-        .single();
-
-      if (wallet) {
-        // Insert a transaction log
-        await nexus.database.from('transactions').insert({
-          wallet_id: wallet.id,
-          amount: -Number(currentPayout.amount),
-          type: 'payout',
-          status: 'completed',
-          description: `Payout to bank account: ${reason}`
-        });
-
-        // Deduct balance from wallet
-        const newBalance = Number(wallet.available_balance) - Number(currentPayout.amount);
-        await nexus.database.from('wallets').update({ available_balance: newBalance }).eq('id', wallet.id);
-      }
-    }
-
-    await this.logAdminAction(
-      reviewedBy,
-      status === 'approved' ? 'approve' : 'reject',
-      'payout',
+    publishAdminEvent('payout_reviewed', { payoutId, status });
+    await notifyUser(currentPayout?.user_id, {
+      event: 'payout_reviewed',
       payoutId,
-      currentPayout,
-      { status, reason },
-      `Payout request ${status}. Reason: ${reason}`
-    );
+      status,
+      amount: currentPayout?.amount,
+      reason
+    });
 
     return data;
   },
@@ -1163,6 +745,8 @@ export const adminService = {
       `Support ticket status updated to: ${status}${priority ? `, priority: ${priority}` : ''}`
     );
 
+    publishAdminEvent('ticket_updated', { ticketId, status, priority });
+
     return data;
   },
 
@@ -1222,6 +806,8 @@ export const adminService = {
       `Compliance request resolved as ${status}. Resolution notes: ${notes}`
     );
 
+    publishAdminEvent('compliance_resolved', { requestId, status });
+
     return data;
   },
 
@@ -1255,33 +841,17 @@ export const adminService = {
    * Issue Refund (Finance view)
    */
   async refundTransaction(transactionId: string, walletId: string, amount: number, adminId: string, reason: string) {
-    // Insert a negative sale transaction to represent the refund
-    const { data, error } = await nexus.database.from('transactions').insert({
-      wallet_id: walletId,
-      amount: -Math.abs(amount),
-      type: 'sale',
-      status: 'completed',
-      description: `Refund issued for txn ${transactionId}: ${reason}`
-    }).select().single();
+    // One transaction. The wallet is resolved from the sale itself, a sale can
+    // be refunded once, and never for more than it was.
+    const { data, error } = await nexus.database.rpc('admin_refund_transaction', {
+      p_transaction_id: transactionId,
+      p_amount: Math.abs(amount),
+      p_reason: reason
+    });
 
     if (error) throw error;
 
-    // Deduct/adjust wallet balance
-    const { data: wallet } = await nexus.database.from('wallets').select('available_balance').eq('id', walletId).single();
-    if (wallet) {
-      const newBalance = Number(wallet.available_balance) - Math.abs(amount);
-      await nexus.database.from('wallets').update({ available_balance: newBalance }).eq('id', walletId);
-    }
-
-    await this.logAdminAction(
-      adminId,
-      'refund',
-      'payout',
-      transactionId,
-      { walletId, amount },
-      { refunded: true, refundTxId: data.id },
-      `Issued refund of ₦${amount}. Reason: ${reason}`
-    );
+    publishAdminEvent('transaction_refunded', { transactionId, amount });
 
     return data;
   },
@@ -1328,6 +898,8 @@ export const adminService = {
       { replies: updatedReplies },
       `Posted reply to support ticket: "${text.substring(0, 60)}${text.length > 60 ? '...' : ''}"`
     );
+
+    publishAdminEvent('ticket_reply', { ticketId });
 
     return data;
   },
@@ -1548,40 +1120,17 @@ export const adminService = {
   },
 
   /**
-   * Register a new admin account (pending approval)
+   * Apply for admin access (pending super-admin approval).
+   *
+   * Always for the signed-in account: the database binds the application to
+   * the caller's session, so nobody can file one on someone else's behalf.
    */
-  async registerAdmin(userId: string, email: string, role: string, backupCodes: string[]) {
-    // 1. Insert pending admin user credentials
-    const { data: adminUser, error: adminErr } = await nexus.database
-      .from('admin_users')
-      .insert([{
-        user_id: userId,
-        role,
-        roles: [role],
-        twofa_email: email,
-        twofa_enabled: true,
-        status: 'pending',
-        backup_codes: backupCodes,
-        permissions: [role]
-      }])
-      .select()
-      .single();
-
-    if (adminErr) return { data: null, error: adminErr };
-
-    // 2. Insert corresponding application record
-    const { data: app, error: appErr } = await nexus.database
-      .from('admin_applications')
-      .insert([{
-        user_id: userId,
-        role,
-        reason: 'Initial enrollment request from self-service sign-up portal.',
-        status: 'pending'
-      }])
-      .select()
-      .single();
-
-    return { data: adminUser, error: appErr };
+  async registerAdmin(role: string, backupCodes: string[]) {
+    const { data, error } = await nexus.database.rpc('request_admin_access', {
+      p_role: role,
+      p_backup_codes: backupCodes
+    });
+    return { data, error };
   },
 
   /**
@@ -1611,9 +1160,11 @@ export const adminService = {
       .eq('id', id)
       .single();
 
+    // 'active' is the only status the console and the database treat as a
+    // working admin. Writing 'approved' here locked every approved admin out.
     const { data, error } = await nexus.database
       .from('admin_users')
-      .update({ status: 'approved' })
+      .update({ status: 'active' })
       .eq('id', id)
       .select()
       .single();
@@ -1743,7 +1294,7 @@ export const adminService = {
       .eq('used', false);
 
     // 3. Generate 6-digit code
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code = generateNumericCode(6);
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min expiry
 
     const { data, error } = await nexus.database
@@ -1917,7 +1468,10 @@ export const adminService = {
   },
 
   /**
-   * Log an admin action to the new audit log table
+   * Write one entry to the audit trail (admin_audit_logs — the single table
+   * every console reads). The acting admin is stamped by the database from the
+   * session; `adminUserId` only matters for server-side callers with no session.
+   * Never throws: a failed audit write must not undo the action it describes.
    */
   async logAdminAuditLog(
     adminUserId: string | null,
@@ -1931,10 +1485,10 @@ export const adminService = {
   ) {
     try {
       const { data, error } = await nexus.database
-        .from('admin_audit_log')
+        .from('admin_audit_logs')
         .insert([{
           admin_user_id: adminUserId,
-          action,
+          action_type: action,
           target_type: targetType,
           target_id: targetId,
           previous_state: previousState,
@@ -1942,10 +1496,10 @@ export const adminService = {
           reason,
           ip_address: ipAddress
         }]);
-      if (error) console.error('[Audit Log v2 Error]:', error);
+      if (error) console.error('[Audit Log Error]:', error);
       return { data, error };
     } catch (err) {
-      console.error('[Audit Log v2 Exception]:', err);
+      console.error('[Audit Log Exception]:', err);
       return { data: null, error: err };
     }
   },
@@ -2055,89 +1609,39 @@ export const adminService = {
   /**
    * Delete a user profile and all associated data
    */
-  async deleteUser(profileId: string, adminId: string) {
-    // Fetch current profile for audit
-    const { data: profile } = await nexus.database
-      .from('profiles')
-      .select('*')
-      .eq('id', profileId)
-      .single();
-
-    if (!profile) throw new Error('User profile not found');
-
-    // Delete associated records first
-    await nexus.database.from('enrollments').delete().eq('student_id', profileId);
-    await nexus.database.from('mentor_applications').delete().eq('user_id', profileId);
-    await nexus.database.from('author_applications').delete().eq('user_id', profileId);
-    await nexus.database.from('admin_users').delete().eq('user_id', profileId);
-
-    // Delete the profile
-    const { error } = await nexus.database
-      .from('profiles')
-      .delete()
-      .eq('id', profileId);
+  async deleteUser(profileId: string, adminId: string, reason = '') {
+    // One transaction. The previous version issued five independent deletes,
+    // so a failure part-way left the account gone but its enrollments,
+    // applications and admin record behind — and it deleted enrollments by
+    // `student_id`, a column that table does not have, so those always stayed.
+    const { data, error } = await nexus.database.rpc('admin_delete_user', {
+      p_user_id: profileId,
+      p_reason: reason
+    });
 
     if (error) throw error;
 
-    // Audit log
-    await this.logAdminAction(
-      adminId,
-      'delete',
-      'user',
-      profileId,
-      profile,
-      null,
-      `User account "${profile.full_name}" permanently deleted by admin`
-    );
-
-    return { success: true };
+    publishAdminEvent('user_deleted', { userId: profileId });
+    return { success: true, ...(data as object) };
   },
 
   /**
    * Delete a course or book and its associated reviews
    */
-  async deleteContent(contentId: string, type: 'course' | 'book', adminId: string) {
-    const table = type === 'course' ? 'courses' : 'books';
-    const reviewTable = type === 'course' ? 'course_reviews' : 'book_reviews';
-    const idField = type === 'course' ? 'course_id' : 'book_id';
-
-    // Fetch current for audit
-    const { data: content } = await nexus.database
-      .from(table)
-      .select('*')
-      .eq('id', contentId)
-      .single();
-
-    if (!content) throw new Error(`${type} not found`);
-
-    // Delete reviews first
-    await nexus.database.from(reviewTable).delete().eq(idField, contentId);
-
-    // Delete enrollments if course
-    if (type === 'course') {
-      await nexus.database.from('enrollments').delete().eq('course_id', contentId);
-    }
-
-    // Delete the content
-    const { error } = await nexus.database
-      .from(table)
-      .delete()
-      .eq('id', contentId);
+  async deleteContent(contentId: string, type: 'course' | 'book', adminId: string, reason = '') {
+    // One transaction: content, its reviews, its enrollments and the audit
+    // entry. Enrollments are matched on both item_id and course_id, since the
+    // checkout path and the payment webhook write different columns.
+    const { data, error } = await nexus.database.rpc('admin_delete_content', {
+      p_content_id: contentId,
+      p_type: type,
+      p_reason: reason
+    });
 
     if (error) throw error;
 
-    // Audit log
-    await this.logAdminAction(
-      adminId,
-      'delete',
-      type,
-      contentId,
-      content,
-      null,
-      `${type.charAt(0).toUpperCase() + type.slice(1)} "${content.title}" permanently deleted by admin`
-    );
-
-    return { success: true };
+    publishAdminEvent('content_deleted', { contentId, type });
+    return { success: true, ...(data as object) };
   },
 
   async getStorageFileUrl(filePath: string): Promise<string> {

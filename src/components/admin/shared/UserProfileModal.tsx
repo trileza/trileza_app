@@ -9,7 +9,7 @@ import { formatDate } from '../../../utils';
 import { formatDistanceToNow } from 'date-fns';
 import {
   X, Users, ShieldCheck, AlertCircle, Activity, Download,
-  FileText, BookOpen, Mail, Slash, Lock, Eye, Trash2,
+  FileText, BookOpen, Lock, Eye, Trash2,
   RotateCcw, ExternalLink, ChevronDown, ChevronUp
 } from 'lucide-react';
 

@@ -57,7 +57,7 @@ export async function fetchAuthorProfile(userId: string): Promise<AuthorProfile>
 
   try {
     const { data } = await nexus.database
-      .from('profiles')
+      .from('public_profiles')
       .select('id, full_name, avatar_url, role, username')
       .eq('id', userId)
       .maybeSingle();
@@ -88,7 +88,7 @@ export async function fetchAuthorProfilesBatch(userIds: string[]): Promise<Recor
   if (missing.length > 0) {
     try {
       const { data } = await nexus.database
-        .from('profiles')
+        .from('public_profiles')
         .select('id, full_name, avatar_url, role, username')
         .in('id', missing);
 
@@ -762,7 +762,7 @@ export const feedService = {
     if (!query || query.trim().length === 0) return [];
     try {
       const { data } = await nexus.database
-        .from('profiles')
+        .from('public_profiles')
         .select('id, full_name, avatar_url, role, username')
         .ilike('full_name', `%${query.trim()}%`)
         .limit(8);

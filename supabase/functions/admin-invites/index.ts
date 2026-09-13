@@ -39,9 +39,10 @@ export default async function(req: Request): Promise<Response> {
             .maybeSingle();
           resolvedAdminUserId = adminRec?.id || null;
         }
-        await adminClient.database.from('admin_audit_log').insert([{
+        await adminClient.database.from('admin_audit_logs').insert([{
+          admin_id: adminUserId,
           admin_user_id: resolvedAdminUserId,
-          action: actionName,
+          action_type: actionName,
           target_type: targetType,
           target_id: targetId,
           previous_state: null,
@@ -134,25 +135,33 @@ export default async function(req: Request): Promise<Response> {
       // Upsert admin_users
       const { data: existingAdmin } = await adminClient.database
         .from('admin_users')
-        .select('id, roles')
+        .select('id, roles, status')
         .eq('user_id', userId)
         .maybeSingle();
 
       let finalRoles = invite.roles;
-      
+
       if (existingAdmin) {
         // Merge roles
-        const currentRoles = existingAdmin.roles as string[];
+        const currentRoles = (existingAdmin.roles as string[]) || [];
         finalRoles = [...new Set([...currentRoles, ...invite.roles])];
-        
+
+        // An invitation is a super admin's grant, so it settles a pending or
+        // rejected self-service application. A suspension is left alone: that
+        // is a separate decision and must be lifted explicitly.
+        const updates: Record<string, unknown> = { roles: finalRoles };
+        if (!existingAdmin.status || existingAdmin.status === 'pending' || existingAdmin.status === 'rejected') {
+          updates.status = 'active';
+        }
+
         await adminClient.database
           .from('admin_users')
-          .update({ roles: finalRoles })
+          .update(updates)
           .eq('user_id', userId);
       } else {
         await adminClient.database
           .from('admin_users')
-          .insert([{ user_id: userId, roles: invite.roles, onboarded: false, suspended: false }]);
+          .insert([{ user_id: userId, roles: invite.roles, onboarded: false, suspended: false, status: 'active' }]);
       }
 
       // Mark invite accepted

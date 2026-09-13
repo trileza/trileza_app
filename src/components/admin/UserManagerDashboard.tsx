@@ -2,15 +2,14 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { adminService } from '../../lib/services/admin';
 import type { MentorApplication } from '../../types/admin';
 import { nexus } from '../../lib/nexus';
+import { fetchBounded, fetchCount, ADMIN_MAX_ROWS } from './hooks/adminQuery';
 import { Card, Button, Toast } from '../ui';
 import { useAuthStore } from '../../store/authStore';
 import { 
   Users, 
   CheckSquare, 
-  AlertCircle, 
   Video, 
   FileText, 
-  ShieldAlert, 
   ShieldCheck,
   Search,
   CheckCircle2,
@@ -22,7 +21,6 @@ import {
   Activity,
   Download,
   Mail,
-  UserCheck,
   X,
   ExternalLink,
   Trash2
@@ -48,7 +46,11 @@ const UserManagerDashboard: React.FC = () => {
   const [profiles, setProfiles] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [books, setBooks] = useState<any[]>([]);
-  const [enrollments, setEnrollments] = useState<any[]>([]);
+  // Only the total is displayed, so only the total is fetched.
+  const [enrollmentCount, setEnrollmentCount] = useState<number>(0);
+  // True when a list shows the newest rows rather than the whole table.
+  const [truncated, setTruncated] = useState<boolean>(false);
+  const [enrolledCounts, setEnrolledCounts] = useState<Record<string, number>>({});
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -99,7 +101,6 @@ const UserManagerDashboard: React.FC = () => {
     checklist_profile_completeness: false,
     checklist_id_verification: false,
     checklist_qualifications: false,
-    checklist_intro_video: false
   });
 
   const [rejectionReason, setRejectionReason] = useState('');
@@ -124,23 +125,27 @@ const UserManagerDashboard: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [apps, authorApps, profsRes, coursesRes, booksRes, enrollRes, auditRes, adminsRes] = await Promise.all([
+      // Bounded reads. These lists previously pulled every row of every table
+      // on each realtime event, which does not survive a production-sized
+      // database. Counts that only feed a number come back as counts.
+      const [apps, authorApps, profs, courses, books, enrollTotal, audit, adminsRes] = await Promise.all([
         adminService.getMentorApplications(),
         adminService.getAuthorApplications(),
-        nexus.database.from('profiles').select('*').order('created_at', { ascending: false }),
-        nexus.database.from('courses').select('*'),
-        nexus.database.from('books').select('*'),
-        nexus.database.from('enrollments').select('*'),
-        nexus.database.from('admin_audit_logs').select('*').order('created_at', { ascending: false }),
-        nexus.database.from('admin_users').select('*')
+        fetchBounded<any>('profiles', q => q.order('created_at', { ascending: false })),
+        fetchBounded<any>('courses', q => q.order('created_at', { ascending: false })),
+        fetchBounded<any>('books', q => q.order('created_at', { ascending: false })),
+        fetchCount('enrollments'),
+        fetchBounded<any>('admin_audit_logs', q => q.order('created_at', { ascending: false }), 250),
+        nexus.database.from('admin_users').select('id, role').limit(ADMIN_MAX_ROWS)
       ]);
       setApplications(apps);
       setAuthorApplications(authorApps);
-      setProfiles(profsRes.data || []);
-      setCourses(coursesRes.data || []);
-      setBooks(booksRes.data || []);
-      setEnrollments(enrollRes.data || []);
-      setAuditLogs(auditRes.data || []);
+      setProfiles(profs.rows);
+      setCourses(courses.rows);
+      setBooks(books.rows);
+      setEnrollmentCount(enrollTotal);
+      setAuditLogs(audit.rows);
+      setTruncated(profs.truncated || courses.truncated || books.truncated);
 
       const adminRoleMap: Record<string, string> = {};
       adminsRes.data?.forEach((a: any) => {
@@ -173,7 +178,6 @@ const UserManagerDashboard: React.FC = () => {
       checklist_profile_completeness: app.checklist_profile_completeness,
       checklist_id_verification: app.checklist_id_verification,
       checklist_qualifications: app.checklist_qualifications,
-      checklist_intro_video: app.checklist_intro_video
     });
     setRejectionReason(app.rejection_reason || '');
 
@@ -367,7 +371,30 @@ const UserManagerDashboard: React.FC = () => {
   };
 
   // Helper metrics calculations
-  const getEnrolledCount = (pId: string) => enrollments.filter(e => e.student_id === pId).length;
+  /**
+   * Enrollment count for one user, counted in the database on demand.
+   *
+   * This previously filtered a full in-memory enrollments table on
+   * `student_id` — a column enrollments does not have (it is `user_id`), so
+   * the figure was always 0.
+   */
+  const getEnrolledCount = (pId: string) => enrolledCounts[pId] ?? 0;
+
+  const loadEnrolledCount = useCallback(async (pId: string) => {
+    if (!pId || enrolledCounts[pId] !== undefined) return;
+    try {
+      const count = await fetchCount('enrollments', q => q.eq('user_id', pId));
+      setEnrolledCounts(prev => ({ ...prev, [pId]: count }));
+    } catch (err) {
+      console.error('[UM] Could not count enrollments:', err);
+    }
+  }, [enrolledCounts]);
+
+  // Counted in the database when a user is opened, rather than by filtering a
+  // full copy of the enrollments table held in the browser.
+  useEffect(() => {
+    if (impersonatingUser?.id) loadEnrolledCount(impersonatingUser.id);
+  }, [impersonatingUser?.id, loadEnrolledCount]);
   const getTaughtCount = (pId: string) => courses.filter(c => c.tutor_id === pId).length;
   const getPublishedBooksCount = (pId: string) => books.filter(b => b.author_id === pId).length;
   const getProfileCompletion = (p: any) => {
@@ -439,7 +466,6 @@ const UserManagerDashboard: React.FC = () => {
         checklist_profile_completeness: selectedApp.checklist_profile_completeness,
         checklist_id_verification: selectedApp.checklist_id_verification,
         checklist_qualifications: selectedApp.checklist_qualifications,
-        checklist_intro_video: selectedApp.checklist_intro_video
       },
       reviewNotes: selectedApp.rejection_reason || ''
     });
@@ -674,17 +700,42 @@ const UserManagerDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Intro Video Player (No-Print) */}
-              {selectedApp.video_url && (
-                <div className="space-y-3 mb-6 no-print">
-                  <p className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                    <Video size={14} className="text-green-600" /> Intro Video Player
-                  </p>
-                  <div className="relative aspect-video max-w-2xl rounded-2xl overflow-hidden bg-slate-950 border border-slate-200 shadow-md">
-                    <video src={selectedApp.video_url} controls className="w-full h-full object-cover" />
+              {/* Identity document — what checklist_id_verification is checked
+                  against. Held in a private bucket, so it is opened through a
+                  signed URL rather than linked directly. */}
+              <div className="space-y-3 mb-6 no-print">
+                <p className="text-xs font-black text-slate-500 uppercase tracking-widest">
+                  Government-issued ID
+                </p>
+                {selectedApp.id_document_url ? (
+                  <div className="flex flex-wrap items-center gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-slate-900 truncate">{selectedApp.id_document_name || 'Identity document'}</p>
+                      <p className="text-xs text-slate-500 font-semibold">{selectedApp.id_document_type || 'Uploaded document'}</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const url = await adminService.getStorageFileUrl(selectedApp.id_document_url!);
+                          window.open(url, '_blank', 'noopener,noreferrer');
+                        } catch (err: any) {
+                          showToast(err?.message || 'Could not open that document.', 'error');
+                        }
+                      }}
+                      className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-wider hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      View document
+                    </button>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50">
+                    <p className="text-sm font-bold text-amber-800">No identity document submitted</p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      ID upload is optional at signup. Request one via "Needs info" before ticking identity verification.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               {/* Grid Content Layout */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -1296,7 +1347,7 @@ const UserManagerDashboard: React.FC = () => {
                         { key: 'checklist_profile_completeness', label: 'Profile avatar & bio summary' },
                         { key: 'checklist_id_verification', label: 'Government ID matches records' },
                         { key: 'checklist_qualifications', label: 'Qualifications reviewed' },
-                        { key: 'checklist_intro_video', label: 'Intro video is clear/professional' },
+                    
                       ].map(item => (
                         <label key={item.key} className="flex items-start gap-3 cursor-pointer group py-0.5">
                           <input 
@@ -1477,7 +1528,7 @@ const UserManagerDashboard: React.FC = () => {
                 <div className="space-y-3 text-xs leading-relaxed text-slate-300">
                   <div className="p-3 bg-slate-900 border border-slate-850 rounded-xl space-y-1">
                     <p className="font-bold text-white">1. Enrolled courses staging connection</p>
-                    <p className="text-slate-550 text-[10px]">Loaded {getEnrolledCount(impersonatingUser.id)} enrollments. Database read latency: 12ms. Access filter verified.</p>
+                    <p className="text-slate-550 text-[10px]">Loaded {getEnrolledCount(impersonatingUser.id)} enrollments. Access filter verified.</p>
                   </div>
                   <div className="p-3 bg-slate-900 border border-slate-850 rounded-xl space-y-1">
                     <p className="font-bold text-white">2. Wallet ledger connection</p>
@@ -1543,8 +1594,7 @@ const UserManagerDashboard: React.FC = () => {
                           checklist_profile_completeness: viewingAppRecords.checklist_profile_completeness,
                           checklist_id_verification: viewingAppRecords.checklist_id_verification,
                           checklist_qualifications: viewingAppRecords.checklist_qualifications,
-                          checklist_intro_video: viewingAppRecords.checklist_intro_video,
-                        },
+                                        },
                         reviewNotes: viewingAppRecords.rejection_reason || '',
                       });
                     }}

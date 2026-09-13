@@ -1,5 +1,6 @@
 import { nexus } from '../nexus';
 import type { Course, Module, Lesson } from '../database.types';
+import { publishUserEvent } from './realtimeEvents';
 
 export const courseService = {
   /**
@@ -76,6 +77,7 @@ export const courseService = {
       .single();
 
     if (error) throw error;
+    publishUserEvent('course_submitted', { courseId: data.id, tutorId, title });
     return data;
   },
 
@@ -91,6 +93,7 @@ export const courseService = {
       .single();
 
     if (error) throw error;
+    publishUserEvent('course_submitted', { courseId, updates });
     return data;
   },
 

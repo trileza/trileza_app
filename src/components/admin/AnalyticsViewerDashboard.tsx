@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { adminService } from '../../lib/services/admin';
 import { Card, Button, Toast } from '../ui';
 import { 
@@ -7,9 +7,7 @@ import {
   Users, 
   BookOpen, 
   DollarSign, 
-  CheckCircle, 
   RefreshCcw,
-  Activity,
   FileText,
   Calendar,
   Layers
@@ -17,6 +15,7 @@ import {
 import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { formatCurrency } from '../../utils';
 import PageHeader from '../shared/PageHeader';
+import { useMultiTableSync } from './hooks/useAdminData';
 
 const AnalyticsViewerDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -35,7 +34,7 @@ const AnalyticsViewerDashboard: React.FC = () => {
     setToast({ message, type });
   };
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [courses, books, mentors, payouts, txs] = await Promise.all([
@@ -59,11 +58,17 @@ const AnalyticsViewerDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Realtime sync for analytics data
+  useMultiTableSync(
+    ['courses', 'books', 'transactions', 'profiles', 'enrollments'],
+    fetchData
+  );
 
   const handleExport = () => {
     setExporting(true);
@@ -211,15 +216,15 @@ const AnalyticsViewerDashboard: React.FC = () => {
               <AreaChart data={filteredEnrollmentTrend}>
                 <defs>
                   <linearGradient id="colorStudents" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#43A047" stopOpacity={0.15}/>
+                    <stop offset="95%" stopColor="#43A047" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} />
                 <YAxis hide />
                 <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: 11, color: '#0f172a' }} />
-                <Area type="monotone" dataKey="students" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorStudents)" />
+                <Area type="monotone" dataKey="students" stroke="#43A047" strokeWidth={3} fillOpacity={1} fill="url(#colorStudents)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -244,7 +249,7 @@ const AnalyticsViewerDashboard: React.FC = () => {
                 <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: 11, color: '#0f172a' }} />
                 <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11, fontWeight: 'bold' }} />
                 <Bar dataKey="active" fill="#047857" radius={[6, 6, 0, 0]} name="Active Focus" />
-                <Bar dataKey="completed" fill="#10b981" radius={[6, 6, 0, 0]} name="Graduated" />
+                <Bar dataKey="completed" fill="#43A047" radius={[6, 6, 0, 0]} name="Graduated" />
               </BarChart>
             </ResponsiveContainer>
           </div>

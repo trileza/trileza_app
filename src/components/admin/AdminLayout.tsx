@@ -4,6 +4,7 @@ import { useAuthStore } from '../../store/authStore';
 import type { AdminRole } from '../../types/admin';
 import { cn } from '../../utils';
 import { ROLE_SLUGS } from '../../utils/adminRedirect';
+import { getGrantedAdminRoles, ALL_ADMIN_ROLES } from '../../utils/adminAuth';
 import { 
   ShieldAlert, 
   BookOpen, 
@@ -14,11 +15,13 @@ import {
   BarChart3, 
   LogOut,
   ChevronRight,
-  Menu,
   X,
   UserPlus,
-  RefreshCw
+  RefreshCw,
 } from 'lucide-react';
+import { useAdminRealtimeHub } from './hooks/useAdminData';
+import Logo from '../shared/Logo';
+import { useRoleTheme } from '../../utils/useRoleTheme';
 
 interface AdminLayoutProps {
   currentRole: AdminRole;
@@ -28,9 +31,13 @@ interface AdminLayoutProps {
 
 const AdminLayout: React.FC<AdminLayoutProps> = ({ currentRole, onRoleChange, children }) => {
   const { user, adminUser, adminRoles, logoutAdmin } = useAuthStore();
+  const { isConnected, eventCount, lastSyncedAt } = useAdminRealtimeHub(true);
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [mobileSwitcherOpen, setMobileSwitcherOpen] = React.useState(false);
+
+  // The console determines the accent here, not the signed-in user's role.
+  useRoleTheme(currentRole);
 
   const roleMeta: Record<AdminRole, { label: string; icon: any; color: string; bg: string }> = {
     super_admin: { label: 'Super Admin', icon: ShieldAlert, color: 'text-red-700', bg: 'bg-red-50 border-red-200/50' },
@@ -44,9 +51,13 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ currentRole, onRoleChange, ch
 
   const currentMeta = currentRole ? roleMeta[currentRole] : null;
 
-  const switchableRoles = adminRoles?.includes('super_admin')
-    ? (Object.keys(roleMeta) as AdminRole[])
-    : adminRoles || [];
+  // Only offer consoles this admin can actually enter. Advertising the rest
+  // just produces an Access Denied screen on click, and hints at capabilities
+  // the account does not have. super_admin sees every console.
+  const grantedRoles = getGrantedAdminRoles(adminUser);
+  const switchableRoles: AdminRole[] = grantedRoles.includes('super_admin')
+    ? ALL_ADMIN_ROLES
+    : grantedRoles;
 
   // Safe fallback if role meta is missing (e.g. during state initialization)
   if (!currentMeta) {
@@ -72,8 +83,8 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ currentRole, onRoleChange, ch
       { label: 'Dashboard', path: `/${slug}`, icon: roleMeta[currentRole]?.icon || ShieldAlert },
     ];
     if (currentRole === 'super_admin') {
-      links.push({ label: 'Admins & Logs', path: '/gate/superadmin/admins', icon: UserPlus });
-      links.push({ label: 'Multi-Tenant Platform', path: '/gate/superadmin/tenants', icon: BookOpen });
+      links.push({ label: 'Admins & Logs', path: '/superadmin/admins', icon: UserPlus });
+      links.push({ label: 'Multi-Tenant Platform', path: '/superadmin/tenants', icon: BookOpen });
     }
     return links;
   };
@@ -93,17 +104,23 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ currentRole, onRoleChange, ch
 
       {/* ── Sidebar Navigation ── */}
       <aside className={cn(
-        "bg-white border-r border-slate-200/80 flex flex-col justify-between shrink-0 w-80 h-screen fixed lg:sticky top-0 left-0 transition-transform duration-300 z-50 shadow-sm lg:translate-x-0 lg:flex",
+        "bg-white border-r border-slate-200/80 flex flex-col justify-between shrink-0 w-80 h-screen fixed lg:sticky top-0 left-0 transition-transform duration-300 z-50 shadow-sm lg:translate-x-0 lg:flex relative",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
+        {/* Console identity — the one element that differs between consoles. */}
+        <span
+          aria-hidden="true"
+          className="absolute left-0 top-0 bottom-0 w-1"
+          style={{ backgroundColor: 'var(--role-accent)' }}
+        />
         
         <div className="flex flex-col flex-1">
           {/* Brand/Header */}
           <div className="p-6 border-b border-slate-200/80 flex items-center justify-between bg-slate-50/50">
-            <div className="flex items-center gap-3 text-left">
-              <img src="/logo.png" alt="Trileza logo" className="w-10 h-10 object-contain" />
-              <div>
-                <h1 className="font-black text-lg tracking-tight text-slate-900">Trileza admin</h1>
+            <div className="flex items-center gap-3 text-left min-w-0">
+              <Logo variant="mark" size="md" to="/gate" />
+              <div className="min-w-0">
+                <h1 className="font-black text-lg tracking-tight text-slate-900 truncate">Trileza admin</h1>
                 <p className="text-[11px] text-slate-450 font-bold tracking-wider">Operations portal</p>
               </div>
             </div>
@@ -129,8 +146,29 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ currentRole, onRoleChange, ch
                 <p className="font-extrabold text-sm text-slate-900 truncate">{user?.full_name}</p>
                 <p className="text-[11px] text-slate-500 font-bold truncate mt-0.5">{user?.email}</p>
                 
+                {/* Live Realtime Status Pill */}
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className={cn(
+                    "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border",
+                    isConnected 
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                      : "bg-amber-50 text-amber-700 border-amber-200"
+                  )}>
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full",
+                      isConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                    )} />
+                    {isConnected ? "Live Sync Active" : "Connecting..."}
+                  </span>
+                  {eventCount > 0 && (
+                    <span className="text-[9px] font-bold text-slate-400">
+                      • {eventCount} {eventCount === 1 ? 'event' : 'events'}
+                    </span>
+                  )}
+                </div>
+
                 {switchableRoles && switchableRoles.length > 1 ? (
-                  <div className="mt-2">
+                  <div className="mt-2.5">
                     <label className="text-[8px] text-slate-400 font-black uppercase tracking-widest block mb-1">Switch Role</label>
                     <select
                       value={currentRole}
@@ -150,11 +188,14 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ currentRole, onRoleChange, ch
                     </select>
                   </div>
                 ) : (
-                  <span className={cn(
-                    "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider mt-2 border",
-                    currentMeta.color,
-                    currentMeta.bg
-                  )}>
+                  <span
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider mt-2 border"
+                    style={{
+                      color: 'var(--role-accent)',
+                      backgroundColor: 'var(--role-accent-soft)',
+                      borderColor: 'var(--role-accent-border)'
+                    }}
+                  >
                     {currentMeta.label}
                   </span>
                 )}
@@ -191,6 +232,44 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ currentRole, onRoleChange, ch
                       <span>{link.label}</span>
                     </div>
                     <ChevronRight size={14} className={isActive ? "text-emerald-500" : "text-slate-400"} />
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* All Admin Consoles Quick Links */}
+            <div className="space-y-1 pt-4 border-t border-slate-100">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-3 mb-3">Your Admin Consoles</p>
+              {[
+                { role: 'super_admin', label: 'Super Admin', path: '/superadmin', icon: ShieldAlert, color: 'text-red-600' },
+                { role: 'content_manager', label: 'Content Manager', path: '/content-manager', icon: BookOpen, color: 'text-amber-600' },
+                { role: 'user_manager', label: 'User Manager', path: '/user-manager', icon: Users, color: 'text-emerald-600' },
+                { role: 'finance_admin', label: 'Finance Admin', path: '/finance-admin', icon: DollarSign, color: 'text-indigo-600' },
+                { role: 'support_agent', label: 'Support Agent', path: '/support-agent', icon: LifeBuoy, color: 'text-cyan-600' },
+                { role: 'compliance_officer', label: 'Compliance Officer', path: '/compliance-officer', icon: Scale, color: 'text-purple-600' },
+                { role: 'analytics_viewer', label: 'Analytics Viewer', path: '/analytics-viewer', icon: BarChart3, color: 'text-slate-600' },
+              ].filter((item) => switchableRoles.includes(item.role as AdminRole)).map((item) => {
+                const ItemIcon = item.icon;
+                const isSelected = currentRole === item.role;
+                return (
+                  <button
+                    key={item.role}
+                    onClick={() => {
+                      onRoleChange(item.role as AdminRole);
+                      handleNavigate(item.path);
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold text-xs transition-all text-left mb-1 cursor-pointer",
+                      isSelected 
+                        ? "bg-slate-900 text-white shadow-sm" 
+                        : "hover:bg-slate-100 text-slate-700 hover:text-slate-900"
+                    )}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <ItemIcon size={15} className={isSelected ? "text-emerald-400" : item.color} />
+                      <span>{item.label}</span>
+                    </div>
+                    {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
                   </button>
                 );
               })}

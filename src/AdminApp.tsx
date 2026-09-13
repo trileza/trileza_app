@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { LoadingOverlay } from './components/shared';
+import type { AdminRole } from './types/admin';
+import { hasAdminRole, isAdminRecordActive, getDefaultAdminRole } from './utils/adminAuth';
 
 // Pages
 const GateLogin = React.lazy(() => import('./pages/admin/GateLogin'));
@@ -72,32 +74,73 @@ const useInactivityTimer = (logoutAdmin: () => void, hasToken: boolean) => {
   return { showWarning, setShowWarning };
 };
 
-// Route Guard component
-const ProtectedRoute: React.FC<{ children: React.ReactNode; requiredRole?: string }> = ({ children, requiredRole }) => {
-  const { adminSessionToken, adminUser, loading } = useAuthStore();
+// Screen shown to a signed-in admin who lacks the role this console requires.
+// Deliberately not a redirect to /signin — they are already authenticated, so
+// bouncing them to the login form would loop instead of explaining anything.
+const AccessDenied: React.FC<{ requiredRole?: AdminRole }> = ({ requiredRole }) => {
+  const { logoutAdmin } = useAuthStore();
+  const label = requiredRole ? requiredRole.replace(/_/g, ' ') : 'this console';
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center space-y-6 shadow-2xl">
+        <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto text-3xl">
+          ⛔
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-bold text-white uppercase">Access Denied</h2>
+          <p className="text-slate-400 text-sm leading-relaxed">
+            Your account does not hold the <span className="font-bold text-slate-200 capitalize">{label}</span> role.
+            This attempt has been recorded.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <button
+            onClick={() => { window.location.href = '/gate'; }}
+            className="w-full h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition-all"
+          >
+            Back to Gate
+          </button>
+          <button
+            onClick={async () => { await logoutAdmin(); window.location.href = '/signin'; }}
+            className="w-full h-12 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold transition-all"
+          >
+            Sign in as a different user
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Route guard for the admin consoles.
+ *
+ * Three conditions must all hold, in order:
+ *   1. a validated admin session token exists (proves 2FA / gate sign-in),
+ *   2. the admin_users record backing it is active (not suspended),
+ *   3. that record grants `requiredRole` (super_admin satisfies any role).
+ *
+ * Being signed in to the main learner app grants nothing here.
+ */
+const ProtectedRoute: React.FC<{ children: React.ReactNode; requiredRole?: AdminRole }> = ({ children, requiredRole }) => {
+  const { adminSessionToken, adminUser, loading, initialized } = useAuthStore();
   const location = useLocation();
 
-  if (loading) {
+  if (loading || !initialized) {
     return <LoadingOverlay message="Authorizing secure connection..." />;
   }
 
-  if (!adminSessionToken || !adminUser) {
+  // 1 + 2: an active admin session is required, not merely a platform login.
+  const hasAdminSession = Boolean(adminSessionToken) && isAdminRecordActive(adminUser);
+
+  if (!hasAdminSession) {
     return <Navigate to={requiredRole ? `/signin?role=${requiredRole}` : '/signin'} state={{ from: location }} replace />;
   }
 
-  // Enforce onboarding check
-  if (!adminUser.onboarding_completed && location.pathname !== '/gate/onboarding') {
-    return <Navigate to="/gate/onboarding" replace />;
-  }
-
-  // Enforce role permission
-  const userRoles = adminUser.roles || (adminUser.role ? [adminUser.role] : []);
-  const isSuperAdmin = userRoles.includes('super_admin');
-  const hasAccess = isSuperAdmin || !requiredRole || userRoles.includes(requiredRole);
-
-  if (!hasAccess) {
-    // If not super admin and doesn't hold required role, redirect to apply
-    return <Navigate to={`/signup?role=${requiredRole}`} replace />;
+  // 3: the session must actually carry the role this console demands.
+  if (!hasAdminRole(adminUser, requiredRole)) {
+    return <AccessDenied requiredRole={requiredRole} />;
   }
 
   return <>{children}</>;
@@ -113,6 +156,9 @@ const AdminApp: React.FC = () => {
     initialize 
   } = useAuthStore();
   const [activeRole, setActiveRole] = React.useState<any>(null);
+  // From the router, not the global `location`, so client-side navigation
+  // re-renders this component instead of relying on a parent to do it.
+  const location = useLocation();
 
   useEffect(() => {
     if (!initialized) {
@@ -121,15 +167,8 @@ const AdminApp: React.FC = () => {
   }, [initialized, initialize]);
 
   useEffect(() => {
-    if (adminUser && adminUser.roles && adminUser.roles.length > 0) {
-      if (adminUser.roles.includes('super_admin')) {
-        setActiveRole('super_admin');
-      } else {
-        setActiveRole(adminUser.roles[0]);
-      }
-    } else if (adminUser && adminUser.role) {
-      setActiveRole(adminUser.role);
-    }
+    // Only roles the admin record actually grants; null when it grants none.
+    setActiveRole(getDefaultAdminRole(adminUser));
   }, [adminUser]);
 
   const { showWarning, setShowWarning } = useInactivityTimer(logoutAdmin, !!adminSessionToken);
@@ -137,6 +176,120 @@ const AdminApp: React.FC = () => {
   if (loading && !initialized) {
     return <LoadingOverlay message="Initializing Secure Gate" submessage="Establishing encrypted handshake..." />;
   }
+
+  const renderContent = () => {
+    const p = location.pathname.toLowerCase();
+
+    if (p.endsWith('/signin')) {
+      return <GateLogin />;
+    }
+    if (p.endsWith('/signup')) {
+      return <GateRegister />;
+    }
+    if (p.includes('/verify-2fa')) {
+      return <GateVerify2FA />;
+    }
+    if (p.includes('/onboarding')) {
+      return (
+        <ProtectedRoute>
+          <GateOnboarding />
+        </ProtectedRoute>
+      );
+    }
+
+    if (p === '/superadmin/admins' || p.endsWith('/superadmin/admins') || p.includes('/gate/superadmin/admins')) {
+      return (
+        <ProtectedRoute requiredRole="super_admin">
+          <AdminLayout currentRole="super_admin" onRoleChange={setActiveRole}>
+            <AdminManagement />
+          </AdminLayout>
+        </ProtectedRoute>
+      );
+    }
+
+    if (p === '/superadmin/tenants' || p.endsWith('/superadmin/tenants') || p.includes('/gate/superadmin/tenants')) {
+      return (
+        <ProtectedRoute requiredRole="super_admin">
+          <AdminLayout currentRole="super_admin" onRoleChange={setActiveRole}>
+            <SuperAdminTenantsView />
+          </AdminLayout>
+        </ProtectedRoute>
+      );
+    }
+
+    if (p.startsWith('/superadmin') || p.includes('/gate/superadmin')) {
+      return (
+        <ProtectedRoute requiredRole="super_admin">
+          <AdminLayout currentRole="super_admin" onRoleChange={setActiveRole}>
+            <SuperAdminDashboard />
+          </AdminLayout>
+        </ProtectedRoute>
+      );
+    }
+
+    if (p.startsWith('/content-manager') || p.includes('content_manager')) {
+      return (
+        <ProtectedRoute requiredRole="content_manager">
+          <AdminLayout currentRole="content_manager" onRoleChange={setActiveRole}>
+            <ContentManagerDashboard />
+          </AdminLayout>
+        </ProtectedRoute>
+      );
+    }
+
+    if (p.startsWith('/user-manager') || p.includes('user_manager')) {
+      return (
+        <ProtectedRoute requiredRole="user_manager">
+          <AdminLayout currentRole="user_manager" onRoleChange={setActiveRole}>
+            <UserManagerDashboard />
+          </AdminLayout>
+        </ProtectedRoute>
+      );
+    }
+
+    if (p.startsWith('/finance-admin') || p.includes('finance_admin')) {
+      return (
+        <ProtectedRoute requiredRole="finance_admin">
+          <AdminLayout currentRole="finance_admin" onRoleChange={setActiveRole}>
+            <FinanceAdminDashboard />
+          </AdminLayout>
+        </ProtectedRoute>
+      );
+    }
+
+    if (p.startsWith('/support-agent') || p.includes('support_agent')) {
+      return (
+        <ProtectedRoute requiredRole="support_agent">
+          <AdminLayout currentRole="support_agent" onRoleChange={setActiveRole}>
+            <SupportAgentDashboard />
+          </AdminLayout>
+        </ProtectedRoute>
+      );
+    }
+
+    if (p.startsWith('/compliance-officer') || p.includes('compliance_officer')) {
+      return (
+        <ProtectedRoute requiredRole="compliance_officer">
+          <AdminLayout currentRole="compliance_officer" onRoleChange={setActiveRole}>
+            <ComplianceOfficerDashboard />
+          </AdminLayout>
+        </ProtectedRoute>
+      );
+    }
+
+    if (p.startsWith('/analytics-viewer') || p.includes('analytics_viewer')) {
+      return (
+        <ProtectedRoute requiredRole="analytics_viewer">
+          <AdminLayout currentRole="analytics_viewer" onRoleChange={setActiveRole}>
+            <AnalyticsViewerDashboard />
+          </AdminLayout>
+        </ProtectedRoute>
+      );
+    }
+
+    // Default to Gate Entry Page
+    return <GateEntryPage />;
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200/90 transition-colors duration-300 relative">
@@ -164,125 +317,7 @@ const AdminApp: React.FC = () => {
       )}
 
       <React.Suspense fallback={<LoadingOverlay message="Loading secure console..." />}>
-        <Routes>
-          {/* Public Gate Routes */}
-          <Route path="/" element={<GateEntryPage />} />
-          <Route path="/signin" element={<GateLogin />} />
-          <Route path="/signup" element={<GateRegister />} />
-          <Route path="/gate/verify-2fa" element={<GateVerify2FA />} />
-
-          {/* Protected Gate Routes */}
-          <Route 
-            path="/gate/onboarding" 
-            element={
-              <ProtectedRoute>
-                <GateOnboarding />
-              </ProtectedRoute>
-            } 
-          />
-
-          {/* Super Admin Dashboard routes */}
-          <Route 
-            path="/gate/superadmin" 
-            element={
-              <ProtectedRoute requiredRole="super_admin">
-                <AdminLayout currentRole={activeRole || 'super_admin'} onRoleChange={setActiveRole}>
-                  <SuperAdminDashboard />
-                </AdminLayout>
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/gate/superadmin/admins" 
-            element={
-              <ProtectedRoute requiredRole="super_admin">
-                <AdminLayout currentRole={activeRole || 'super_admin'} onRoleChange={setActiveRole}>
-                  <AdminManagement />
-                </AdminLayout>
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/gate/superadmin/tenants" 
-            element={
-              <ProtectedRoute requiredRole="super_admin">
-                <AdminLayout currentRole={activeRole || 'super_admin'} onRoleChange={setActiveRole}>
-                  <SuperAdminTenantsView />
-                </AdminLayout>
-              </ProtectedRoute>
-            } 
-          />
-
-          {/* Role-specific dashboards */}
-          <Route 
-            path="/content-manager" 
-            element={
-              <ProtectedRoute requiredRole="content_manager">
-                <AdminLayout currentRole={activeRole || 'content_manager'} onRoleChange={setActiveRole}>
-                  <ContentManagerDashboard />
-                </AdminLayout>
-              </ProtectedRoute>
-            } 
-          />
-
-          <Route 
-            path="/user-manager" 
-            element={
-              <ProtectedRoute requiredRole="user_manager">
-                <AdminLayout currentRole={activeRole || 'user_manager'} onRoleChange={setActiveRole}>
-                  <UserManagerDashboard />
-                </AdminLayout>
-              </ProtectedRoute>
-            } 
-          />
-
-          <Route 
-            path="/finance-admin" 
-            element={
-              <ProtectedRoute requiredRole="finance_admin">
-                <AdminLayout currentRole={activeRole || 'finance_admin'} onRoleChange={setActiveRole}>
-                  <FinanceAdminDashboard />
-                </AdminLayout>
-              </ProtectedRoute>
-            } 
-          />
-
-          <Route 
-            path="/support-agent" 
-            element={
-              <ProtectedRoute requiredRole="support_agent">
-                <AdminLayout currentRole={activeRole || 'support_agent'} onRoleChange={setActiveRole}>
-                  <SupportAgentDashboard />
-                </AdminLayout>
-              </ProtectedRoute>
-            } 
-          />
-
-          <Route 
-            path="/compliance-officer" 
-            element={
-              <ProtectedRoute requiredRole="compliance_officer">
-                <AdminLayout currentRole={activeRole || 'compliance_officer'} onRoleChange={setActiveRole}>
-                  <ComplianceOfficerDashboard />
-                </AdminLayout>
-              </ProtectedRoute>
-            } 
-          />
-
-          <Route 
-            path="/analytics-viewer" 
-            element={
-              <ProtectedRoute requiredRole="analytics_viewer">
-                <AdminLayout currentRole={activeRole || 'analytics_viewer'} onRoleChange={setActiveRole}>
-                  <AnalyticsViewerDashboard />
-                </AdminLayout>
-              </ProtectedRoute>
-            } 
-          />
-
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        {renderContent()}
       </React.Suspense>
     </div>
   );

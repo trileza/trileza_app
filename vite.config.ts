@@ -8,14 +8,6 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
-  server: {
-    proxy: {
-      '/api/library': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      }
-    }
-  },
   build: {
     rollupOptions: {
       output: {
@@ -39,11 +31,20 @@ export default defineConfig({
             if (id.includes('framer-motion')) {
               return 'vendor-motion';
             }
-            if (id.includes('recharts')) {
-              return 'vendor-charts';
-            }
             if (id.includes('xlsx') || id.includes('jszip') || id.includes('mammoth')) {
               return 'vendor-office';
+            }
+            if (id.includes('@insforge/sdk') || id.includes('insforge')) {
+              return 'vendor-insforge';
+            }
+            if (id.includes('core-js')) {
+              return 'vendor-polyfills';
+            }
+            if (id.includes('@cloudflare/realtimekit') || id.includes('realtimekit')) {
+              return 'vendor-rtk';
+            }
+            if (id.includes('zustand') || id.includes('clsx') || id.includes('tailwind-merge') || id.includes('date-fns')) {
+              return 'vendor-utils';
             }
           }
         }

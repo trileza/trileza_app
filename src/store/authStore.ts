@@ -3,6 +3,8 @@ import type { UserRole } from '../lib/database.types';
 import { nexus } from '../lib/nexus';
 import type { AdminRole } from '../types/admin';
 import { adminService } from '../lib/services/admin';
+import { generateSecureToken } from '../utils/secureRandom';
+import { isAdminRecordActive } from '../utils/adminAuth';
 
 // Re-export for backward compatibility with existing imports
 export type { UserRole } from '../lib/database.types';
@@ -17,7 +19,7 @@ export interface UserProfile {
   social_links?: Record<string, string>;
   expertise?: Array<{ id: number; type: string; desc: string; icon: string }>;
   website?: string;
-  mentor_tier?: 'provisional' | 'basic' | 'standard' | 'full';
+  mentor_tier?: 'free' | 'pro' | 'institutional' | 'provisional' | 'basic' | 'standard' | 'full' | string;
   verification_data?: any;
   created_at: string;
   username?: string;
@@ -27,6 +29,7 @@ export interface UserProfile {
   middle_name?: string;
   phone_number?: string;
   country?: string | null;
+  tenant_id?: string;
   metadata?: any;
 }
 
@@ -51,6 +54,7 @@ const ensureProfileInDatabase = async (profile: UserProfile) => {
       id: profile.id,
       email: profile.email,
       full_name: profile.full_name,
+      username: profile.username || (profile.metadata as any)?.username || null,
       role: profile.role,
       avatar_url: profile.avatar_url || null,
       mentor_tier: profile.mentor_tier || null,
@@ -67,6 +71,48 @@ const ensureProfileInDatabase = async (profile: UserProfile) => {
     }
   } catch (err) {
     console.error('[Auth] Exception during profiles database table sync:', err);
+  }
+};
+
+let activeRealtimeUserId: string | null = null;
+
+const setupUserRealtimeListeners = async (userId: string, syncCallback: () => void) => {
+  if (!userId || activeRealtimeUserId === userId) return;
+  activeRealtimeUserId = userId;
+
+  // Tells the subscription store which user's channel to watch for plan
+  // changes made outside this tab.
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('trileza:auth-user-ready', { detail: { userId } }));
+  }
+
+  try {
+    if (!nexus.realtime.isConnected) {
+      await nexus.realtime.connect();
+    }
+    const channel = `user:${userId}`;
+    await nexus.realtime.subscribe(channel);
+    
+    nexus.realtime.on('profile_updated', (payload: any) => {
+      console.log('[Auth Realtime] Received profile_updated event:', payload);
+      syncCallback();
+    });
+
+    nexus.realtime.on('user_suspension_changed', (payload: any) => {
+      if (payload?.userId === userId) {
+        console.log('[Auth Realtime] Suspension status changed:', payload);
+        syncCallback();
+      }
+    });
+
+    nexus.realtime.on('admin_role_changed', (payload: any) => {
+      if (payload?.userId === userId) {
+        console.log('[Auth Realtime] Admin role changed:', payload);
+        syncCallback();
+      }
+    });
+  } catch (err) {
+    console.warn('[Auth Realtime] Could not attach user realtime listener:', err);
   }
 };
 
@@ -107,13 +153,42 @@ export const resolveActiveRole = (user: UserProfile | null, overrideRole?: UserR
   const metadata = user.metadata || {};
   const storedActiveRole = overrideRole || metadata.active_role;
 
+  // A guardian is a single-purpose account: it only ever sees the parent
+  // portal, and cannot switch into a learner or mentor context.
+  if (user.role === 'guardian' || storedActiveRole === 'guardian') {
+    return 'guardian';
+  }
+
   const isMentorPermitted = 
     user.role === 'mentor' || 
     user.role === 'tutor' || 
     metadata.mentor_onboarded === true || 
     metadata.mentor_application_status === 'approved';
 
+  const isInstitutionalPermitted =
+    user.role === 'management' ||
+    (user.role as string) === 'tenant_admin' ||
+    user.role === 'staff' ||
+    user.mentor_tier === 'institutional' ||
+    metadata.mentor_tier === 'institutional' ||
+    metadata.subscription_tier === 'institutional' ||
+    Boolean(user.tenant_id) ||
+    Boolean(metadata.tenant_id);
+
   // Explicit active role selection takes priority if permitted
+  // Handle management/institutional roles
+  if (storedActiveRole === 'management' || storedActiveRole === 'staff' || 
+      storedActiveRole === 'tenant_admin' || storedActiveRole === 'institutional') {
+    if (isInstitutionalPermitted) {
+      return 'management';
+    }
+    // Fall back to mentor if they have mentor permissions
+    if (isMentorPermitted) {
+      return 'mentor';
+    }
+    return 'mentee';
+  }
+
   if (storedActiveRole === 'mentor' || storedActiveRole === 'tutor') {
     if (isMentorPermitted) {
       return 'mentor';
@@ -125,7 +200,10 @@ export const resolveActiveRole = (user: UserProfile | null, overrideRole?: UserR
     return 'mentee';
   }
 
-  // Default fallback based on onboarded status
+  // Default fallback based on role/permissions (no explicit active_role set)
+  if (isInstitutionalPermitted) {
+    return 'management';
+  }
   if (isMentorPermitted) {
     return 'mentor';
   }
@@ -156,6 +234,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       // Priority mapping for critical fields
       id: authUser.id || profileData?.id,
       email: authUser.email || profileData?.email,
+      username: profileCol.username || metadataCol.username || directProfile.username || authUser.username || null,
       full_name: profileCol.full_name || metadataCol.fullName || directProfile.full_name || authUser.name || authUser.full_name || 'Expert',
       role: (profileCol.role || metadataCol.role || directProfile.role || authUser.role || 'unassigned').toLowerCase(),
       country: profileData?.country || profileCol?.country || directProfile?.country || metadataCol?.mentor_data?.identity?.address?.country || null
@@ -211,6 +290,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
           if (merged) {
             // Non-blocking database sync in background
             ensureProfileInDatabase(merged).catch(err => console.error('[Auth] Background sync error:', err));
+            setupUserRealtimeListeners(merged.id, get().syncProfile);
           }
 
           let activeAdminUser: any = null;
@@ -290,6 +370,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         const merged = mergeUser(data.user, profile);
         if (merged) {
           ensureProfileInDatabase(merged).catch(err => console.error('[Auth] Background sync error:', err));
+          setupUserRealtimeListeners(merged.id, get().syncProfile);
         }
         set({ 
           user: merged, 
@@ -428,11 +509,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
         
         // If metadata is provided (from registration flow), set the profile immediately
         if (metadata) {
-          const customFields = metadata.metadata || {};
+          const customFields = metadata.metadata || metadata || {};
+          const fullName = metadata.full_name || metadata.fullName || customFields.full_name || data.user.profile?.name;
+          const avatarUrl = metadata.avatar_url || customFields.avatar_url;
           const { data: updatedProfile, error: profileError } = await nexus.auth.setProfile({
-            full_name: metadata.fullName || data.user.profile?.name,
-            role: metadata.role,
-            avatar_url: customFields.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
+            full_name: fullName,
+            role: metadata.role || customFields.role || 'mentee',
+            avatar_url: avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
             created_at: new Date().toISOString(),
             ...customFields
           });
@@ -491,6 +574,17 @@ export const useAuthStore = create<AuthState>((set, get) => {
       }
       sessionStorage.removeItem('admin_session_token');
       sessionStorage.removeItem('admin_2fa_passed');
+
+      // Plan state is persisted to localStorage, so it outlives the session
+      // unless cleared here. Without this a free account signing in on a
+      // browser that previously held an Institutional session inherited that
+      // tier, with the paid features unlocked, until the network call resolved.
+      try {
+        const { useSubscriptionStore } = await import('./subscriptionStore');
+        useSubscriptionStore.getState().resetSubscription();
+      } catch (err) {
+        console.error('[Auth] Could not reset plan state on sign-out:', err);
+      }
       await nexus.auth.signOut();
       set({ 
         user: null, 
@@ -629,7 +723,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
           return { error: 'Error validating admin credentials: ' + adminRoleErr.message };
         }
 
-        const approvedAdmin = adminRoles?.find((r: any) => r.status === 'active' || !r.suspended);
+        // The same rule the console guard applies. The previous `status === 'active'
+        // || !suspended` let a pending or rejected application through to 2FA.
+        const approvedAdmin = adminRoles?.find((r: any) => isAdminRecordActive(r));
         if (!approvedAdmin) {
           await nexus.auth.signOut();
           set({ loading: false });
@@ -637,7 +733,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         }
 
         if (approvedAdmin.twofa_bypassed || !approvedAdmin.twofa_enabled) {
-          const sessionToken = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+          const sessionToken = generateSecureToken();
           const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
           
           const { error: sessionErr } = await adminService.createAdminSession(
@@ -708,7 +804,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         return { error: res.error };
       }
 
-      const sessionToken = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+      const sessionToken = generateSecureToken();
       const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
       
       const { error: sessionErr } = await adminService.createAdminSession(
@@ -789,33 +885,38 @@ export const useAuthStore = create<AuthState>((set, get) => {
           }
 
           const merged = mergeUser(currentUser, profileData);
-          
-          // Preserve local activeRole if valid, or fall back to resolved role
-          let currentActiveRole = get().activeRole || resolveActiveRole(merged);
-          const isMentorPermitted = merged.metadata?.mentor_onboarded === true || merged.role === 'mentor' || merged.role === 'tutor';
+          const isMentorPermitted = merged.metadata?.mentor_onboarded === true || merged.role === 'mentor' || merged.role === 'tutor' || merged.metadata?.mentor_application_status === 'approved';
 
-          if (currentActiveRole === 'mentor' && !isMentorPermitted) {
+          // If the profile in the database was specifically updated to mentor (e.g. from admin approval),
+          // or if the user was on pending and just got approved, update activeRole to mentor
+          let currentActiveRole = get().activeRole;
+          if (isMentorPermitted && (metadata.active_role === 'mentor' || (currentUser.metadata?.mentor_application_status === 'pending' && metadata.mentor_application_status === 'approved'))) {
+            currentActiveRole = 'mentor';
+          } else if (currentActiveRole === 'mentor' && !isMentorPermitted) {
             currentActiveRole = 'mentee';
+          } else if (!currentActiveRole) {
+            currentActiveRole = resolveActiveRole(merged) || 'mentee';
           }
 
           if (merged.metadata) {
             merged.metadata.active_role = currentActiveRole;
           }
 
-          // Compare user changes (excluding active_role since it is forced to match)
+          // Compare user changes
           const hasUserChanged = (
             merged.full_name !== currentUser.full_name ||
             merged.avatar_url !== currentUser.avatar_url ||
             merged.role !== currentUser.role ||
             merged.bio !== currentUser.bio ||
             merged.country !== currentUser.country ||
+            merged.mentor_tier !== currentUser.mentor_tier ||
             JSON.stringify(merged.metadata) !== JSON.stringify(currentUser.metadata)
           );
 
           const hasActiveRoleChanged = currentActiveRole !== get().activeRole;
 
           if (hasUserChanged || hasActiveRoleChanged) {
-            console.log('[Sync] Profile updated from database:', merged);
+            console.log('[Sync] Profile updated from database:', merged, 'newActiveRole:', currentActiveRole);
             set({ 
               user: merged, 
               activeRole: currentActiveRole 
@@ -839,6 +940,17 @@ export const useAuthStore = create<AuthState>((set, get) => {
       }
       sessionStorage.removeItem('admin_session_token');
       sessionStorage.removeItem('admin_2fa_passed');
+
+      // Plan state is persisted to localStorage, so it outlives the session
+      // unless cleared here. Without this a free account signing in on a
+      // browser that previously held an Institutional session inherited that
+      // tier, with the paid features unlocked, until the network call resolved.
+      try {
+        const { useSubscriptionStore } = await import('./subscriptionStore');
+        useSubscriptionStore.getState().resetSubscription();
+      } catch (err) {
+        console.error('[Auth] Could not reset plan state on sign-out:', err);
+      }
 
       set({
         isAdmin: false,

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { Lock, Mail, AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { getAdminRedirectPath } from '../../utils/adminRedirect';
 
 const GateLogin: React.FC = () => {
@@ -52,7 +52,7 @@ const GateLogin: React.FC = () => {
       {/* Main Container */}
       <div className="max-w-md w-full z-10 space-y-8">
         <div className="text-center">
-          <img src="/logo.png" alt="Trileza Logo" className="w-16 h-16 object-contain mx-auto mb-6 drop-shadow-md animate-pulse" />
+          <img src="/icon-192.png" alt="Trileza Logo" className="w-16 h-16 object-contain mx-auto mb-6 drop-shadow-md animate-pulse" />
           <h1 className="text-3xl font-black text-white uppercase tracking-wider">Secure Admin Gate</h1>
           <p className="text-slate-400 text-sm mt-2">Administrative gate portal</p>
         </div>

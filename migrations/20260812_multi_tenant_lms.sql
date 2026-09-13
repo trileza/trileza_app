@@ -45,8 +45,16 @@ ON CONFLICT (id) DO UPDATE SET
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'default-tenant' REFERENCES tenants(id) ON DELETE CASCADE;
 -- Courses
 ALTER TABLE courses ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'default-tenant' REFERENCES tenants(id) ON DELETE CASCADE;
--- Books
-ALTER TABLE books ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'default-tenant' REFERENCES tenants(id) ON DELETE CASCADE;
+-- Books. Guarded: this deployment's library runs on `api_books`, and a bare
+-- ALTER on a table that is not there aborts the whole migration.
+DO $books$
+BEGIN
+  IF to_regclass('public.books') IS NOT NULL THEN
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'default-tenant' REFERENCES tenants(id) ON DELETE CASCADE;
+    CREATE INDEX IF NOT EXISTS idx_books_tenant_id ON books(tenant_id);
+  END IF;
+END
+$books$;
 -- Enrollments
 ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'default-tenant' REFERENCES tenants(id) ON DELETE CASCADE;
 -- Transactions
@@ -65,7 +73,7 @@ ALTER TABLE admin_audit_logs ADD COLUMN IF NOT EXISTS tenant_id TEXT DEFAULT 'de
 -- 4. Create Indexes on tenant_id for all tables
 CREATE INDEX IF NOT EXISTS idx_profiles_tenant_id ON profiles(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_courses_tenant_id ON courses(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_books_tenant_id ON books(tenant_id);
+-- (idx_books_tenant_id is created in the guarded block above.)
 CREATE INDEX IF NOT EXISTS idx_enrollments_tenant_id ON enrollments(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_tenant_id ON transactions(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_tenant_id ON support_tickets(tenant_id);

@@ -10,11 +10,6 @@
   function = "share"
 
 [[redirects]]
-  from = "/api/library/*"
-  to = "/.netlify/functions/library_api/:splat"
-  status = 200
-
-[[redirects]]
   from = "/api/feeds/*"
   to = "/.netlify/functions/feeds_api?path=feeds/:splat"
   status = 200

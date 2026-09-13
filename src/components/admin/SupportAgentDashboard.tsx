@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { adminService } from '../../lib/services/admin';
 import type { SupportTicket } from '../../types/admin';
 import { Card, Button, Toast } from '../ui';
@@ -8,9 +8,6 @@ import {
   AlertTriangle, 
   CheckCircle, 
   Clock, 
-  User, 
-  ArrowUpRight,
-  TrendingUp,
   RefreshCcw,
   ShieldAlert,
   Send,
@@ -19,6 +16,7 @@ import {
 import { formatDistanceToNow, format } from 'date-fns';
 import { cn } from '../../utils';
 import PageHeader from '../shared/PageHeader';
+import { useMultiTableSync } from './hooks/useAdminData';
 
 const SupportAgentDashboard: React.FC = () => {
   const { user } = useAuthStore();
@@ -35,7 +33,7 @@ const SupportAgentDashboard: React.FC = () => {
     setToast({ message, type });
   };
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const ticketData = await adminService.getSupportTickets();
@@ -51,11 +49,17 @@ const SupportAgentDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedTicket]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
+
+  // Realtime sync for support tickets
+  useMultiTableSync(
+    ['support_tickets'],
+    fetchData
+  );
 
   const handleUpdateTicketStatus = async (status: SupportTicket['status'], priority?: SupportTicket['priority']) => {
     if (!selectedTicket || !user?.id) return;
