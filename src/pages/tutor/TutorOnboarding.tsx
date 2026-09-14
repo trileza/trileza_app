@@ -322,7 +322,7 @@ const TutorOnboarding = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex justify-center items-start p-4 relative py-12 md:py-20 overflow-y-auto">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex justify-center items-start px-4 pt-4 pb-16 relative">
       {/* Premium Backdrops */}
       <div className="absolute top-[-10%] left-[-5%] w-[50%] h-[50%] bg-emerald-500/5 rounded-full blur-[120px] dark:bg-emerald-500/10 pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-5%] w-[50%] h-[50%] bg-indigo-500/5 rounded-full blur-[120px] dark:bg-indigo-500/10 pointer-events-none" />

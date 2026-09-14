@@ -499,8 +499,24 @@ const MenteeOnboarding = () => {
     navigate('/', { replace: true });
   };
 
+  /* Exit lives inside the header now, so nothing renders above it. */
+  const exitAction = (
+    <button
+      type="button"
+      onClick={handleExitToPortal}
+      className="text-xs font-bold text-white/70 hover:text-white px-3.5 py-2 rounded-xl hover:bg-white/10 transition-colors cursor-pointer whitespace-nowrap"
+    >
+      Exit to Portal
+    </button>
+  );
+
+  // `overflow-y-auto` on a min-h-screen wrapper made this a nested scroll
+  // container: the page scrolled, the wrapper scrolled, and the two fought —
+  // which is what made scrolling feel like it caught and jumped. The page is
+  // the only scroller now. Top padding is small because the green header is
+  // the first thing on the page and needs no room above it.
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex justify-center items-start p-4 relative py-12 md:py-24 overflow-y-auto font-sans selection:bg-emerald-500/20">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex justify-center items-start px-4 pt-4 pb-16 relative font-sans selection:bg-emerald-500/20">
 
 
       {/* Premium Dynamic Neon Backdrops */}
@@ -508,31 +524,6 @@ const MenteeOnboarding = () => {
       <div className="absolute bottom-[-10%] left-[-10%] w-[60%] h-[60%] bg-gradient-to-tr from-indigo-500/15 to-purple-500/10 rounded-full blur-[130px] pointer-events-none animate-pulse duration-[10000ms]" />
 
       <div className="max-w-2xl w-full relative z-10 mx-auto">
-        {/* Trileza App Logo Header */}
-        <div className="flex items-center justify-between pb-8 mb-8 border-b border-slate-200/60 dark:border-slate-800/60">
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center p-2 shadow-sm">
-              <img src="/icon-192.png" alt="Trileza Logo" className="w-full h-full object-contain" />
-            </div>
-            <div>
-              <div className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                Trileza
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
-                  Academy Path
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Personalize your learning & academy journey</p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleExitToPortal}
-            className="text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white px-3.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors cursor-pointer"
-          >
-            Exit to Portal
-          </button>
-        </div>
 
         <AnimatePresence custom={direction} mode="wait">
           
@@ -604,6 +595,7 @@ const MenteeOnboarding = () => {
                 tag="SECTION 1"
                 icon={Shield}
                 className="!mb-4"
+                rightContent={exitAction}
               />
               <StepIndicator current={1} total={5} />
 
@@ -903,6 +895,7 @@ const MenteeOnboarding = () => {
                 tag="SECTION 2"
                 icon={Shield}
                 className="!mb-4"
+                rightContent={exitAction}
               />
               <StepIndicator current={isFastTrack ? 1 : 2} total={isFastTrack ? 4 : 5} />
 
@@ -1112,6 +1105,7 @@ const MenteeOnboarding = () => {
                 tag="SECTION 3"
                 icon={Shield}
                 className="!mb-4"
+                rightContent={exitAction}
               />
               <StepIndicator current={isFastTrack ? 2 : 3} total={isFastTrack ? 4 : 5} />
 
@@ -1179,6 +1173,7 @@ const MenteeOnboarding = () => {
                 tag="SECTION 4"
                 icon={Shield}
                 className="!mb-4"
+                rightContent={exitAction}
               />
               <StepIndicator current={isFastTrack ? 3 : 4} total={isFastTrack ? 4 : 5} />
 
@@ -1276,6 +1271,7 @@ const MenteeOnboarding = () => {
                 tag="SECTION 5"
                 icon={Shield}
                 className="!mb-4"
+                rightContent={exitAction}
               />
               <StepIndicator current={isFastTrack ? 4 : 5} total={isFastTrack ? 4 : 5} />
 
