@@ -23,7 +23,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 type OnboardingStep = 
   | 'welcome' 
-  | 'account' 
   | 'profile' 
   | 'background' 
   | 'certificate' 
@@ -162,7 +161,6 @@ const MenteeOnboarding = () => {
 
   // State for forms
   const [form, setForm] = useState({
-    wantsTwoFactor: false,
     
     // Section 2: Personal Profile
     displayName: '',
@@ -329,7 +327,6 @@ const MenteeOnboarding = () => {
           onboarding_data: {
             account: {
               social_provider: socialConnected,
-              two_factor_enabled: form.wantsTwoFactor
             },
             profile: {
               display_name: form.displayName,
@@ -531,7 +528,7 @@ const MenteeOnboarding = () => {
               </div>
 
               <Button 
-                onClick={() => handleNext(isFastTrack ? 'background' : 'account')}
+                onClick={() => handleNext(isFastTrack ? 'background' : 'profile')}
                 className="h-16 px-16 bg-slate-900 hover:bg-black dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.2em] rounded-[1.5rem] shadow-2xl hover:shadow-emerald-500/10 group transition-all"
               >
                 Let's Get Started
@@ -540,55 +537,7 @@ const MenteeOnboarding = () => {
             </motion.div>
           )}
 
-          {/* ── SECTION 1: ACCOUNT SECURITY ── */}
-          {step === 'account' && (
-            <motion.div 
-              key="account" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
-              className="space-y-6"
-            >
-              <PageHeader 
-                title="Account Security"
-                description="Verify credentials and configure social single-sign-on overlays."
-                tag="SECTION 1"
-                icon={Shield}
-                className="!mb-4"
-              />
-              <StepIndicator current={1} total={6} />
-
-              <Card className="p-8 md:p-12 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] shadow-xl space-y-10">
-                {/* Email and Optional Fields */}
-                <div className="grid grid-cols-1 gap-6">
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-4 p-6 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-900/80 transition-all">
-                      <input 
-                        type="checkbox" 
-                        checked={form.wantsTwoFactor}
-                        onChange={e => setForm({...form, wantsTwoFactor: e.target.checked})}
-                        className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <div>
-                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 animate-pulse">Enable Two-Factor MFA Security Overlay</p>
-                        <p className="text-xs text-slate-400 mt-0.5">Protect your student learning credentials on each session handshake.</p>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Navigation Buttons */}
-                <div className="flex gap-4 pt-6 border-t border-slate-100 dark:border-slate-800">
-                  <Button variant="outline" onClick={() => handleBack('welcome')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
-                  <Button 
-                    onClick={() => handleNext('profile')} 
-                    className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl"
-                  >
-                    Continue to Profile
-                  </Button>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* ── SECTION 2: PERSONAL PROFILE & OPTIONAL CV/LINKEDIN ── */}
+          {/* ── SECTION 1: PERSONAL PROFILE & OPTIONAL CV/LINKEDIN ── */}
           {step === 'profile' && (
             <motion.div 
               key="profile" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
@@ -597,11 +546,11 @@ const MenteeOnboarding = () => {
               <PageHeader 
                 title="Personal Profile"
                 description="Establish your personal identifiers, custom birth selectors, and optional professional credentials."
-                tag="SECTION 2"
+                tag="SECTION 1"
                 icon={Shield}
                 className="!mb-4"
               />
-              <StepIndicator current={2} total={6} />
+              <StepIndicator current={1} total={5} />
 
               <Card className="p-8 md:p-12 bg-white/95 dark:bg-slate-950/90 backdrop-blur-2xl border-2 border-emerald-500/25 shadow-[0_20px_50px_rgba(46, 125, 50,0.15)] rounded-[3rem] space-y-8 ring-1 ring-black/[0.03]">
                 {/* Upload or Generated Avatar */}
@@ -865,7 +814,7 @@ const MenteeOnboarding = () => {
 
                 {/* Navigation Buttons */}
                 <div className="flex gap-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-                  <Button variant="outline" onClick={() => handleBack('account')} className="flex-1 h-16 rounded-2xl border-2 border-slate-350 dark:border-slate-800 font-extrabold text-sm text-slate-900 dark:text-white hover:bg-slate-50">Back</Button>
+                  <Button variant="outline" onClick={() => handleBack('welcome')} className="flex-1 h-16 rounded-2xl border-2 border-slate-350 dark:border-slate-800 font-extrabold text-sm text-slate-900 dark:text-white hover:bg-slate-50">Back</Button>
                   <Button 
                     disabled={!form.displayName || linkedinError}
                     onClick={() => handleNext('background')} 
@@ -878,7 +827,7 @@ const MenteeOnboarding = () => {
             </motion.div>
           )}
 
-          {/* ── SECTION 3: LEARNING BACKGROUND ── */}
+          {/* ── SECTION 2: LEARNING BACKGROUND ── */}
           {step === 'background' && (
             <motion.div 
               key="background" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
@@ -887,11 +836,11 @@ const MenteeOnboarding = () => {
               <PageHeader 
                 title="Learning Background"
                 description="Establish your professional footprint to customize course recommendations."
-                tag="SECTION 3"
+                tag="SECTION 2"
                 icon={Shield}
                 className="!mb-4"
               />
-              <StepIndicator current={isFastTrack ? 1 : 3} total={isFastTrack ? 4 : 6} />
+              <StepIndicator current={isFastTrack ? 1 : 2} total={isFastTrack ? 4 : 5} />
 
               <Card className="p-8 md:p-12 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] shadow-xl space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1078,7 +1027,7 @@ const MenteeOnboarding = () => {
             </motion.div>
           )}
 
-          {/* ── SECTION 4: CERTIFICATE POLICY ── */}
+          {/* ── SECTION 3: CERTIFICATE POLICY ── */}
           {step === 'certificate' && (
             <motion.div 
               key="certificate" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
@@ -1087,11 +1036,11 @@ const MenteeOnboarding = () => {
               <PageHeader 
                 title="Certificate Policy"
                 description="Review parameters for earning verified Trileza graduation certificates."
-                tag="SECTION 4"
+                tag="SECTION 3"
                 icon={Shield}
                 className="!mb-4"
               />
-              <StepIndicator current={isFastTrack ? 2 : 4} total={isFastTrack ? 4 : 6} />
+              <StepIndicator current={isFastTrack ? 2 : 3} total={isFastTrack ? 4 : 5} />
 
               <Card className="p-8 md:p-12 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] shadow-xl space-y-6">
                 
@@ -1136,7 +1085,7 @@ const MenteeOnboarding = () => {
             </motion.div>
           )}
 
-          {/* ── SECTION 5: PRIVACY & COMMUNICATIONS ── */}
+          {/* ── SECTION 4: PRIVACY & COMMUNICATIONS ── */}
           {step === 'privacy' && (
             <motion.div 
               key="privacy" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
@@ -1145,11 +1094,11 @@ const MenteeOnboarding = () => {
               <PageHeader 
                 title="Privacy & Alerts"
                 description="Control data sharing configurations and automated messaging alerts."
-                tag="SECTION 5"
+                tag="SECTION 4"
                 icon={Shield}
                 className="!mb-4"
               />
-              <StepIndicator current={isFastTrack ? 3 : 5} total={isFastTrack ? 4 : 6} />
+              <StepIndicator current={isFastTrack ? 3 : 4} total={isFastTrack ? 4 : 5} />
 
               <Card className="p-8 md:p-12 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] shadow-xl space-y-6">
                 
@@ -1223,7 +1172,7 @@ const MenteeOnboarding = () => {
             </motion.div>
           )}
 
-          {/* ── SECTION 6: FINAL COMPLIANCE & REVIEW ── */}
+          {/* ── SECTION 5: FINAL COMPLIANCE & REVIEW ── */}
           {step === 'review' && (
             <motion.div 
               key="review" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
@@ -1232,11 +1181,11 @@ const MenteeOnboarding = () => {
               <PageHeader 
                 title="Terms & Submission"
                 description="Verify COPPA compliance and submit your customized academy dashboard."
-                tag="SECTION 6"
+                tag="SECTION 5"
                 icon={Shield}
                 className="!mb-4"
               />
-              <StepIndicator current={isFastTrack ? 4 : 6} total={isFastTrack ? 4 : 6} />
+              <StepIndicator current={isFastTrack ? 4 : 5} total={isFastTrack ? 4 : 5} />
 
               <Card className="p-8 md:p-12 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] shadow-xl space-y-6">
                 
