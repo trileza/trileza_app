@@ -9,8 +9,13 @@ export default async (request: Request, context: Context) => {
     return new Response("Missing meeting ID", { status: 400 });
   }
 
-  const INSFORGE_URL = Deno.env.get("VITE_INSFORGE_URL") || "https://25t8cbg8.us-east.insforge.app";
-  const INSFORGE_ANON_KEY = Deno.env.get("VITE_INSFORGE_ANON_KEY") || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5NjA1ODd9.8-rujjlus4kbAMt5BAdXU6r9GAWq8m27OSh8qWV5gpw";
+  // Read from the edge environment only — no committed fallback credentials.
+  const INSFORGE_URL = Deno.env.get("INSFORGE_URL") || Deno.env.get("VITE_INSFORGE_URL");
+  const INSFORGE_ANON_KEY = Deno.env.get("INSFORGE_ANON_KEY") || Deno.env.get("VITE_INSFORGE_ANON_KEY");
+
+  if (!INSFORGE_URL || !INSFORGE_ANON_KEY) {
+    console.error("[share] Missing INSFORGE_URL / INSFORGE_ANON_KEY environment variables");
+  }
 
   let title = "Trileza Live Broadcast";
   let hostName = "Academic Expert";
@@ -18,17 +23,20 @@ export default async (request: Request, context: Context) => {
   let imageUrl = "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&h=400&fit=crop";
 
   try {
-    const dbRes = await fetch(
-      `${INSFORGE_URL}/rest/v1/live_sessions?dyte_meeting_id=eq.${meetingId}&select=*,profiles!live_sessions_tutor_id_fkey(full_name)`,
-      {
-        headers: {
-          apikey: INSFORGE_ANON_KEY,
-          Authorization: `Bearer ${INSFORGE_ANON_KEY}`,
-        },
-      }
-    );
+    // Without credentials we still serve the page, just with generic OG tags.
+    const dbRes = INSFORGE_URL && INSFORGE_ANON_KEY
+      ? await fetch(
+        `${INSFORGE_URL}/rest/v1/live_sessions?dyte_meeting_id=eq.${meetingId}&select=*,profiles!live_sessions_tutor_id_fkey(full_name)`,
+        {
+          headers: {
+            apikey: INSFORGE_ANON_KEY,
+            Authorization: `Bearer ${INSFORGE_ANON_KEY}`,
+          },
+        }
+      )
+      : null;
 
-    if (dbRes.ok) {
+    if (dbRes && dbRes.ok) {
       const data = await dbRes.json();
       if (data && data.length > 0) {
         const session = data[0];

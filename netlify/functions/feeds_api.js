@@ -16,13 +16,20 @@
 
 const { createClient } = require('@insforge/sdk');
 
-const INSFORGE_URL = process.env.VITE_INSFORGE_URL || process.env.INSFORGE_URL || 'https://25t8cbg8.us-east.insforge.app';
-const INSFORGE_ANON_KEY = process.env.VITE_INSFORGE_ANON_KEY || process.env.INSFORGE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub25AiWF0IjoxNzc5OTYwNTg3fQ.8-rujjlus4kbAMt5BAdXU6r9GAWq8m27OSh8qWV5gpw';
+// Configuration comes from the Netlify environment only — no in-source fallback,
+// so a rotated key can never be silently overridden by a stale committed default.
+const INSFORGE_URL = process.env.INSFORGE_URL || process.env.VITE_INSFORGE_URL;
+const INSFORGE_ANON_KEY = process.env.INSFORGE_ANON_KEY || process.env.VITE_INSFORGE_ANON_KEY;
 
-const nexus = createClient({
-  baseUrl: INSFORGE_URL,
-  anonKey: INSFORGE_ANON_KEY,
-});
+const isConfigured = Boolean(INSFORGE_URL && INSFORGE_ANON_KEY);
+
+if (!isConfigured) {
+  console.error('[feeds_api] Missing INSFORGE_URL / INSFORGE_ANON_KEY environment variables');
+}
+
+const nexus = isConfigured
+  ? createClient({ baseUrl: INSFORGE_URL, anonKey: INSFORGE_ANON_KEY })
+  : null;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,6 +41,14 @@ const corsHeaders = {
 exports.handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: corsHeaders, body: '' };
+  }
+
+  if (!nexus) {
+    return {
+      statusCode: 500,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: 'Feeds service is not configured.' })
+    };
   }
 
   const rawPath = event.path || '';
@@ -295,7 +310,7 @@ exports.handler = async (event, context) => {
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ notifications: notifications || [] }) };
     }
 
-    return { statusCode: 44, headers: corsHeaders, body: JSON.stringify({ error: 'Endpoint not found', path, method }) };
+    return { statusCode: 404, headers: corsHeaders, body: JSON.stringify({ error: 'Endpoint not found', path, method }) };
   } catch (err) {
     console.error('[Feeds API Error]:', err);
     return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: err.message || 'Internal Server Error' }) };
