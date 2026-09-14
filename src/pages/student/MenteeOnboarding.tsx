@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   GraduationCap, 
@@ -208,6 +208,56 @@ const MenteeOnboarding = () => {
   const [emailVerified, setEmailVerified] = useState(false);
   const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
 
+  /**
+   * What each step requires before it will let you continue.
+   *
+   * Every field is mandatory except the LinkedIn URL and the CV upload, which
+   * are explicitly optional. handleNext previously moved the user on without
+   * checking anything, so a learner could click through the entire flow and
+   * submit a profile with nothing in it.
+   *
+   * Returns the list of missing labels, so the step can name what is needed
+   * rather than only disabling a button and leaving the user to guess.
+   */
+  const missingFor = useCallback((s: OnboardingStep): string[] => {
+    const missing: string[] = [];
+    const blank = (v: unknown) => !String(v ?? '').trim();
+
+    if (s === 'profile') {
+      if (blank(form.displayName)) missing.push('Display name');
+      if (!dobDay || !dobMonth || !dobYear) missing.push('Date of birth');
+      if (blank(form.country)) missing.push('Country');
+      if (blank(form.timezone)) missing.push('Time zone');
+      if (blank(form.language)) missing.push('Language');
+    }
+
+    if (s === 'background') {
+      if (blank(form.education)) missing.push('Education level');
+      if (blank(form.employment)) missing.push('Employment status');
+      if (blank(form.jobTitle)) missing.push('Job title');
+      if (blank(form.industry)) missing.push('Field of interest');
+      if (blank(form.yearsExp)) missing.push('Years of experience');
+      if (blank(form.learningReason)) missing.push('Reason for learning');
+      if (blank(form.priorKnowledge)) missing.push('Prior knowledge');
+    }
+
+    if (s === 'certificate') {
+      if (blank(form.legalCertificateName)) missing.push('Full legal name for certificates');
+    }
+
+    if (s === 'review') {
+      if (!form.agreeToTerms) missing.push('Agreement to the terms');
+      if (!form.confirmAge) missing.push('Age confirmation');
+    }
+
+    return missing;
+  }, [form, dobDay, dobMonth, dobYear]);
+
+  /** The step currently on screen is complete. */
+  const stepMissing = missingFor(step);
+  const canContinue = stepMissing.length === 0;
+
+
   // Combine custom Day/Month/Year dropdowns into the form's dob string
   useEffect(() => {
     if (dobDay && dobMonth && dobYear) {
@@ -301,6 +351,11 @@ const MenteeOnboarding = () => {
   };
 
   const handleNext = (nextStep: OnboardingStep) => {
+    // Guarded here as well as on the button, so no caller can advance past an
+    // incomplete step.
+    if (missingFor(step).length > 0) {
+      return;
+    }
     setDirection(1);
     setStep(nextStep);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -812,11 +867,20 @@ const MenteeOnboarding = () => {
                   </div>
                 </div>
 
+                {/* Names exactly which fields are still outstanding, rather
+                    than leaving a disabled button unexplained. */}
+                {!canContinue && (
+                  <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40">
+                    <p className="text-xs font-black text-rose-700 dark:text-rose-400 uppercase tracking-wider mb-1">Still required</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-300 font-semibold leading-relaxed">{stepMissing.join(" · ")}</p>
+                  </div>
+                )}
+
                 {/* Navigation Buttons */}
                 <div className="flex gap-4 pt-4 border-t border-slate-200 dark:border-slate-800">
                   <Button variant="outline" onClick={() => handleBack('welcome')} className="flex-1 h-16 rounded-2xl border-2 border-slate-350 dark:border-slate-800 font-extrabold text-sm text-slate-900 dark:text-white hover:bg-slate-50">Back</Button>
                   <Button 
-                    disabled={!form.displayName || linkedinError}
+                    disabled={!canContinue || linkedinError}
                     onClick={() => handleNext('background')} 
                     className="flex-[2] h-16 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl disabled:opacity-50 transition-all active:scale-[0.98]"
                   >
@@ -1012,11 +1076,20 @@ const MenteeOnboarding = () => {
                   </div>
                 </div>
 
+                {/* Names exactly which fields are still outstanding, rather
+                    than leaving a disabled button unexplained. */}
+                {!canContinue && (
+                  <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40">
+                    <p className="text-xs font-black text-rose-700 dark:text-rose-400 uppercase tracking-wider mb-1">Still required</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-300 font-semibold leading-relaxed">{stepMissing.join(" · ")}</p>
+                  </div>
+                )}
+
                 {/* Navigation Buttons */}
                 <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                   <Button variant="outline" onClick={() => handleBack(isFastTrack ? 'welcome' : 'profile')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
                   <Button 
-                    disabled={!form.education || !form.employment || !form.learningReason}
+                    disabled={!canContinue}
                     onClick={() => handleNext('certificate')} 
                     className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl disabled:opacity-50"
                   >
@@ -1070,11 +1143,20 @@ const MenteeOnboarding = () => {
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium ml-2 block leading-normal">Must match your government identity document. This legal name is stamped into the verification system for certificate verifications.</span>
                 </div>
 
+                {/* Names exactly which fields are still outstanding, rather
+                    than leaving a disabled button unexplained. */}
+                {!canContinue && (
+                  <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40">
+                    <p className="text-xs font-black text-rose-700 dark:text-rose-400 uppercase tracking-wider mb-1">Still required</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-300 font-semibold leading-relaxed">{stepMissing.join(" · ")}</p>
+                  </div>
+                )}
+
                 {/* Navigation Buttons */}
                 <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                   <Button variant="outline" onClick={() => handleBack('background')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
                   <Button 
-                    disabled={!form.legalCertificateName}
+                    disabled={!canContinue}
                     onClick={() => handleNext('privacy')} 
                     className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl disabled:opacity-50"
                   >
@@ -1158,10 +1240,20 @@ const MenteeOnboarding = () => {
                   </div>
                 </label>
 
+                {/* Names exactly which fields are still outstanding, rather
+                    than leaving a disabled button unexplained. */}
+                {!canContinue && (
+                  <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40">
+                    <p className="text-xs font-black text-rose-700 dark:text-rose-400 uppercase tracking-wider mb-1">Still required</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-300 font-semibold leading-relaxed">{stepMissing.join(" · ")}</p>
+                  </div>
+                )}
+
                 {/* Navigation Buttons */}
                 <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                   <Button variant="outline" onClick={() => handleBack('certificate')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
                   <Button 
+                    disabled={!canContinue}
                     onClick={() => handleNext('review')} 
                     className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl"
                   >
@@ -1227,6 +1319,15 @@ const MenteeOnboarding = () => {
                     <p className="text-xs text-slate-400 leading-relaxed mt-1">I accept the Trileza Academy Terms of Service, Honor Code parameters, and agree to let the platform encrypt and index my metadata securely.</p>
                   </div>
                 </label>
+
+                {/* Names exactly which fields are still outstanding, rather
+                    than leaving a disabled button unexplained. */}
+                {!canContinue && (
+                  <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40">
+                    <p className="text-xs font-black text-rose-700 dark:text-rose-400 uppercase tracking-wider mb-1">Still required</p>
+                    <p className="text-xs text-rose-600 dark:text-rose-300 font-semibold leading-relaxed">{stepMissing.join(" · ")}</p>
+                  </div>
+                )}
 
                 {/* Navigation Buttons */}
                 <div className="flex gap-4 pt-4">
