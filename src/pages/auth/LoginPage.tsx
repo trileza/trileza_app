@@ -379,15 +379,12 @@ const LoginPage = () => {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className={cn(
-            "w-full transition-all duration-300 pt-16 sm:pt-20 pb-12",
-            view === 'login' ? "max-w-[440px]" : "max-w-2xl"
-          )}
+          // One portrait width for both views. Login was 440px and sign-up
+          // 672px, so switching between them visibly resized the card and the
+          // sign-up form sprawled wider than its content needed.
+          className="w-full max-w-md transition-all duration-300 pt-16 sm:pt-20 pb-12"
         >
-          <Card className={cn(
-            "border border-slate-200 dark:border-emerald-900/40 shadow-2xl dark:shadow-[0_30px_70px_-15px_rgba(0,0,0,0.9)] bg-white dark:bg-[#0c1712] backdrop-blur-2xl ring-1 ring-slate-200/50 dark:ring-white/10 transition-all duration-300",
-            view === 'login' ? "p-7 sm:p-9 rounded-[2rem]" : "p-8 sm:p-10 rounded-[3rem]"
-          )}>
+          <Card className="border border-slate-200 dark:border-emerald-900/40 shadow-2xl dark:shadow-[0_30px_70px_-15px_rgba(0,0,0,0.9)] bg-white dark:bg-[#0c1712] backdrop-blur-2xl ring-1 ring-slate-200/50 dark:ring-white/10 transition-all duration-300 p-7 sm:p-9 rounded-[2rem]">
             {view === 'login' && (
               <div className="flex justify-center mb-5">
                 <div className="relative group">
@@ -458,7 +455,9 @@ const LoginPage = () => {
                 </div>
               )}
 
-              <div className={view === 'login' ? "space-y-4" : "grid grid-cols-1 md:grid-cols-2 gap-5"}>
+              {/* Single column throughout: the portrait card is too narrow for
+                  a two-up field row, and a stacked form is easier to complete. */}
+              <div className={view === 'login' ? "space-y-4" : "space-y-5"}>
                 {view === 'signup' && (
                   <>
                     <div className="space-y-2">

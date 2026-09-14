@@ -434,7 +434,9 @@ const Onboarding = () => {
       <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-gradient-to-tr from-emerald-500/15 to-teal-500/10 rounded-full blur-[130px] pointer-events-none animate-pulse duration-[8000ms]" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-gradient-to-tr from-indigo-500/15 to-purple-500/10 rounded-full blur-[130px] pointer-events-none animate-pulse duration-[10000ms]" />
 
-      <div className="max-w-5xl w-full relative z-10 mx-auto">
+      {/* Portrait column. Was max-w-5xl (1024px), which stretched a form of
+          mostly single inputs across the whole display. */}
+      <div className="max-w-2xl w-full relative z-10 mx-auto">
         {/* Trileza App Logo Header */}
         <div className="flex items-center justify-between pb-8 mb-8 border-b border-slate-200/60 dark:border-slate-800/60">
           <div className="flex items-center gap-3.5">

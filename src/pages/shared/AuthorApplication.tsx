@@ -219,7 +219,7 @@ const AuthorApplication: React.FC<AuthorApplicationProps> = ({ inline = false, o
         </div>
       )}
 
-      <div className={inline ? "w-full" : "max-w-4xl mx-auto"}>
+      <div className={inline ? "w-full" : "max-w-2xl mx-auto"}>
         {/* CASE 1: APPROVED AUTHOR STATUS */}
         {currentApp?.status === 'approved' && (
           <Card className="p-10 border-none shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] rounded-[3rem] bg-white text-center space-y-8">
