@@ -17,7 +17,7 @@ import {
   Link2
 } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
-import { PageHeader } from '../../components/shared';
+import { PageHeader, Logo } from '../../components/shared';
 import { cn } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -1407,14 +1407,16 @@ const MenteeOnboarding = () => {
               <div className="relative w-44 h-44">
                 <div className="absolute inset-0 rounded-full border-4 border-emerald-500/10 animate-spin" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-24 h-24 bg-slate-900 dark:bg-emerald-600 rounded-full flex items-center justify-center shadow-2xl">
-                    <GraduationCap className="text-white animate-pulse" size={44} />
+                  {/* The Trileza mark, not a stock graduation cap. This is a
+                      full-screen brand moment, so it should carry the brand. */}
+                  <div className="w-24 h-24 bg-white dark:bg-slate-900 rounded-full flex items-center justify-center shadow-2xl border border-slate-200 dark:border-slate-800 p-5">
+                    <Logo variant="mark" size="xl" to={false} className="w-full h-full" />
                   </div>
                 </div>
               </div>
               <div className="space-y-4">
-                <h2 className="text-3xl font-black text-slate-800 dark:text-white">Synchronizing Academy Profile</h2>
-                <p className="text-lg text-slate-400 font-medium animate-pulse">Index mapping verified with InsForge server array...</p>
+                <h2 className="text-3xl font-black text-slate-800 dark:text-white">Setting up your account</h2>
+                <p className="text-lg text-slate-400 font-medium animate-pulse">Saving your details…</p>
               </div>
             </div>
           )}
