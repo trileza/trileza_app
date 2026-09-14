@@ -27,7 +27,7 @@ import { motion } from 'framer-motion';
 import { cn } from '../../utils';
 import { PricingSection } from '../../components/pricing/PricingSection';
 
-type AuthView = 'landing' | 'login' | 'signup' | 'verify';
+type AuthView = 'landing' | 'login' | 'signup' | 'verify' | 'forgot' | 'reset';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -36,6 +36,14 @@ const LoginPage = () => {
   const [view, setView] = useState<AuthView>('landing');
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Password reset. There was no way to recover an account at all: anyone who
+  // forgot their password was permanently locked out, with no link anywhere in
+  // the UI, even though the backend supported the whole flow.
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
 
   // Check for suspension query param on mount
   React.useEffect(() => {
@@ -211,6 +219,95 @@ const LoginPage = () => {
     }
   };
 
+  /**
+   * Step 1 of password recovery: email a reset code.
+   *
+   * The response is deliberately identical whether or not the address has an
+   * account. Saying "no account with that email" would let anyone test
+   * addresses against the platform to discover who is registered.
+   */
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMsg(null);
+
+    const address = email.trim().toLowerCase();
+    if (!address || !address.includes('@')) {
+      setError('Enter the email address for your account.');
+      return;
+    }
+
+    setResetBusy(true);
+    try {
+      await nexus.auth.sendResetPasswordEmail({ email: address });
+      setSuccessMsg(`If an account exists for ${address}, a reset code is on its way.`);
+      setView('reset');
+    } catch (err: any) {
+      console.error('[Auth] Could not send reset code:', err);
+      setError('We could not send a reset code just now. Please try again shortly.');
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
+  /**
+   * Step 2: exchange the emailed code for a token, then set the new password.
+   */
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMsg(null);
+
+    if (!resetCode.trim()) {
+      setError('Enter the code from your email.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('Your new password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('Those passwords do not match.');
+      return;
+    }
+
+    setResetBusy(true);
+    try {
+      // Two steps: the emailed code is exchanged for a short-lived token,
+      // and that token — not the code — authorises the password change.
+      const { data: exchanged, error: exchangeErr } = await nexus.auth.exchangeResetPasswordToken({
+        email: email.trim().toLowerCase(),
+        code: resetCode.trim(),
+      });
+
+      if (exchangeErr || !exchanged?.token) {
+        setError('That code is not valid or has expired. Request a new one.');
+        return;
+      }
+
+      const { error: resetErr } = await nexus.auth.resetPassword({
+        otp: exchanged.token,
+        newPassword,
+      });
+
+      if (resetErr) {
+        setError(resetErr.message || 'We could not reset your password. Please try again.');
+        return;
+      }
+
+      setResetCode('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setSuccessMsg('Password updated. Sign in with your new password.');
+      setView('login');
+    } catch (err: any) {
+      console.error('[Auth] Password reset failed:', err);
+      setError('We could not reset your password. Please try again.');
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
   const resetForm = () => {
     setEmail('');
     setPassword('');
@@ -220,6 +317,9 @@ const LoginPage = () => {
     setMiddleName('');
     setPhoneNumber(undefined);
     setSelectedRole('mentee');
+    setResetCode('');
+    setNewPassword('');
+    setConfirmPassword('');
     setError(null);
     setSuccessMsg(null);
   };
@@ -465,6 +565,17 @@ const LoginPage = () => {
                       {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                     </button>
                   </div>
+                  {view === 'login' && (
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => { setView('forgot'); setError(null); setSuccessMsg(null); }}
+                        className="text-xs font-bold text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -551,6 +662,97 @@ const LoginPage = () => {
                 </button>
               </p>
             </div>
+          </Card>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (view === 'forgot' || view === 'reset') {
+    const isRequest = view === 'forgot';
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-[#070c09] text-slate-900 dark:text-slate-100 flex items-center justify-center p-6 relative overflow-hidden font-sans transition-colors duration-300">
+        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none -z-10" />
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
+          <Card className="p-8 sm:p-10 border border-slate-200 dark:border-emerald-900/40 shadow-2xl bg-white dark:bg-[#0c1712] backdrop-blur-2xl rounded-[3rem] ring-1 ring-slate-200/50 dark:ring-white/10">
+            <div className="text-center mb-8">
+              <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                {isRequest ? 'Reset Password' : 'Choose a New Password'}
+              </h1>
+              <p className="text-slate-600 dark:text-slate-400 font-medium mt-2 text-sm">
+                {isRequest
+                  ? 'We will email you a code to reset your password.'
+                  : <>Enter the code sent to <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{email}</span> and pick a new password.</>}
+              </p>
+            </div>
+
+            <form onSubmit={isRequest ? handleForgotPassword : handleResetPassword} className="space-y-5">
+              {isRequest ? (
+                <input
+                  type="email"
+                  required
+                  autoFocus
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full px-5 py-4 bg-slate-100/90 dark:bg-[#122019] border-2 border-slate-300 dark:border-emerald-900/80 focus:border-emerald-600 dark:focus:border-emerald-400 rounded-2xl text-sm font-medium text-slate-950 dark:text-white outline-none transition-all"
+                />
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    value={resetCode}
+                    onChange={(e) => setResetCode(e.target.value)}
+                    placeholder="Reset code from your email"
+                    className="w-full px-5 py-4 bg-slate-100/90 dark:bg-[#122019] border-2 border-slate-300 dark:border-emerald-900/80 focus:border-emerald-600 dark:focus:border-emerald-400 rounded-2xl text-center text-lg font-black tracking-widest text-slate-950 dark:text-emerald-300 outline-none transition-all"
+                  />
+                  <input
+                    type="password"
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="New password (min. 6 characters)"
+                    className="w-full px-5 py-4 bg-slate-100/90 dark:bg-[#122019] border-2 border-slate-300 dark:border-emerald-900/80 focus:border-emerald-600 dark:focus:border-emerald-400 rounded-2xl text-sm font-medium text-slate-950 dark:text-white outline-none transition-all"
+                  />
+                  <input
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                    className="w-full px-5 py-4 bg-slate-100/90 dark:bg-[#122019] border-2 border-slate-300 dark:border-emerald-900/80 focus:border-emerald-600 dark:focus:border-emerald-400 rounded-2xl text-sm font-medium text-slate-950 dark:text-white outline-none transition-all"
+                  />
+                </>
+              )}
+
+              {error && <p className="text-rose-600 dark:text-rose-400 text-xs font-bold text-center bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 py-2.5 px-4 rounded-xl">{error}</p>}
+              {successMsg && <p className="text-emerald-700 dark:text-emerald-400 text-xs font-bold text-center bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 py-2.5 px-4 rounded-xl">{successMsg}</p>}
+
+              <Button type="submit" disabled={resetBusy} className="w-full py-5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:text-slate-950 font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/25 transition-all border-none cursor-pointer">
+                {resetBusy ? 'Please wait...' : isRequest ? 'Send Reset Code' : 'Update Password'}
+              </Button>
+
+              <div className="flex items-center justify-between text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => { setView('login'); setError(null); setSuccessMsg(null); }}
+                  className="text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+                >
+                  Back to sign in
+                </button>
+                {!isRequest && (
+                  <button
+                    type="button"
+                    onClick={() => { setView('forgot'); setError(null); setSuccessMsg(null); }}
+                    className="text-slate-500 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+                  >
+                    Send a new code
+                  </button>
+                )}
+              </div>
+            </form>
           </Card>
         </motion.div>
       </div>
