@@ -104,7 +104,15 @@ const LiveStudio: React.FC = () => {
       setToast({ message: 'Thumbnail uploaded successfully!', type: 'success' });
     } catch (err: any) {
       console.error('Upload error:', err);
-      setToast({ message: `Upload failed: ${err.message}`, type: 'info' });
+      // A missing bucket is a backend setup problem, not something the person
+      // scheduling a class can act on. Raw text like 'Bucket "session-thumbnails"
+      // does not exist' told them nothing and looked like their file was at
+      // fault. Run `node scripts/setup-buckets.cjs` to create the missing bucket.
+      const raw = String(err?.message || '');
+      const message = /bucket .* does not exist/i.test(raw)
+        ? 'Cover images are not available right now. You can still schedule the session — please report this to support.'
+        : `Upload failed: ${raw || 'please try again.'}`;
+      setToast({ message, type: 'info' });
     } finally {
       setIsUploading(false);
     }

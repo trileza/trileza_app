@@ -98,12 +98,28 @@ ALTER TABLE <table> VALIDATE CONSTRAINT <constraint>;
 
 ## 3. Storage buckets
 
+Run this once the project is linked — it creates every bucket the app writes
+to, and is safe to re-run:
+
+```bash
+node scripts/setup-buckets.cjs
+```
+
 | Bucket | Visibility | Holds |
 |---|---|---|
-| `uploads` | public | avatars, thumbnails, course material |
+| `uploads` | public | avatars, profile photos, CVs |
+| `session-thumbnails` | public | cover images for live sessions |
+| `course-materials-trileza-784bc328` | public | downloadable lesson material |
+| `chat-attachments` | **private** | files sent in private conversations |
 | `institution-kyc` | **private** | incorporation certificates, tax documents, passports, government IDs |
 
-Create them in the console, or over the API:
+Buckets are not part of the SQL schema, so the migrations do not create them.
+A missing one fails only when someone reaches the feature that writes to it —
+which is how `Bucket "session-thumbnails" does not exist` first appeared, well
+after the backend looked fully set up. The script exists so that gap is closed
+in one step rather than discovered feature by feature.
+
+To create them by hand instead:
 
 ```bash
 curl -X POST "$INSFORGE_URL/api/storage/buckets" \
