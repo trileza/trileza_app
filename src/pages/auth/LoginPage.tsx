@@ -59,7 +59,10 @@ const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<UserRole>('mentee');
+  // Individuals always register as a mentee; mentor status is an upgrade
+  // that goes through application and admin review. Held as a constant so no
+  // code path can submit a different role at sign-up.
+  const selectedRole: UserRole = 'mentee';
 
   // Unified Profile State
   const [username, setUsername] = useState('');
@@ -316,7 +319,6 @@ const LoginPage = () => {
     setFirstName('');
     setMiddleName('');
     setPhoneNumber(undefined);
-    setSelectedRole('mentee');
     setResetCode('');
     setNewPassword('');
     setConfirmPassword('');
@@ -579,46 +581,13 @@ const LoginPage = () => {
                 </div>
               </div>
 
-              {view === 'signup' && (
-                <div className="space-y-3">
-                  <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">Intended Capacity</label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedRole('mentee')}
-                      className={cn(
-                        "p-5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between h-28 relative overflow-hidden",
-                        selectedRole === 'mentee'
-                          ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-300 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500"
-                          : "bg-slate-50 dark:bg-[#122019] border-slate-200 dark:border-emerald-900/30 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-emerald-800"
-                      )}
-                    >
-                      <GraduationCap size={24} className={selectedRole === 'mentee' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} />
-                      <div>
-                        <div className="font-black text-sm tracking-tight">Student / Mentee</div>
-                        <div className="text-[11px] font-semibold opacity-75">Learn & expand impact</div>
-                      </div>
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={() => setSelectedRole('mentor')}
-                      className={cn(
-                        "p-5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between h-28 relative overflow-hidden",
-                        selectedRole === 'mentor'
-                          ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-300 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500"
-                          : "bg-slate-50 dark:bg-[#122019] border-slate-200 dark:border-emerald-900/30 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-emerald-800"
-                      )}
-                    >
-                      <Users size={24} className={selectedRole === 'mentor' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} />
-                      <div>
-                        <div className="font-black text-sm tracking-tight">Mentor / Instructor</div>
-                        <div className="text-[11px] font-semibold opacity-75">Guide & instruct learners</div>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* No role selection at sign-up.
+                *
+                * An individual always registers as a mentee. Becoming a mentor
+                * is an upgrade taken from the mentee dashboard, and it goes
+                * through the mentor application and admin review — picking
+                * "Mentor / Instructor" here skipped that vetting entirely.
+                * Institutions register through /institution-signup instead. */}
 
               {error && (
                 <motion.div 
@@ -1516,7 +1485,7 @@ const LoginPage = () => {
             <h1>The hub of <span className="accent">unrestrained<svg viewBox="0 0 220 14" preserveAspectRatio="none"><path d="M2 9C40 2 90 2 110 7C130 12 180 4 218 9" stroke="var(--lp-accent-mint)" strokeWidth="2.8" fill="none" strokeLinecap="round"/></svg></span> impact</h1>
             <p className="hero-sub">A single platform for individual learners and institutions. Courses, books, mentors, and live classes — all from one clean, minimalist dashboard.</p>
             <div className="hero-ctas-desktop">
-              <button className="btn-primary" onClick={() => { setSelectedRole('mentee'); setView('signup'); }}>
+              <button className="btn-primary" onClick={() => { setView('signup'); }}>
                 Get Started 
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <path d="M3 8H13M13 8L9 4M13 8L9 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -1552,7 +1521,7 @@ const LoginPage = () => {
 
           {/* Mobile Hero CTAs */}
           <div className="hero-ctas-mobile">
-            <button className="btn-primary" onClick={() => { setSelectedRole('mentee'); setView('signup'); }}>
+            <button className="btn-primary" onClick={() => { setView('signup'); }}>
               Get Started 
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <path d="M3 8H13M13 8L9 4M13 8L9 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
