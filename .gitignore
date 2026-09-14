@@ -34,6 +34,7 @@ dist-ssr
 scratch_*
 test_*
 fix_esbuild.cjs
+deploy_direct.cjs
 *.txt
 
 # InsForge & AI agent skills
@@ -50,3 +51,6 @@ fix_esbuild.cjs
 .roo
 .trae
 .windsurf
+
+# Local env backups taken when switching backends — contain live keys
+.env.backup*
