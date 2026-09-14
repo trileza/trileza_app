@@ -12,8 +12,21 @@ JavaScript bundle where anyone can read it.
 
 ## 1. Credentials
 
-Take both values from the InsForge dashboard (project settings / backend
-metadata) and put them in `.env` at the repo root:
+Link the project, then read the anon key from the CLI:
+
+```bash
+npx @insforge/cli login --user-api-key <uak_...>
+npx @insforge/cli link --project-id <project-id>
+npx @insforge/cli secrets get ANON_KEY
+```
+
+The anon key is **not** shown in the dashboard's Project Settings and is not
+returned by any REST endpoint — `secrets get ANON_KEY` is the way to obtain it.
+It is an `anon_...` string, not a JWT, and is distinct from both the project
+API key (`ik_...`, server-only, full access) and the user API key (`uak_...`,
+for CLI login).
+
+Put both values in `.env` at the repo root:
 
 ```
 VITE_INSFORGE_URL=https://<project>.<region>.insforge.app
