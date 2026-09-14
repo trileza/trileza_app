@@ -138,7 +138,7 @@ const PreJoinScreen: React.FC<PreJoinScreenProps> = ({
             <div className="space-y-6">
               {/* Brand Logo & Sub-header */}
               <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-                <img src="/logo.png" alt="Trileza Logo" className="h-9 object-contain" />
+                <img src="/icon-192.png" alt="Trileza Logo" className="h-9 object-contain" />
                 <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-600 bg-emerald-500/10 px-2.5 py-1 rounded-lg">
                   Live Broadcast
                 </span>

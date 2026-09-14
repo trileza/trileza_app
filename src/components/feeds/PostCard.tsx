@@ -12,6 +12,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useFeedStore } from '../../store/feedStore';
 import type { FeedPost } from '../../lib/services/feeds';
 import { CommentSection } from './CommentSection';
+import ReportButton from '../shared/ReportButton';
 
 interface PostCardProps {
   post: FeedPost;
@@ -145,6 +146,16 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onProfileClick }) => {
                 <Share2 size={14} />
                 Share Link
               </button>
+              {/* Reporting your own post is not something anyone needs. */}
+              {!isOwner && (
+                <ReportButton
+                  variant="menu-item"
+                  targetType="post"
+                  targetId={post.id}
+                  targetLabel={post.content?.slice(0, 60)}
+                  onReported={() => setShowMenu(false)}
+                />
+              )}
             </div>
           )}
         </div>

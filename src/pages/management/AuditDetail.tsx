@@ -6,7 +6,6 @@ import {
   BookOpen, 
   AlertCircle, 
   ShieldCheck,
-  TrendingUp,
   Download,
   Filter,
   Search,

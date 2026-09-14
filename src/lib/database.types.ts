@@ -5,7 +5,7 @@
  * we define them manually here for immediate type safety.
  */
 
-export type UserRole = 'management' | 'staff' | 'mentee' | 'mentor' | 'tutor';
+export type UserRole = 'management' | 'staff' | 'mentee' | 'mentor' | 'tutor' | 'guardian';
 
 export interface Database {
   public: {

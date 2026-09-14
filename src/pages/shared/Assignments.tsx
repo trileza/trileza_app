@@ -1,34 +1,42 @@
 import React, { useState } from 'react';
 import AssignmentViewer from '../../components/assignments/AssignmentViewer';
+import AssignmentCreator from '../../components/assignments/AssignmentCreator';
 import { Toast } from '../../components/ui/Toast';
-import { FileText, Target, CheckCircle, Clock, Check, Loader2, X, Download, FileSignature, TrendingUp, AlertCircle, MessageSquare } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { PageHeader } from '../../components/shared';
+import { useAuthStore, resolveActiveRole } from '../../store/authStore';
 
-const Assignments = () => {
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'info'} | null>(null);
+/**
+ * One route, two audiences: a learner sees the work set for them, a teacher
+ * sees what they have set and what is waiting to be marked.
+ */
+const Assignments: React.FC = () => {
+  const { user, activeRole } = useAuthStore();
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
   const showFeedback = (msg: string, type: 'success' | 'info' = 'success') => setToast({ message: msg, type });
+
+  const role = (activeRole || resolveActiveRole(user) || 'mentee').toLowerCase();
+  const isTeacher = role === 'mentor' || role === 'tutor' || role === 'management' || role === 'staff';
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20 w-full">
-      <PageHeader 
-        title="My Assignments"
-        description="Track your learning milestones, complete assigned tasks, and review your graded assessments."
+      <PageHeader
+        title={isTeacher ? 'Assignments' : 'My Assignments'}
+        description={
+          isTeacher
+            ? 'Set work, publish it to a class, and mark what comes back. Marks flow straight into the gradebook.'
+            : 'Track your learning milestones, complete assigned tasks, and review your graded assessments.'
+        }
         tag="Knowledge Verification"
         icon={FileText}
-        rightContent={
-          <div className="hidden md:flex items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-md">
-             <div className="p-3 bg-amber-500/20 text-amber-400 rounded-xl"><Target size={24}/></div>
-             <div>
-                <p className="font-bold text-white leading-tight">Action Required</p>
-                <p className="text-xs text-slate-400">2 Pending Tasks</p>
-             </div>
-          </div>
-        }
       />
-      
+
       <div className="relative z-10">
-        <AssignmentViewer showFeedback={showFeedback} />
+        {isTeacher
+          ? <AssignmentCreator showFeedback={showFeedback} />
+          : <AssignmentViewer showFeedback={showFeedback} />}
       </div>
+
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );

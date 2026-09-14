@@ -9,7 +9,17 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Maximize2, Mic, MicOff, Video, VideoOff, Users, Clock, X } from 'lucide-react';
 import { useMeetingStore } from '../../store/meetingStore';
-import TrilezaMeeting from './TrilezaMeeting';
+
+/**
+ * Loaded on demand.
+ *
+ * This overlay renders outside the router so a call survives navigation, which
+ * meant its static import of TrilezaMeeting pulled @cloudflare/realtimekit —
+ * 3.5 MB, ~920 KB gzipped — into the initial bundle of EVERY page, including
+ * the course catalog and the login screen. The component already returns null
+ * unless a meeting is active, so the library is only fetched when one is.
+ */
+const TrilezaMeeting = React.lazy(() => import('./TrilezaMeeting'));
 
 const PiPVideo: React.FC<{ track: MediaStreamTrack }> = ({ track }) => {
   const ref = useRef<HTMLVideoElement>(null);
@@ -98,18 +108,25 @@ const MeetingOverlay: React.FC = () => {
   // ── Fullscreen Meeting ──
   return (
     <div className="fixed inset-0 z-[9999] bg-slate-50">
-      <TrilezaMeeting
-        authToken={authToken}
-        displayName={displayName}
-        avatarUrl={avatarUrl}
-        sessionTitle={sessionTitle || undefined}
-        sessionId={sessionId}
-        userId={userId}
-        userRole={userRole}
-        audioEnabled={meetingAudioEnabled}
-        videoEnabled={meetingVideoEnabled}
-        onLeave={deactivateMeeting}
-      />
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center h-full w-full bg-slate-950 text-slate-400 font-bold text-sm gap-3">
+          <span className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          Loading meeting room…
+        </div>
+      }>
+        <TrilezaMeeting
+          authToken={authToken}
+          displayName={displayName}
+          avatarUrl={avatarUrl}
+          sessionTitle={sessionTitle || undefined}
+          sessionId={sessionId}
+          userId={userId}
+          userRole={userRole}
+          audioEnabled={meetingAudioEnabled}
+          videoEnabled={meetingVideoEnabled}
+          onLeave={deactivateMeeting}
+        />
+      </React.Suspense>
     </div>
   );
 };

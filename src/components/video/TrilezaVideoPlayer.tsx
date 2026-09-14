@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import {
   Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX,
-  Maximize, Minimize, Settings, Tv, Eye, EyeOff
+  Maximize, Minimize, Settings, Tv
 } from 'lucide-react';
 import { cn } from '../../utils';
 

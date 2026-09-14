@@ -59,7 +59,7 @@ const Diagnostics = () => {
               <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }} />
               <Bar dataKey="score" radius={[8, 8, 8, 8]}>
                 {diagnosticData.map((entry, index) => (
-                   <Cell key={`cell-${index}`} fill={entry.score > 80 ? '#10b981' : entry.score > 60 ? '#f59e0b' : '#ef4444'} />
+                   <Cell key={`cell-${index}`} fill={entry.score > 80 ? '#43A047' : entry.score > 60 ? '#f59e0b' : '#ef4444'} />
                 ))}
               </Bar>
             </BarChart>

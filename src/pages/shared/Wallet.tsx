@@ -3,6 +3,7 @@ import { Card, Button } from '../../components/ui';
 import { useAuthStore } from '../../store/authStore';
 import { paystackService } from '../../lib/services/paystack';
 import { nexus } from '../../lib/nexus';
+import { publishUserEvent } from '../../lib/services/realtimeEvents';
 import { PageHeader } from '../../components/shared';
 import { 
   Building2, 
@@ -17,7 +18,6 @@ import {
   Users,
   Wallet as WalletIcon,
   Clock,
-  ArrowUpRight
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatCurrency, cn, formatDate } from '../../utils';
@@ -79,17 +79,39 @@ const WalletPage = () => {
         setSubaccountCode(walletData.paystack_subaccount_code);
       }
 
-      // 2. Fetch real course purchases / enrollments
-      const { data: enrolls } = await nexus.database.from('enrollments').select('*');
-      const { data: profiles } = await nexus.database.from('profiles').select('*');
-      
+      // 2. Earnings from this mentor's OWN sales.
+      //
+      // This previously selected every enrollment and every profile on the
+      // platform with no filter, then treated the lot as this user's income —
+      // so each mentor saw the whole platform's revenue as their own lifetime
+      // earnings and available balance.
+      const { data: myCourses } = await nexus.database
+        .from('courses')
+        .select('id')
+        .eq('tutor_id', user.id);
+
+      const myCourseIds = (myCourses || []).map((c: any) => c.id);
+
+      const { data: enrolls } = myCourseIds.length > 0
+        ? await nexus.database
+            .from('enrollments')
+            .select('id, user_id, amount, applied_at, item_title, item_id')
+            .in('item_id', myCourseIds)
+        : { data: [] as any[] };
+
+      // Only the buyers, and only the column the ledger renders.
+      const buyerIds = Array.from(new Set((enrolls || []).map((e: any) => e.user_id).filter(Boolean)));
+      const { data: profiles } = buyerIds.length > 0
+        ? await nexus.database.from('public_profiles').select('id, full_name').in('id', buyerIds)
+        : { data: [] as any[] };
+
       const profilesMap = (profiles || []).reduce((acc: any, p: any) => {
         acc[p.id] = p;
         return acc;
       }, {});
 
       const salesTransactions = (enrolls || []).map((e: any) => {
-        const amt = Number(e.amount) || 15000;
+        const amt = Number(e.amount) || 0;
         const comm = Math.round(amt * 0.10);
         const netAmt = amt - comm;
         const student = profilesMap[e.user_id] || {};
@@ -118,9 +140,9 @@ const WalletPage = () => {
       const netAvailable = Math.max(0, totalSales - totalPayoutsCompleted - totalPayoutsPending);
 
       setDbEarnings({
-        lifetime: grossLifetime || 450000,
-        commission: grossCommission || 45000,
-        available: netAvailable || 405000,
+        lifetime: grossLifetime,
+        commission: grossCommission,
+        available: netAvailable,
         pending: totalPayoutsPending
       });
 
@@ -144,10 +166,59 @@ const WalletPage = () => {
     try {
       const { data: currentWallet } = await nexus.database.from('wallets').select('*').eq('user_id', user?.id).maybeSingle();
       const metadata = currentWallet?.metadata || {};
-      const currentPayouts = metadata.payout_history || [];
 
+      // A pending request already holds part of the balance. Without this a
+      // mentor could request the same money repeatedly before finance settles
+      // any of it.
+      const { data: openRequests } = await nexus.database
+        .from('payout_requests')
+        .select('amount')
+        .eq('user_id', user?.id)
+        .eq('status', 'pending');
+
+      const alreadyRequested = (openRequests || []).reduce(
+        (sum: number, r: any) => sum + Number(r.amount || 0), 0
+      );
+      const trulyAvailable = dbEarnings.available - alreadyRequested;
+
+      if (amt > trulyAvailable) {
+        alert(
+          alreadyRequested > 0
+            ? `You already have ${formatCurrency(alreadyRequested)} awaiting payout. Only ${formatCurrency(Math.max(0, trulyAvailable))} is free to request.`
+            : `Amount exceeds your available balance (${formatCurrency(trulyAvailable)}).`
+        );
+        setRequestingPayout(false);
+        return;
+      }
+
+      // This must land in payout_requests — the table the Finance Admin console
+      // actually reads. It previously went only into wallets.metadata.payout_history,
+      // so finance never saw the request and the mentor was never paid, despite
+      // being told it had been submitted.
+      const { data: created, error: payoutErr } = await nexus.database
+        .from('payout_requests')
+        .insert([{
+          user_id: user?.id,
+          amount: amt,
+          status: 'pending',
+          bank_details: {
+            method: subaccountCode ? 'paystack_subaccount' : 'direct_bank',
+            subaccount_code: subaccountCode || null,
+            ...(metadata.bank_details || currentWallet?.bank_details || {})
+          },
+          reason: 'Mentor-initiated payout request',
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
+
+      if (payoutErr) {
+        throw new Error(payoutErr.message);
+      }
+
+      // Mirror it into the wallet for the local history list.
       const newPayout = {
-        id: `TX-PO-${Math.floor(Math.random() * 9000 + 1000)}`,
+        id: (created as any)?.id || `po-${Date.now()}`,
         type: 'payout',
         amount: amt,
         status: 'pending',
@@ -155,17 +226,21 @@ const WalletPage = () => {
         method: subaccountCode ? `Subaccount (${subaccountCode})` : 'Direct Bank Payout'
       };
 
-      const updatedPayouts = [newPayout, ...currentPayouts];
-      const updatedMetadata = { ...metadata, payout_history: updatedPayouts };
-
       await nexus.database.from('wallets').upsert({
         user_id: user?.id,
         paystack_subaccount_code: subaccountCode || '',
         currency: 'NGN',
-        metadata: updatedMetadata
+        metadata: { ...metadata, payout_history: [newPayout, ...(metadata.payout_history || [])] }
       }, { onConflict: 'user_id' });
 
-      alert(`Payout request for ${formatCurrency(amt)} submitted successfully!`);
+      // Put it in front of the finance team without waiting for a poll.
+      publishUserEvent('payout_requested', {
+        payoutId: (created as any)?.id,
+        userId: user?.id,
+        amount: amt
+      });
+
+      alert(`Payout request for ${formatCurrency(amt)} sent to finance for review.`);
       setPayoutAmount('');
       await fetchWalletData();
     } catch (err: any) {

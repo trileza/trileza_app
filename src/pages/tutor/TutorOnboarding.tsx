@@ -1,24 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  GraduationCap, 
-  User, 
-  Briefcase, 
-  Award, 
   Shield, 
-  Globe, 
-  Lock, 
   Mail, 
   BookOpen, 
   Sparkles, 
-  MapPin, 
   Clock, 
-  HelpCircle, 
   CheckCircle2, 
   ChevronRight, 
-  ChevronLeft, 
   Camera,
-  FileText,
   Info,
   AlertCircle,
   Video,
@@ -347,9 +337,6 @@ const TutorOnboarding = () => {
               className="text-center space-y-10"
             >
               <div className="space-y-6">
-                <div className="w-24 h-24 bg-gradient-to-tr from-emerald-600 to-emerald-400 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/20 group">
-                  <Award size={44} className="text-white group-hover:scale-110 transition-transform duration-500" />
-                </div>
                 <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">
                   Tutor Onboarding & <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-emerald-400">Course Launch</span>.
                 </h1>
@@ -398,16 +385,16 @@ const TutorOnboarding = () => {
               key="account" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={1} total={9} />
               <PageHeader 
                 title="Account Creation"
                 description="Verify your active instructor identity and link optional social credentials."
                 tag="SECTION 1"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={1} total={9} />
 
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
+              <Card className="p-8 md:p-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] space-y-8 shadow-xl">
                 {/* Social Login Options */}
                 <div className="space-y-4">
                   <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Link OAuth Platforms (Optional)</label>
@@ -468,7 +455,7 @@ const TutorOnboarding = () => {
                               }
                             }}
                             id={`otp-${idx}`}
-                            className="w-12 h-14 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-center text-xl font-bold text-emerald-600 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                            className="w-12 h-14 bg-slate-100/90 hover:bg-white focus:bg-white dark:bg-slate-900 border-2 border-slate-300 hover:border-slate-400 focus:border-emerald-600 dark:border-slate-700 dark:focus:border-emerald-400 rounded-2xl text-center text-2xl font-black text-slate-950 dark:text-emerald-400 outline-none shadow-xs focus:ring-4 focus:ring-emerald-500/20 transition-all cursor-text"
                           />
                         ))}
                       </div>
@@ -499,11 +486,11 @@ const TutorOnboarding = () => {
                 </div>
 
                 {/* Account Type Notice */}
-                <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-2">
+                <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-3xl space-y-2">
                   <h4 className="font-bold text-slate-800 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
                     <Info size={14} className="text-emerald-500" /> Unified Profile Structure
                   </h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
                     At Trileza, **separate student and instructor accounts are the same.** You use one unified profile; your role credentials determine whether you have access to the Mentor Profile or the Mentee Profile. Progress variables remain seamlessly mapped.
                   </p>
                 </div>
@@ -512,9 +499,8 @@ const TutorOnboarding = () => {
                 <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                   <Button variant="outline" onClick={() => handleBack('welcome')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
                   <Button 
-                    disabled={!emailVerified}
                     onClick={() => handleNext('identity')} 
-                    className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl disabled:opacity-50"
+                    className="flex-[2] h-16 rounded-2xl bg-slate-950 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl"
                   >
                     Continue
                   </Button>
@@ -529,16 +515,16 @@ const TutorOnboarding = () => {
               key="identity" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={2} total={9} />
               <PageHeader 
                 title="Profile & Identity (KYC)"
                 description="Declare payout-eligible legal names, tax IDs, addresses, and ID cards."
                 tag="SECTION 2"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={2} total={9} />
 
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
+              <Card className="p-8 md:p-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] space-y-8 shadow-xl">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Legal name */}
                   <div className="space-y-2">
@@ -805,24 +791,24 @@ const TutorOnboarding = () => {
               key="qualifications" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={3} total={9} />
               <PageHeader 
                 title="Expertise & Qualifications"
                 description="Verify your background, education, and specific subject specialties."
                 tag="SECTION 3"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={3} total={9} />
 
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
+              <Card className="p-8 md:p-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] space-y-8 shadow-xl">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Years of Experience */}
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Teaching / Operating Experience</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Teaching / Operating Experience</label>
                     <select 
                       value={form.yearsExp}
                       onChange={e => setForm({...form, yearsExp: e.target.value})}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
                     >
                       {EXPERIENCE_YEARS.map(exp => <option key={exp} value={exp}>{exp}</option>)}
                     </select>
@@ -830,11 +816,11 @@ const TutorOnboarding = () => {
 
                   {/* Highest Education */}
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Highest Education Level</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Highest Education Level</label>
                     <select 
                       value={form.highestEducation}
                       onChange={e => setForm({...form, highestEducation: e.target.value})}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
                     >
                       <option value="">Select Education...</option>
                       {EDUCATION_LEVELS.map(edu => <option key={edu} value={edu}>{edu}</option>)}
@@ -844,10 +830,10 @@ const TutorOnboarding = () => {
 
                 {/* Upload Degree Certificate */}
                 {form.highestEducation && (
-                  <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl flex items-center justify-between">
+                  <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-3xl flex items-center justify-between">
                     <div>
                       <h4 className="font-bold text-xs text-slate-800 dark:text-white">Credentials / Certificates Upload</h4>
-                      <p className="text-[10px] text-slate-400">Upload degrees, diplomas, or recognized vendor certifications.</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">Upload degrees, diplomas, or recognized vendor certifications.</p>
                     </div>
                     <label className="px-5 py-2.5 bg-slate-950 dark:bg-slate-800 hover:bg-black text-white text-[10px] font-black uppercase tracking-wider rounded-xl cursor-pointer shadow-sm">
                       {certUploaded ? 'Change Document' : 'Upload File'}
@@ -865,18 +851,18 @@ const TutorOnboarding = () => {
 
                 {/* Motivation to teach */}
                 <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Why do you want to teach on Trileza? (Required)</label>
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Why do you want to teach on Trileza? (Required)</label>
                   <textarea 
                     value={form.teachingMotivation}
                     onChange={e => setForm({...form, teachingMotivation: e.target.value})}
                     placeholder="Describe your passion for mentorship, your Course Builder objectives, and what sets your curriculum apart..."
-                    className="w-full h-24 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-[1.5rem] px-6 py-4 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all resize-none"
+                    className="w-full h-24 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-[1.5rem] px-6 py-4 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all resize-none"
                   />
                 </div>
 
                 {/* Expertise Specialties Choose list */}
                 <div className="space-y-4">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Choose Subject Expertise Areas (Pick at least 1)</label>
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Choose Subject Expertise Areas (Pick at least 1)</label>
                   <div className="flex flex-wrap gap-2.5">
                     {COURSE_CATEGORIES.map(skill => {
                       const selected = form.expertiseAreas.includes(skill);
@@ -886,10 +872,10 @@ const TutorOnboarding = () => {
                           type="button"
                           onClick={() => toggleExpertise(skill)}
                           className={cn(
-                            "px-4 py-2 text-xs font-bold rounded-xl border-2 transition-all",
+                            "px-4 py-2 text-xs font-bold rounded-xl border-2 transition-all cursor-pointer",
                             selected
                               ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
-                              : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-800 text-slate-500"
+                              : "bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-300"
                           )}
                         >
                           {skill}
@@ -920,16 +906,16 @@ const TutorOnboarding = () => {
               key="training" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={4} total={9} />
               <PageHeader 
                 title="Platform Onboarding & Training"
                 description="Complete orientation tutorials and review copyright and commission structures."
                 tag="SECTION 4"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={4} total={9} />
 
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-8">
+              <Card className="p-8 md:p-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] space-y-8 shadow-xl">
                 
                 {/* Simulated Orientation/Course Creation tutorials */}
                 <div className="space-y-4">
@@ -1057,32 +1043,32 @@ const TutorOnboarding = () => {
               key="course_setup" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={5} total={9} />
               <PageHeader 
                 title="Initial Course Setup"
                 description="Initialize the core configuration and descriptive index tags for your initial course."
                 tag="SECTION 5"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={5} total={9} />
 
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
+              <Card className="p-8 md:p-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] space-y-6 shadow-xl">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Title */}
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Course Title (Required)</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Course Title (Required)</label>
                     <input 
                       type="text" 
                       value={form.courseTitle}
                       onChange={e => setForm({...form, courseTitle: e.target.value})}
                       placeholder="e.g. Advanced Agentic Design Systems"
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-2xl px-6 py-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-slate-900 dark:text-white"
                     />
                   </div>
 
                   {/* Subtitle */}
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Course Subtitle (Required)</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Course Subtitle (Required)</label>
                     <input 
                       type="text" 
                       value={form.courseSubtitle}
@@ -1293,16 +1279,16 @@ const TutorOnboarding = () => {
               key="curriculum" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={6} total={9} />
               <PageHeader 
                 title="Curriculum & Video Upload"
                 description="Construct syllabus chapters and commit original authorship guarantees."
                 tag="SECTION 6"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={6} total={9} />
 
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
+              <Card className="p-8 md:p-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] space-y-6 shadow-xl">
                 
                 {/* Visual drag & drop Curriculum builder mockup */}
                 <div className="space-y-4">
@@ -1386,16 +1372,16 @@ const TutorOnboarding = () => {
               key="pricing" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={7} total={9} />
               <PageHeader 
                 title="Pricing & Marketplace"
                 description="Declare your price margins, generate coupons, and choose distribution networks."
                 tag="SECTION 7"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={7} total={9} />
 
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
+              <Card className="p-8 md:p-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] space-y-6 shadow-xl">
                 
                 {/* Free vs Paid Toggle */}
                 <div className="grid grid-cols-2 gap-4">
@@ -1520,19 +1506,19 @@ const TutorOnboarding = () => {
               key="preferences" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={8} total={9} />
               <PageHeader 
                 title="Communication Preferences"
                 description="Control what reports and platform analytics digests are delivered to your email."
                 tag="SECTION 8"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={8} total={9} />
 
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
+              <Card className="p-8 md:p-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] space-y-6 shadow-xl">
                 
                 {/* 1. Newsletter */}
-                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
+                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
                   <input 
                     type="checkbox" 
                     checked={form.optInNewsletters}
@@ -1541,12 +1527,12 @@ const TutorOnboarding = () => {
                   />
                   <div>
                     <h4 className="font-bold text-sm text-slate-800 dark:text-white">Tutor Newsletter & Tips</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed mt-1">Receive guidelines on platform changes, course marketing, and early feature access pools.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-1">Receive guidelines on platform changes, course marketing, and early feature access pools.</p>
                   </div>
                 </label>
 
                 {/* 2. Feedback summaries */}
-                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
+                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
                   <input 
                     type="checkbox" 
                     checked={form.optInFeedback}
@@ -1555,12 +1541,12 @@ const TutorOnboarding = () => {
                   />
                   <div>
                     <h4 className="font-bold text-sm text-slate-800 dark:text-white">Student Feedback & Metrics Summaries</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed mt-1">Receive weekly summary indices regarding course star ratings, reviews, and coding exercise completion speeds.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-1">Receive weekly summary indices regarding course star ratings, reviews, and coding exercise completion speeds.</p>
                   </div>
                 </label>
 
                 {/* 3. Platform promos */}
-                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
+                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
                   <input 
                     type="checkbox" 
                     checked={form.optInPromotions}
@@ -1569,7 +1555,7 @@ const TutorOnboarding = () => {
                   />
                   <div>
                     <h4 className="font-bold text-sm text-slate-800 dark:text-white">Platform Deals & Seasonal Promotions</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed mt-1">Incorporate my course in seasonal discounts, black friday sales, and academy bundles.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-1">Incorporate my course in seasonal discounts, black friday sales, and academy bundles.</p>
                   </div>
                 </label>
 
@@ -1593,16 +1579,16 @@ const TutorOnboarding = () => {
               key="review" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={9} total={9} />
               <PageHeader 
                 title="Submission & Audit Review"
                 description="Perform a quality check assurance scan and launch your instructor request."
                 tag="SECTION 9"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={9} total={9} />
 
-              <Card className="p-8 md:p-10 bg-white/70 dark:bg-slate-900/50 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] space-y-6">
+              <Card className="p-8 md:p-10 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] space-y-6 shadow-xl">
                 
                 {/* Course parameters visual recap */}
                 <div className="flex items-center gap-6 pb-6 border-b border-slate-100 dark:border-slate-800">
@@ -1680,7 +1666,7 @@ const TutorOnboarding = () => {
                 <div className="absolute inset-0 rounded-full border-4 border-emerald-500/10 animate-spin" />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
-                    <img src="/logo.png" alt="Trileza Logo" className="w-16 h-16 object-contain animate-pulse" />
+                    <img src="/icon-192.png" alt="Trileza Logo" className="w-16 h-16 object-contain animate-pulse" />
                   </div>
                 </div>
               </div>

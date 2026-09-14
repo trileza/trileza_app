@@ -1,451 +1,508 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Button } from '../ui';
-import { PlusCircle, FileText, Video, ListChecks, Type, Send, Settings, X, Trash2, Loader2 } from 'lucide-react';
+import {
+  Plus, Trash2, X, Loader2, ListChecks, FileText, Send, AlertCircle, Users, Award
+} from 'lucide-react';
 import { cn } from '../../utils';
-import { nexus } from '../../lib/nexus';
+import { useAuthStore } from '../../store/authStore';
+import { useTenant } from '../../lib/tenantContext';
+import { assignmentService } from '../../lib/services/assignments';
+import { classService } from '../../lib/services/classes';
+import type {
+  Assignment, AssignmentSubmission, QuizQuestion, SchoolClass, AssignmentType
+} from '../../types/school';
 
-interface AssignmentCreatorProps {
-  courseId?: string;
-  tutorId?: string;
-  showFeedback: (msg: string, type?: 'success' | 'info') => void;
-}
+const blankQuestion = (): QuizQuestion => ({
+  id: `q-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+  prompt: '',
+  options: ['', ''],
+  correctOptionIndex: 0,
+  points: 1
+});
 
-const AssignmentCreator = ({ courseId = '', tutorId = '', showFeedback }: AssignmentCreatorProps) => {
-  const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
-  const [taskType, setTaskType] = useState<'multichoice' | 'blanks' | 'written' | 'video'>('multichoice');
+const inputClass =
+  'w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-semibold focus:outline-none focus:border-emerald-500';
 
-  // Form State
-  const [title, setTitle] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [points, setPoints] = useState<number>(100);
+/**
+ * Teacher-side assignment authoring and marking.
+ *
+ * Writes to the `assignments` table. Quiz answers are marked automatically on
+ * submission; written work is marked here and flows into the gradebook.
+ */
+const AssignmentCreator = ({ showFeedback }: any) => {
+  const { user } = useAuthStore();
+  const { tenant } = useTenant();
 
-  // Task-specific configurations
-  const [questions, setQuestions] = useState<Array<{ questionText: string; options: string[]; correctOptionIndex: number }>>([
-    { questionText: '', options: ['', '', '', ''], correctOptionIndex: 0 }
-  ]);
-  const [textWithBlanks, setTextWithBlanks] = useState('');
-  const [writtenPrompt, setWrittenPrompt] = useState('');
-  const [requireFile, setRequireFile] = useState(false);
-  const [videoPrompt, setVideoPrompt] = useState('');
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Async States
+  const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [existingAssignments, setExistingAssignments] = useState<any[]>([]);
-  const [loadingExisting, setLoadingExisting] = useState(false);
+  const [title, setTitle] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [type, setType] = useState<AssignmentType>('quiz');
+  const [classId, setClassId] = useState('');
+  const [dueAt, setDueAt] = useState('');
+  const [points, setPoints] = useState('100');
+  const [questions, setQuestions] = useState<QuizQuestion[]>([blankQuestion()]);
 
-  const fetchExistingAssignments = async () => {
-    if (!tutorId) return;
-    setLoadingExisting(true);
+  // Marking
+  const [marking, setMarking] = useState<Assignment | null>(null);
+  const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
+  const [markDrafts, setMarkDrafts] = useState<Record<string, { score: string; feedback: string }>>({});
+  const [savingMark, setSavingMark] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!user?.id || !tenant?.id) return;
+    setLoading(true);
+    setError(null);
     try {
-      const { data: profile, error } = await nexus.database
-        .from('profiles')
-        .select('metadata')
-        .eq('id', tutorId)
-        .single();
-
-      if (profile && !error) {
-        setExistingAssignments(profile.metadata?.created_assignments || []);
-      }
-    } catch (e) {
-      console.error('Error fetching existing assignments:', e);
+      const [list, classList] = await Promise.all([
+        assignmentService.listForTeacher(user.id),
+        classService.listClasses(tenant.id, { teacherId: user.id })
+      ]);
+      setAssignments(list);
+      setClasses(classList);
+    } catch (err: any) {
+      setError(err.message || 'Could not load your assignments.');
     } finally {
-      setLoadingExisting(false);
+      setLoading(false);
     }
+  }, [user?.id, tenant?.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const resetForm = () => {
+    setTitle(''); setInstructions(''); setType('quiz');
+    setClassId(''); setDueAt(''); setPoints('100');
+    setQuestions([blankQuestion()]);
   };
 
-  useEffect(() => {
-    if (tutorId) {
-      fetchExistingAssignments();
-    }
-  }, [tutorId]);
-
-  const addQuestion = () => {
-    setQuestions([...questions, { questionText: '', options: ['', '', '', ''], correctOptionIndex: 0 }]);
-  };
-
-  const removeQuestion = (index: number) => {
-    if (questions.length === 1) return;
-    setQuestions(questions.filter((_, i) => i !== index));
-  };
-
-  const handleQuestionTextChange = (index: number, val: string) => {
-    const updated = [...questions];
-    updated[index].questionText = val;
-    setQuestions(updated);
-  };
-
-  const handleOptionTextChange = (qIndex: number, optIndex: number, val: string) => {
-    const updated = [...questions];
-    updated[qIndex].options[optIndex] = val;
-    setQuestions(updated);
-  };
-
-  const handleCorrectOptionChange = (qIndex: number, optIndex: number) => {
-    const updated = [...questions];
-    updated[qIndex].correctOptionIndex = optIndex;
-    setQuestions(updated);
-  };
-
-  const handleAssign = async () => {
-    if (!title.trim()) {
-      alert('Please enter an assignment title');
-      return;
-    }
-    if (!courseId) {
-      alert('No course selected');
-      return;
-    }
-
+  const handleCreate = async (publish: boolean) => {
+    if (!user?.id || !tenant?.id || !title.trim()) return;
     setSaving(true);
+    setError(null);
     try {
-      const { data: profile } = await nexus.database
-        .from('profiles')
-        .select('metadata')
-        .eq('id', tutorId)
-        .single();
+      const cleanQuestions = type === 'quiz'
+        ? questions.filter(q => q.prompt.trim() && q.options.filter(o => o.trim()).length >= 2)
+        : [];
 
-      const metadata = profile?.metadata || {};
-      const createdAssignments = metadata.created_assignments || [];
+      if (type === 'quiz' && cleanQuestions.length === 0) {
+        throw new Error('Add at least one question with two or more options.');
+      }
 
-      const newAssignment = {
-        assignmentId: 'asn_' + Math.random().toString(36).substr(2, 9),
-        courseId,
-        title,
-        dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        points: Number(points) || 100,
-        type: taskType,
-        createdAt: new Date().toISOString(),
-        details: {
-          questions: taskType === 'multichoice' ? questions : null,
-          textWithBlanks: taskType === 'blanks' ? textWithBlanks : null,
-          writtenPrompt: taskType === 'written' ? writtenPrompt : null,
-          requireFile: taskType === 'written' ? requireFile : false,
-          videoPrompt: taskType === 'video' ? videoPrompt : null
-        }
-      };
+      const totalPoints = type === 'quiz'
+        ? cleanQuestions.reduce((s, q) => s + Number(q.points || 1), 0)
+        : Number(points) || 100;
 
-      const updatedAssignments = [...createdAssignments, newAssignment];
-      const updatedMetadata = {
-        ...metadata,
-        created_assignments: updatedAssignments
-      };
+      await assignmentService.createAssignment({
+        tenant_id: tenant.id,
+        teacher_id: user.id,
+        class_id: classId || null,
+        title: title.trim(),
+        instructions: instructions.trim() || null,
+        type,
+        points_possible: totalPoints,
+        questions: cleanQuestions,
+        due_at: dueAt ? new Date(dueAt).toISOString() : null,
+        status: publish ? 'published' : 'draft'
+      });
 
-      const { error } = await nexus.database
-        .from('profiles')
-        .update({ metadata: updatedMetadata })
-        .eq('id', tutorId);
-
-      if (error) throw error;
-
-      window.dispatchEvent(new CustomEvent('trileza-assignment-created'));
-      showFeedback('Assignment dispatched successfully!');
-      
-      // Reset Form fields
-      setTitle('');
-      setDueDate('');
-      setPoints(100);
-      setQuestions([{ questionText: '', options: ['', '', '', ''], correctOptionIndex: 0 }]);
-      setTextWithBlanks('');
-      setWrittenPrompt('');
-      setRequireFile(false);
-      setVideoPrompt('');
-      
-      await fetchExistingAssignments();
-    } catch (e: any) {
-      console.error(e);
-      alert('Failed to dispatch assignment: ' + (e.message || e));
+      showFeedback?.(publish ? 'Assignment published to the class.' : 'Draft saved.');
+      window.dispatchEvent(new Event('trileza-assignment-created'));
+      setShowForm(false);
+      resetForm();
+      load();
+    } catch (err: any) {
+      setError(err.message || 'Could not save the assignment.');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteAssignment = async (asnId: string) => {
-    if (!window.confirm('Are you sure you want to delete this assignment?')) return;
+  const openMarking = async (assignment: Assignment) => {
+    setMarking(assignment);
+    setSubmissions([]);
     try {
-      const { data: profile } = await nexus.database
-        .from('profiles')
-        .select('metadata')
-        .eq('id', tutorId)
-        .single();
+      const subs = await assignmentService.listSubmissions(assignment.id);
+      setSubmissions(subs);
+      const drafts: Record<string, { score: string; feedback: string }> = {};
+      subs.forEach(s => {
+        drafts[s.id] = {
+          score: s.score === null || s.score === undefined ? '' : String(s.score),
+          feedback: s.feedback || ''
+        };
+      });
+      setMarkDrafts(drafts);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
 
-      const metadata = profile?.metadata || {};
-      const createdAssignments = metadata.created_assignments || [];
-      const updatedAssignments = createdAssignments.filter((a: any) => a.assignmentId !== asnId);
+  const saveMark = async (submission: AssignmentSubmission) => {
+    if (!user?.id || !marking) return;
+    const draft = markDrafts[submission.id];
+    const score = Number(draft?.score);
+    if (draft?.score === '' || Number.isNaN(score) || score < 0 || score > marking.points_possible) {
+      setError(`Enter a score between 0 and ${marking.points_possible}.`);
+      return;
+    }
 
-      const updatedMetadata = {
-        ...metadata,
-        created_assignments: updatedAssignments
-      };
+    setSavingMark(submission.id);
+    setError(null);
+    try {
+      await assignmentService.gradeSubmission({
+        submissionId: submission.id,
+        score,
+        feedback: draft.feedback,
+        gradedBy: user.id,
+        returnToStudent: true
+      });
+      showFeedback?.(`Marked ${submission.student_name}.`);
+      const refreshed = await assignmentService.listSubmissions(marking.id);
+      setSubmissions(refreshed);
+      load();
+    } catch (err: any) {
+      setError(err.message || 'Could not save the mark.');
+    } finally {
+      setSavingMark(null);
+    }
+  };
 
-      const { error } = await nexus.database
-        .from('profiles')
-        .update({ metadata: updatedMetadata })
-        .eq('id', tutorId);
+  const togglePublish = async (a: Assignment) => {
+    try {
+      await assignmentService.updateAssignment(a.id, {
+        status: a.status === 'published' ? 'closed' : 'published'
+      });
+      load();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
 
-      if (error) throw error;
-
-      window.dispatchEvent(new CustomEvent('trileza-assignment-created'));
-      showFeedback('Assignment deleted successfully!');
-      await fetchExistingAssignments();
-    } catch (e: any) {
-      console.error(e);
-      alert('Failed to delete assignment: ' + (e.message || e));
+  const remove = async (a: Assignment) => {
+    try {
+      await assignmentService.deleteAssignment(a.id);
+      load();
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
-        <button 
-          onClick={() => setActiveTab('create')}
-          className={cn("font-bold pb-2 border-b-2 transition-all", activeTab === 'create' ? "border-emerald-600 text-emerald-700 dark:text-emerald-400" : "border-transparent text-slate-500 hover:text-slate-700")}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-black text-slate-900 dark:text-white">Your assignments</h3>
+          <p className="text-sm text-slate-500 font-medium">Quizzes mark themselves; written work you mark here.</p>
+        </div>
+        <Button
+          onClick={() => { resetForm(); setShowForm(true); }}
+          className="gap-2 rounded-2xl h-12 px-5 bg-brand-primary text-white border-none font-black uppercase text-[10px] tracking-widest"
         >
-          Create New Assignment
-        </button>
-        <button 
-          onClick={() => setActiveTab('manage')}
-          className={cn("font-bold pb-2 border-b-2 transition-all", activeTab === 'manage' ? "border-emerald-600 text-emerald-700 dark:text-emerald-400" : "border-transparent text-slate-500 hover:text-slate-700")}
-        >
-          Manage Existing
-        </button>
+          <Plus size={14} /> New assignment
+        </Button>
       </div>
 
-      {activeTab === 'create' && (
-        <Card className="p-8 border-none shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 rounded-[2rem] bg-white dark:bg-slate-950">
-          <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-6">Standardized Test Creator</h3>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-            <div className="lg:col-span-1 space-y-3">
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest pl-2 mb-4">Select Format</p>
-              
-              {[
-                { id: 'multichoice', label: 'Multiple Choice', icon: ListChecks },
-                { id: 'blanks', label: 'Fill in Blanks', icon: Type },
-                { id: 'written', label: 'Written Task', icon: FileText },
-                { id: 'video', label: 'Video Explanation', icon: Video },
-              ].map((type) => (
-                <button 
-                  key={type.id}
-                  onClick={() => setTaskType(type.id as any)}
-                  className={cn(
-                    "w-full text-left px-5 py-4 rounded-2xl font-bold flex items-center gap-3 transition-all",
-                    taskType === type.id 
-                      ? "bg-emerald-50 dark:bg-emerald-950/20 border-2 border-emerald-500 text-emerald-700 dark:text-emerald-400 shadow-lg shadow-emerald-500/20" 
-                      : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:border-emerald-300 hover:bg-slate-50"
-                  )}
-                >
-                  <type.icon size={20} className={taskType === type.id ? "text-emerald-600" : "text-slate-400"} />
-                  {type.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="lg:col-span-3 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border border-slate-100 dark:border-slate-800">
-              <div className="space-y-4 mb-6">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Assignment Title</label>
-                  <input 
-                    type="text" 
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="w-full p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white" 
-                    placeholder="e.g. Week 4: Advanced React Patterns" 
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Due Date</label>
-                    <input 
-                      type="date" 
-                      value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
-                      className="w-full p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Total Points</label>
-                    <input 
-                      type="number" 
-                      value={points}
-                      onChange={(e) => setPoints(Number(e.target.value))}
-                      className="w-full p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900 dark:text-white" 
-                      placeholder="100" 
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {taskType === 'multichoice' && (
-                <div className="space-y-4">
-                  {questions.map((q, qIndex) => (
-                    <div key={qIndex} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 relative group">
-                      {questions.length > 1 && (
-                        <button 
-                          onClick={() => removeQuestion(qIndex)}
-                          className="absolute top-2 right-2 text-slate-300 hover:text-red-500 transition-colors"
-                        >
-                          <X size={16}/>
-                        </button>
-                      )}
-                      <input 
-                        type="text" 
-                        value={q.questionText}
-                        onChange={(e) => handleQuestionTextChange(qIndex, e.target.value)}
-                        className="w-full p-2 font-bold text-slate-800 dark:text-white bg-transparent border-b border-slate-100 dark:border-slate-800 outline-none mb-3" 
-                        placeholder={`Question ${qIndex + 1} Text...`} 
-                      />
-                      <div className="space-y-2 pl-4">
-                        {q.options.map((opt, optIndex) => (
-                          <div key={optIndex} className="flex items-center gap-3">
-                            <input 
-                              type="radio" 
-                              name={`correct-${qIndex}`} 
-                              checked={q.correctOptionIndex === optIndex}
-                              onChange={() => handleCorrectOptionChange(qIndex, optIndex)}
-                              className="w-4 h-4 text-emerald-600 focus:ring-emerald-500" 
-                            />
-                            <input 
-                              type="text" 
-                              value={opt}
-                              onChange={(e) => handleOptionTextChange(qIndex, optIndex, e.target.value)}
-                              className="flex-1 p-2 text-sm bg-slate-50 dark:bg-slate-950 rounded border border-slate-100 dark:border-slate-800 outline-none focus:border-emerald-300 text-slate-800 dark:text-white" 
-                              placeholder={`Option ${String.fromCharCode(65 + optIndex)}`} 
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  <Button 
-                    variant="outline" 
-                    onClick={addQuestion}
-                    className="w-full border-dashed border-slate-300 dark:border-slate-800 text-slate-500 font-bold bg-white dark:bg-slate-900 hover:border-emerald-400 hover:text-emerald-600"
-                  >
-                    <PlusCircle size={16} className="mr-2"/> Add Question
-                  </Button>
-                </div>
-              )}
-
-              {taskType === 'blanks' && (
-                <div className="space-y-4">
-                  <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Text with Blanks</label>
-                    <p className="text-xs text-slate-500 mb-2">Use square brackets for blanks. Example: The capital of France is [Paris].</p>
-                    <textarea 
-                      value={textWithBlanks}
-                      onChange={(e) => setTextWithBlanks(e.target.value)}
-                      className="w-full h-32 p-3 text-sm rounded-lg border border-slate-200 dark:border-slate-800 outline-none focus:border-emerald-400 resize-none bg-white dark:bg-slate-900 text-slate-900 dark:text-white" 
-                      placeholder="Enter text here..." 
-                    />
-                  </div>
-                </div>
-              )}
-
-              {taskType === 'written' && (
-                <div className="space-y-4">
-                  <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Task Prompt / Instructions</label>
-                    <textarea 
-                      value={writtenPrompt}
-                      onChange={(e) => setWrittenPrompt(e.target.value)}
-                      className="w-full h-40 p-3 text-sm rounded-lg border border-slate-200 dark:border-slate-800 outline-none focus:border-emerald-400 resize-none bg-white dark:bg-slate-900 text-slate-900 dark:text-white" 
-                      placeholder="Describe the essay or code task..." 
-                    />
-                    <div className="mt-4 flex items-center gap-2">
-                      <input 
-                        type="checkbox" 
-                        id="require-file" 
-                        checked={requireFile}
-                        onChange={(e) => setRequireFile(e.target.checked)}
-                        className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500" 
-                      />
-                      <label htmlFor="require-file" className="text-sm font-bold text-slate-700 dark:text-slate-300">Require File Upload (PDF, ZIP)</label>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {taskType === 'video' && (
-                <div className="space-y-4">
-                  <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
-                    <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-950 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Video size={24} className="text-emerald-600" />
-                    </div>
-                    <h4 className="font-bold text-slate-800 dark:text-white mb-2">Record Prompt Video</h4>
-                    <p className="text-sm text-slate-500 mb-6">Explain the assignment directly to your students via webcam.</p>
-                    <Button className="bg-slate-900 text-white font-bold px-8 hover:bg-slate-800"><Video size={16} className="mr-2"/> Start Recording</Button>
-                    <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 text-left">
-                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Additional Video URL / Notes</label>
-                      <textarea 
-                        value={videoPrompt}
-                        onChange={(e) => setVideoPrompt(e.target.value)}
-                        className="w-full h-24 p-3 text-sm rounded-lg border border-slate-200 dark:border-slate-800 outline-none focus:border-emerald-400 resize-none bg-white dark:bg-slate-900 text-slate-900 dark:text-white" 
-                        placeholder="Paste video link or explain requirements..." 
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-8 flex justify-end gap-4 pt-6 border-t border-slate-200 dark:border-slate-800">
-                <Button 
-                  onClick={handleAssign}
-                  disabled={saving}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-8 shadow-lg shadow-emerald-600/30 flex items-center gap-2"
-                >
-                  {saving ? (
-                    <>
-                      <img src="/logo.png" alt="Loading" className="w-4 h-4 object-contain animate-spin" /> Dispatching...
-                    </>
-                  ) : (
-                    <>
-                      <Send size={16} /> Assign Test
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
+      {error && (
+        <Card className="p-4 rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 flex items-start gap-3">
+          <AlertCircle size={18} className="text-red-500 mt-0.5 flex-none" />
+          <p className="text-sm font-semibold text-red-800 dark:text-red-200">{error}</p>
+          <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600"><X size={16} /></button>
         </Card>
       )}
 
-      {activeTab === 'manage' && (
-        <Card className="p-8 border-none shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 rounded-[2.5rem] bg-white dark:bg-slate-950">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-2xl font-black text-slate-900 dark:text-white">Active Assignments</h3>
-          </div>
-          
-          {loadingExisting ? (
-            <div className="text-center py-8 text-slate-500 font-medium">Loading assignments...</div>
-          ) : existingAssignments.length === 0 ? (
-            <div className="text-center py-8 text-slate-500 font-medium">No active assignments created.</div>
-          ) : (
-            <div className="space-y-4">
-              {existingAssignments.map((asn) => (
-                <div key={asn.assignmentId} className="flex items-center justify-between p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 hover:border-emerald-200 dark:hover:border-emerald-800 hover:bg-white dark:hover:bg-slate-900 transition-all group">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                      {asn.type === 'multichoice' ? <ListChecks size={20} /> : asn.type === 'written' ? <FileText size={20} /> : <Video size={20} />}
+      {loading ? (
+        <Card className="p-12 rounded-[2rem] border-none flex items-center justify-center gap-3">
+          <Loader2 size={20} className="animate-spin text-emerald-500" />
+          <span className="font-bold text-slate-500">Loading…</span>
+        </Card>
+      ) : assignments.length === 0 ? (
+        <Card className="p-12 rounded-[2rem] border-none text-center">
+          <FileText size={40} className="mx-auto text-slate-300 mb-4" />
+          <h3 className="text-lg font-black text-slate-900 dark:text-white">No assignments yet</h3>
+          <p className="text-slate-500 font-medium mt-2">Create one and publish it to a class.</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {assignments.map(a => {
+            const Icon = a.type === 'quiz' ? ListChecks : FileText;
+            const cls = classes.find(c => c.id === a.class_id);
+            return (
+              <Card key={a.id} className="p-6 rounded-[2rem] border-none shadow-lg space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 flex-none"><Icon size={18} /></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-black text-slate-900 dark:text-white">{a.title}</h4>
+                      <span className={cn(
+                        'px-2 py-0.5 rounded-md text-[9px] font-black uppercase',
+                        a.status === 'published'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                      )}>{a.status}</span>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-slate-900 dark:text-white group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors">{asn.title}</h4>
-                      <p className="text-xs font-medium text-slate-500 mt-1">Due {asn.dueDate} • {asn.points} Points</p>
-                    </div>
+                    <p className="text-xs font-bold text-slate-400 mt-1">
+                      {cls?.name || 'No class'} · {a.points_possible} points
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => handleDeleteAssignment(asn.assignmentId)}
-                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-colors"
-                      title="Delete Assignment"
+                  <button onClick={() => remove(a)} className="text-slate-300 hover:text-red-500 p-1 flex-none cursor-pointer" aria-label="Delete">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-4 text-xs font-bold text-slate-500">
+                  <span className="flex items-center gap-1.5"><Users size={13} /> {a.submission_count ?? 0} submitted</span>
+                  <span className="flex items-center gap-1.5"><Award size={13} /> {a.graded_count ?? 0} marked</span>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => togglePublish(a)} className="flex-1 rounded-xl text-[10px] font-black uppercase">
+                    {a.status === 'published' ? 'Close' : 'Publish'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => openMarking(a)}
+                    disabled={(a.submission_count ?? 0) === 0}
+                    className="flex-1 rounded-xl text-[10px] font-black uppercase bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-none"
+                  >
+                    Mark
+                  </Button>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Create */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+          <Card className="w-full max-w-2xl rounded-[2rem] border-none max-h-[88vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">New assignment</h3>
+              <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer" aria-label="Close"><X size={20} /></button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              <label className="block">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Title</span>
+                <input className={inputClass + ' mt-1'} value={title} onChange={e => setTitle(e.target.value)} placeholder="Photosynthesis quiz" />
+              </label>
+
+              <label className="block">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Instructions</span>
+                <textarea rows={3} className={inputClass + ' mt-1 h-auto py-3 resize-y'} value={instructions} onChange={e => setInstructions(e.target.value)} />
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</span>
+                  <select className={inputClass + ' mt-1'} value={type} onChange={e => setType(e.target.value as AssignmentType)}>
+                    <option value="quiz">Quiz (marked automatically)</option>
+                    <option value="text">Written response</option>
+                    <option value="file">File upload</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Class</span>
+                  <select className={inputClass + ' mt-1'} value={classId} onChange={e => setClassId(e.target.value)}>
+                    <option value="">Select a class</option>
+                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Due</span>
+                  <input type="datetime-local" className={inputClass + ' mt-1'} value={dueAt} onChange={e => setDueAt(e.target.value)} />
+                </label>
+                {type !== 'quiz' && (
+                  <label className="block">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Points</span>
+                    <input type="number" className={inputClass + ' mt-1 tabular-nums'} value={points} onChange={e => setPoints(e.target.value)} />
+                  </label>
+                )}
+              </div>
+
+              {type === 'quiz' && (
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Questions</span>
+                    <button
+                      onClick={() => setQuestions(q => [...q, blankQuestion()])}
+                      className="text-xs font-black uppercase text-emerald-600 hover:text-emerald-700 cursor-pointer"
                     >
-                      <Trash2 size={18} />
+                      + Add question
                     </button>
+                  </div>
+
+                  {questions.map((q, qi) => (
+                    <div key={q.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+                      <div className="flex items-start gap-2">
+                        <input
+                          className={inputClass}
+                          value={q.prompt}
+                          onChange={e => setQuestions(qs => qs.map((x, i) => i === qi ? { ...x, prompt: e.target.value } : x))}
+                          placeholder={`Question ${qi + 1}`}
+                        />
+                        {questions.length > 1 && (
+                          <button
+                            onClick={() => setQuestions(qs => qs.filter((_, i) => i !== qi))}
+                            className="text-slate-300 hover:text-red-500 p-2 flex-none cursor-pointer"
+                            aria-label="Remove question"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        {q.options.map((opt, oi) => (
+                          <div key={oi} className="flex items-center gap-2">
+                            <button
+                              onClick={() => setQuestions(qs => qs.map((x, i) => i === qi ? { ...x, correctOptionIndex: oi } : x))}
+                              title="Mark as the correct answer"
+                              className={cn(
+                                'w-6 h-6 rounded-full border-2 flex-none flex items-center justify-center text-[10px] font-black cursor-pointer',
+                                q.correctOptionIndex === oi
+                                  ? 'bg-emerald-500 border-emerald-500 text-white'
+                                  : 'border-slate-300 dark:border-slate-600 text-transparent'
+                              )}
+                            >
+                              ✓
+                            </button>
+                            <input
+                              className={inputClass + ' h-10'}
+                              value={opt}
+                              onChange={e => setQuestions(qs => qs.map((x, i) =>
+                                i === qi ? { ...x, options: x.options.map((o, j) => j === oi ? e.target.value : o) } : x
+                              ))}
+                              placeholder={`Option ${oi + 1}`}
+                            />
+                            {q.options.length > 2 && (
+                              <button
+                                onClick={() => setQuestions(qs => qs.map((x, i) =>
+                                  i === qi ? { ...x, options: x.options.filter((_, j) => j !== oi), correctOptionIndex: Math.min(x.correctOptionIndex, x.options.length - 2) } : x
+                                ))}
+                                className="text-slate-300 hover:text-red-500 p-1 flex-none cursor-pointer"
+                                aria-label="Remove option"
+                              >
+                                <X size={14} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => setQuestions(qs => qs.map((x, i) => i === qi ? { ...x, options: [...x.options, ''] } : x))}
+                          className="text-xs font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          + Add option
+                        </button>
+                      </div>
+
+                      <label className="flex items-center gap-2">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Points</span>
+                        <input
+                          type="number"
+                          className="w-20 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold text-sm tabular-nums focus:outline-none focus:border-emerald-500"
+                          value={q.points}
+                          onChange={e => setQuestions(qs => qs.map((x, i) => i === qi ? { ...x, points: Number(e.target.value) || 1 } : x))}
+                        />
+                      </label>
+                    </div>
+                  ))}
+
+                  <p className="text-xs font-bold text-slate-400">
+                    Total: {questions.reduce((s, q) => s + Number(q.points || 1), 0)} points. The green tick marks the correct answer.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex gap-3">
+              <Button variant="outline" onClick={() => handleCreate(false)} disabled={!title.trim() || saving} className="flex-1 rounded-xl h-12 font-bold">
+                Save draft
+              </Button>
+              <Button onClick={() => handleCreate(true)} disabled={!title.trim() || !classId || saving} className="flex-1 rounded-xl h-12 bg-brand-primary text-white border-none font-bold gap-2">
+                {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                Publish
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Marking */}
+      {marking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+          <Card className="w-full max-w-3xl rounded-[2rem] border-none max-h-[88vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">Marking: {marking.title}</h3>
+                <p className="text-xs font-bold text-slate-400">{submissions.length} submissions · {marking.points_possible} points</p>
+              </div>
+              <button onClick={() => setMarking(null)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer" aria-label="Close"><X size={20} /></button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {submissions.length === 0 ? (
+                <p className="text-center text-slate-500 font-medium py-8">No submissions yet.</p>
+              ) : submissions.map(s => (
+                <div key={s.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-black text-sm text-slate-900 dark:text-white truncate">{s.student_name}</span>
+                      {s.status === 'late' && (
+                        <span className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 text-[9px] font-black uppercase">Late</span>
+                      )}
+                    </div>
+                    {s.auto_score !== null && s.auto_score !== undefined && (
+                      <span className="text-xs font-bold text-emerald-600 tabular-nums flex-none">Auto: {s.auto_score}</span>
+                    )}
+                  </div>
+
+                  {s.body && (
+                    <p className="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 rounded-xl p-3 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">
+                      {s.body}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="block">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Score</span>
+                      <input
+                        type="number"
+                        value={markDrafts[s.id]?.score ?? ''}
+                        onChange={e => setMarkDrafts(d => ({ ...d, [s.id]: { ...d[s.id], score: e.target.value } }))}
+                        className="mt-1 w-24 h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold tabular-nums focus:outline-none focus:border-emerald-500"
+                      />
+                    </label>
+                    <label className="block flex-1 min-w-[180px]">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Feedback</span>
+                      <input
+                        value={markDrafts[s.id]?.feedback ?? ''}
+                        onChange={e => setMarkDrafts(d => ({ ...d, [s.id]: { ...d[s.id], feedback: e.target.value } }))}
+                        className={inputClass + ' mt-1 h-11'}
+                        placeholder="Optional comment for the student"
+                      />
+                    </label>
+                    <Button
+                      onClick={() => saveMark(s)}
+                      disabled={savingMark === s.id}
+                      className="rounded-xl h-11 px-5 bg-brand-primary text-white border-none font-bold"
+                    >
+                      {savingMark === s.id ? <Loader2 size={15} className="animate-spin" /> : 'Save'}
+                    </Button>
                   </div>
                 </div>
               ))}
             </div>
-          )}
-        </Card>
+          </Card>
+        </div>
       )}
     </div>
   );

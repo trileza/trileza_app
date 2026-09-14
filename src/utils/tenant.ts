@@ -38,7 +38,7 @@ export function getSubdomainFromWindow(): string {
     return parts[0].toLowerCase();
   }
 
-  // e.g. "oxford.trileza.com" or "oxford.netlify.app" -> "oxford"
+  // e.g. "oxford.trileza.com" or "oxford.pages.dev" -> "oxford"
   if (parts.length >= 3) {
     const candidate = parts[0].toLowerCase();
     if (candidate !== 'www' && candidate !== 'api' && candidate !== 'app') {

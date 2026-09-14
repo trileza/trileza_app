@@ -5,7 +5,7 @@
  * auto-generate summaries from live chat using AI, and export to email.
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { X, FileText, Sparkles, Send, Check, Loader2 } from 'lucide-react';
+import { X, FileText, Send, Check, Loader2 } from 'lucide-react';
 import { useMeetingStore } from '../../store/meetingStore';
 import { useAuthStore } from '../../store/authStore';
 import { nexus } from '../../lib/nexus';
@@ -117,7 +117,7 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ sessionId, sessionTitle }) => {
       const emailHtml = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1e293b; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
           <div style="text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-b: 1px solid #f1f5f9;">
-            <h1 style="font-size: 24px; font-weight: 800; color: #10b981; margin: 0;">Trileza Classroom</h1>
+            <h1 style="font-size: 24px; font-weight: 800; color: #43A047; margin: 0;">Trileza Classroom</h1>
             <p style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; tracking: 0.15em; margin-top: 4px; margin-bottom: 0;">Live Study Session notes</p>
           </div>
           <div style="margin-bottom: 24px;">

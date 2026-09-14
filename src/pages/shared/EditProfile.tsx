@@ -14,7 +14,7 @@ import {
   Camera,
   Save
 } from 'lucide-react';
-import { cn, executeWithAutoRefresh } from '../../utils';
+import { executeWithAutoRefresh } from '../../utils';
 
 interface ExpertiseItem {
   id: number;
@@ -123,17 +123,6 @@ const EditProfile: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-20 animate-in fade-in duration-500 font-sans">
-      <div className="flex items-center gap-4">
-        <Button 
-          type="button"
-          variant="ghost" 
-          className="p-2 gap-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl cursor-pointer" 
-          onClick={() => navigate(-1)}
-        >
-          <ArrowLeft size={18} /> Back
-        </Button>
-      </div>
-
       <PageHeader 
         title={
           <span>
@@ -143,6 +132,16 @@ const EditProfile: React.FC = () => {
         description="Modify your public account information, avatar representation, and expertise credentials."
         tag="Profile Customization"
         icon={User}
+        rightContent={
+          <Button 
+            type="button"
+            variant="ghost" 
+            className="p-2.5 gap-2 text-slate-700 dark:text-slate-200 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl cursor-pointer font-bold text-xs" 
+            onClick={() => navigate(-1)}
+          >
+            <ArrowLeft size={16} /> Back
+          </Button>
+        }
       />
 
       {errorMsg && (

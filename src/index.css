@@ -1,11 +1,96 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lexend:wght@300;400;500;700;800&display=swap');
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  --color-brand-primary: #22C55E;
-  --color-brand-primary-hover: #16A34A;
-  --color-brand-slate: #EAF2EA;
-  --color-brand-accent: #4ADE80;
+  /* ═══════════════════════════════════════════════════════════════════════
+     TRILEZA DESIGN SYSTEM — BRAND PALETTE
+     ═══════════════════════════════════════════════════════════════════════
+
+     The app carries ~12,600 hardcoded Tailwind colour classes against ~385
+     token-based ones, so brand changes are made HERE by remapping the scales
+     themselves rather than by editing components. Overriding --color-emerald-*
+     re-skins every `bg-emerald-500`, `text-emerald-600` and so on in one place.
+
+     Emerald is the brand ramp. It is anchored on the specified palette:
+       #1B5E20 dark · #2E7D32 primary · #43A047 secondary
+       #66BB6A accent · #E8F5E9 light · #4CAF50 success
+     The remaining stops are interpolated so the full 50–950 ramp stays smooth
+     and every existing shade keeps sensible contrast.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  --color-emerald-50:  #E8F5E9;   /* Light Green — specified */
+  --color-emerald-100: #D3EAD5;
+  --color-emerald-200: #A8D6AC;
+  --color-emerald-300: #85C98A;
+  --color-emerald-400: #66BB6A;   /* Accent Green — specified */
+  --color-emerald-500: #4CAF50;   /* Success — specified */
+  --color-emerald-600: #43A047;   /* Secondary Green — specified */
+  --color-emerald-700: #2E7D32;   /* PRIMARY — Deep Forest, specified */
+  --color-emerald-800: #256428;
+  --color-emerald-900: #1B5E20;   /* Dark Green — specified */
+  --color-emerald-950: #0E3311;
+
+  /* `green-*` is used in ~470 places and must not diverge from the brand. */
+  --color-green-50:  #E8F5E9;
+  --color-green-100: #D3EAD5;
+  --color-green-200: #A8D6AC;
+  --color-green-300: #85C98A;
+  --color-green-400: #66BB6A;
+  --color-green-500: #4CAF50;
+  --color-green-600: #43A047;
+  --color-green-700: #2E7D32;
+  --color-green-800: #256428;
+  --color-green-900: #1B5E20;
+  --color-green-950: #0E3311;
+
+  /* Neutrals carry a slight green bias so they read as chosen rather than
+     inherited. Used ~7,800 times, so the shift is deliberately subtle. */
+  --color-slate-50:  #F6F8F6;
+  --color-slate-100: #ECF0EC;
+  --color-slate-200: #DCE3DD;
+  --color-slate-300: #C3CDC5;
+  --color-slate-400: #93A096;
+  --color-slate-500: #6B7970;
+  --color-slate-600: #515E56;
+  --color-slate-700: #3D4842;
+  --color-slate-800: #26302A;
+  --color-slate-900: #161E19;
+  --color-slate-950: #0A0F0C;
+
+  /* ── Semantic brand tokens ──────────────────────────────────────────── */
+  --color-brand-primary:       #2E7D32;
+  --color-brand-primary-hover: #1B5E20;
+  --color-brand-secondary:     #43A047;
+  --color-brand-accent:        #66BB6A;
+  --color-brand-light:         #E8F5E9;
+  --color-brand-dark:          #1B5E20;
+  --color-brand-slate:         #EAF2EA;
+
+  /* ── Role accents (the 10% in the 60-30-10 split) ───────────────────── */
+  --color-role-superadmin:  #D4A017;  /* gold   */
+  --color-role-institution: #1E6FD9;  /* blue   */
+  --color-role-finance:     #0E8C86;  /* teal   */
+  --color-role-mentor:      #7C4DBE;  /* purple */
+  --color-role-student:     #E07B39;  /* orange */
+  --color-role-content:     #C2410C;  /* rust   */
+  --color-role-usermgr:     #0F766E;  /* pine   */
+  --color-role-support:     #0E7490;  /* cyan   */
+  --color-role-compliance:  #7E22CE;  /* violet */
+  --color-role-analytics:   #475569;  /* graphite */
+  --color-role-guardian:    #BE185D;  /* rose   */
+
+  /* ── Elevation ──────────────────────────────────────────────────────── */
+  --shadow-subtle:    0 1px 2px rgba(14, 51, 17, .05), 0 1px 3px rgba(14, 51, 17, .04);
+  --shadow-medium:    0 4px 12px -2px rgba(14, 51, 17, .08), 0 2px 6px -2px rgba(14, 51, 17, .05);
+  --shadow-prominent: 0 12px 32px -8px rgba(14, 51, 17, .14), 0 4px 12px -4px rgba(14, 51, 17, .08);
+
+  /* ── Radius scale ───────────────────────────────────────────────────── */
+  --radius-control: 0.75rem;
+  --radius-card:    1.25rem;
+  --radius-panel:   2rem;
+
 
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
 
@@ -57,8 +142,8 @@
     --foreground: #0F172A;
     --border: transparent;
     --input: #FFFFFF;
-    --ring: #22C55E;
-    --primary: #22C55E;
+    --ring: #2E7D32;
+    --primary: #2E7D32;
     --primary-foreground: #FFFFFF;
     --secondary: #F1F5F9;
     --secondary-foreground: #0F172A;
@@ -80,10 +165,16 @@
     --text-secondary: #475569;
     --text-faint: #94A3B8;
     
-    --green-bright: #22C55E;
-    --green-accent: #16A34A;
-    --green-deep: #D1FAE5;
-    --green-glow: rgba(34, 197, 94, 0.08);
+    --green-bright: #43A047;
+    --green-accent: #2E7D32;
+    --green-deep: #E8F5E9;
+    --green-glow: rgba(46, 125, 50, 0.08);
+
+    /* Role accent — set per dashboard by data-role on <html>. Defaults to the
+       brand so a page without a role still reads as Trileza. */
+    --role-accent: #2E7D32;
+    --role-accent-soft: rgba(46, 125, 50, 0.10);
+    --role-accent-border: rgba(46, 125, 50, 0.25);
 
     --status-blue: #0284C7;
     --status-amber: #D97706;
@@ -121,8 +212,8 @@
     --foreground: #F8FAFC;
     --border: transparent;
     --input: #1E293B;
-    --ring: #4ADE80;
-    --primary: #22C55E;
+    --ring: #66BB6A;
+    --primary: #43A047;
     --primary-foreground: #06170C;
     --secondary: #1E293B;
     --secondary-foreground: #F8FAFC;
@@ -143,10 +234,10 @@
     --text-secondary: #CBD5E1;
     --text-faint: #94A3B8;
     
-    --green-bright: #4ADE80;
-    --green-accent: #22C55E;
+    --green-bright: #66BB6A;
+    --green-accent: #4CAF50;
     --green-deep: #0F3D26;
-    --green-glow: rgba(34, 197, 94, 0.22);
+    --green-glow: rgba(67, 160, 71, 0.22);
 
     --status-blue: #38BDF8;
     --status-amber: #FBBF24;
@@ -180,8 +271,8 @@
       --foreground: #EAF2EA;
       --border: transparent;
       --input: #22281F;
-      --ring: #4ADE80;
-      --primary: #22C55E;
+      --ring: #66BB6A;
+      --primary: #43A047;
       --primary-foreground: #06170C;
       --secondary: #1F2B24;
       --secondary-foreground: #EAF2EA;
@@ -206,10 +297,10 @@
       --text-secondary: #9BA89E;
       --text-faint: #63706A;
       
-      --green-bright: #4ADE80;
-      --green-accent: #22C55E;
+      --green-bright: #66BB6A;
+      --green-accent: #43A047;
       --green-deep: #0F3D26;
-      --green-glow: rgba(34, 197, 94, 0.18);
+      --green-glow: rgba(67, 160, 71, 0.18);
 
       --status-blue: #7EC8FF;
       --status-amber: #F2B84B;
@@ -858,7 +949,7 @@ html, body, #root, #root > div {
 .dark .bg-emerald-50,
 .dark .bg-green-50,
 .dark .bg-\[\#f0fdf4\] {
-  background-color: rgba(34, 197, 94, 0.04) !important;
+  background-color: rgba(67, 160, 71, 0.04) !important;
 }
 
 /* Secondary / nested surfaces */
@@ -880,15 +971,15 @@ html, body, #root, #root > div {
   background-color: #26362E !important;
 }
 .dark .bg-\[\#dcfce7\] {
-  background-color: rgba(34, 197, 94, 0.18) !important;
+  background-color: rgba(67, 160, 71, 0.18) !important;
 }
 
 /* Active tag styling (Verified Visual Motif) */
 .dark .tag-verified,
 .dark .bg-\[\#dcfce7\].text-\[\#166534\] {
-  background-color: rgba(34, 197, 94, 0.18) !important;
-  color: #4ADE80 !important;
-  border: 1px solid rgba(74, 222, 128, 0.3) !important;
+  background-color: rgba(67, 160, 71, 0.18) !important;
+  color: #66BB6A !important;
+  border: 1px solid rgba(102, 187, 106, 0.3) !important;
   font-weight: 700 !important;
   letter-spacing: 0.4px !important;
   text-transform: uppercase !important;
@@ -899,7 +990,7 @@ html, body, #root, #root > div {
 .dark .focus\:ring-2:focus,
 .dark .focus\:ring-emerald-500:focus,
 .dark .focus\:ring-brand-primary:focus {
-  outline: 2px solid #4ADE80 !important;
+  outline: 2px solid #66BB6A !important;
   outline-offset: 2px !important;
 }
 
@@ -1002,7 +1093,7 @@ html, body, #root, #root > div {
 /* Section label (eyebrow) styling */
 .dark .section-eyebrow,
 .dark .section-title-eyebrow {
-  color: #4ADE80 !important;
+  color: #66BB6A !important;
   font-size: 11.5px !important;
   font-weight: 700 !important;
   letter-spacing: 0.4px !important;
@@ -1018,7 +1109,7 @@ html, body, #root, #root > div {
   font-family: 'Inter', sans-serif !important;
 }
 .dark input:focus, .dark textarea:focus, .dark select:focus {
-  outline: 2px solid #4ADE80 !important;
+  outline: 2px solid #66BB6A !important;
   outline-offset: 0 !important;
   border-color: transparent !important;
 }
@@ -1044,8 +1135,8 @@ html, body, #root, #root > div {
   position: relative;
   background: 
     repeating-linear-gradient(45deg, rgba(234, 242, 234, 0.02) 0px, rgba(234, 242, 234, 0.02) 1.5px, transparent 1.5px, transparent 12px),
-    radial-gradient(circle at 10% 10%, rgba(74, 222, 128, 0.18) 0%, transparent 60%),
-    linear-gradient(135deg, #052e16 0%, #14532d 25%, #166534 50%, #15803d 75%, #16a34a 100%) !important;
+    radial-gradient(circle at 10% 10%, rgba(102, 187, 106, 0.18) 0%, transparent 60%),
+    linear-gradient(135deg, #0E3311 0%, #1B5E20 30%, #256428 60%, #2E7D32 85%, #43A047 100%) !important;
   box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.6) !important;
 }
 
@@ -1054,7 +1145,7 @@ html, body, #root, #root > div {
   position: relative;
   background: 
     repeating-linear-gradient(45deg, rgba(234, 242, 234, 0.02) 0px, rgba(234, 242, 234, 0.02) 1.5px, transparent 1.5px, transparent 12px),
-    radial-gradient(circle at 10% 10%, rgba(74, 222, 128, 0.18) 0%, transparent 60%),
+    radial-gradient(circle at 10% 10%, rgba(102, 187, 106, 0.18) 0%, transparent 60%),
     linear-gradient(135deg, #011620 0%, #012735 25%, #022635 50%, #033c52 75%, #044b66 100%) !important;
   box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.6) !important;
 }
@@ -1082,36 +1173,40 @@ html, body, #root, #root > div {
   overflow: hidden !important;
 }
 .dark .progress-bar-fill-custom {
-  background: linear-gradient(90deg, #22C55E, #4ADE80) !important;
+  background: linear-gradient(90deg, #43A047, #66BB6A) !important;
   height: 100% !important;
   border-radius: 999px !important;
 }
 
 /* ══════════════════════════════════════════════════════════════
-   COMPLETELY REMOVE ALL BORDER LINES (USER DIRECTIVE)
+   HIGH-CONTRAST FORM VISIBILITY & BORDER SYSTEM
    ══════════════════════════════════════════════════════════════ */
-*, ::before, ::after {
-  border-color: transparent !important;
+
+/* Form Input & Box Visibility */
+input:not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  border: 1.5px solid #cbd5e1 !important;
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  transition: all 0.2s ease-in-out;
 }
 
-hr,
-.border,
-.border-t,
-.border-b,
-.border-l,
-.border-r,
-.border-border,
-.border-slate-100,
-.border-slate-200,
-.border-slate-300,
-.border-slate-700,
-.border-slate-800,
-.border-slate-900,
-.divide-y > * + *,
-.divide-x > * + * {
-  border-color: transparent !important;
+input:not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):focus,
+textarea:focus,
+select:focus {
+  border-color: #43A047 !important;
+  box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.15) !important;
+  outline: none !important;
 }
 
+/* Card and Form Container Distinction */
+.form-card,
+.card-distinct {
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.02) !important;
+}
 
 /* Trileza Brand Icon System Guidelines */
 .lucide {
@@ -1139,12 +1234,21 @@ hr,
   textarea,
   select {
     background-color: #1a221e !important;
+    border: 1.5px solid #2d3e35 !important;
     color: #eaf2ea !important;
   }
   input:not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):focus,
   textarea:focus,
   select:focus {
     background-color: #222c25 !important;
+    border-color: #43A047 !important;
+    box-shadow: 0 0 0 3px rgba(67, 160, 71, 0.25) !important;
+  }
+
+  .form-card,
+  .card-distinct {
+    background-color: #161f1a !important;
+    border: 1px solid #2d3e35 !important;
   }
 
   /* Library highlights inner item cards */
@@ -1177,10 +1281,67 @@ hr,
   }
 }
 
-/* ── Logo Dark Mode / Inversion Styling — Crisp White Logo ── */
+/* ── Logo Dark Mode / Inversion Styling — Crisp White Logo in Dark Mode Only ── */
 .dark img[src*="logo.png"],
 .dark .trileza-logo,
-.landing-root-container img[src*="logo.png"],
-img.logo-white-dark {
+.dark .landing-root-container img[src*="logo.png"],
+.dark img.logo-white-dark {
   filter: brightness(0) invert(1) drop-shadow(0 2px 8px rgba(255, 255, 255, 0.25)) !important;
+}
+
+/* Light mode explicit reset */
+html:not(.dark) img[src*="logo.png"],
+html:not(.dark) .trileza-logo,
+html:not(.dark) .landing-root-container img[src*="logo.png"],
+html:not(.dark) img.logo-white-dark {
+  filter: none !important;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   ROLE ACCENTS
+   ═════════════════════════════════════════════════════════════════════════
+   Every dashboard shares the green system above; each role differs only in
+   its accent — the 10% in the 60-30-10 split. Set by `data-role` on <html>,
+   written by useRoleTheme(). Components read var(--role-accent) rather than
+   hardcoding a hue, so adding a role means adding a block here and nothing
+   else.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+[data-role="super_admin"]      { --role-accent: #D4A017; --role-accent-soft: rgba(212,160,23,.12);  --role-accent-border: rgba(212,160,23,.30); }
+[data-role="management"]       { --role-accent: #1E6FD9; --role-accent-soft: rgba(30,111,217,.12);  --role-accent-border: rgba(30,111,217,.30); }
+[data-role="staff"]            { --role-accent: #1E6FD9; --role-accent-soft: rgba(30,111,217,.12);  --role-accent-border: rgba(30,111,217,.30); }
+[data-role="finance_admin"]    { --role-accent: #0E8C86; --role-accent-soft: rgba(14,140,134,.12);  --role-accent-border: rgba(14,140,134,.30); }
+[data-role="mentor"]           { --role-accent: #7C4DBE; --role-accent-soft: rgba(124,77,190,.12);  --role-accent-border: rgba(124,77,190,.30); }
+[data-role="tutor"]            { --role-accent: #7C4DBE; --role-accent-soft: rgba(124,77,190,.12);  --role-accent-border: rgba(124,77,190,.30); }
+[data-role="mentee"]           { --role-accent: #E07B39; --role-accent-soft: rgba(224,123,57,.12);  --role-accent-border: rgba(224,123,57,.30); }
+[data-role="content_manager"]  { --role-accent: #C2410C; --role-accent-soft: rgba(194,65,12,.12);   --role-accent-border: rgba(194,65,12,.30); }
+[data-role="user_manager"]     { --role-accent: #0F766E; --role-accent-soft: rgba(15,118,110,.12);  --role-accent-border: rgba(15,118,110,.30); }
+[data-role="support_agent"]    { --role-accent: #0E7490; --role-accent-soft: rgba(14,116,144,.12);  --role-accent-border: rgba(14,116,144,.30); }
+[data-role="compliance_officer"]{ --role-accent: #7E22CE; --role-accent-soft: rgba(126,34,206,.12); --role-accent-border: rgba(126,34,206,.30); }
+[data-role="analytics_viewer"] { --role-accent: #475569; --role-accent-soft: rgba(71,85,105,.12);   --role-accent-border: rgba(71,85,105,.30); }
+[data-role="guardian"]         { --role-accent: #BE185D; --role-accent-soft: rgba(190,24,93,.12);   --role-accent-border: rgba(190,24,93,.30); }
+
+/* Dark mode lifts each accent so it holds contrast on a dark ground. */
+.dark [data-role="super_admin"],      .dark[data-role="super_admin"]       { --role-accent: #F0C040; }
+.dark [data-role="management"],       .dark[data-role="management"]        { --role-accent: #5B9BF0; }
+.dark [data-role="staff"],            .dark[data-role="staff"]             { --role-accent: #5B9BF0; }
+.dark [data-role="finance_admin"],    .dark[data-role="finance_admin"]     { --role-accent: #3BC5BE; }
+.dark [data-role="mentor"],           .dark[data-role="mentor"]            { --role-accent: #A97FE0; }
+.dark [data-role="tutor"],            .dark[data-role="tutor"]             { --role-accent: #A97FE0; }
+.dark [data-role="mentee"],           .dark[data-role="mentee"]            { --role-accent: #F0A067; }
+.dark [data-role="content_manager"],  .dark[data-role="content_manager"]   { --role-accent: #F0783C; }
+.dark [data-role="user_manager"],     .dark[data-role="user_manager"]      { --role-accent: #3BAFA4; }
+.dark [data-role="support_agent"],    .dark[data-role="support_agent"]     { --role-accent: #3BA9C9; }
+.dark [data-role="compliance_officer"],.dark[data-role="compliance_officer"]{ --role-accent: #B57BE8; }
+.dark [data-role="analytics_viewer"], .dark[data-role="analytics_viewer"]  { --role-accent: #93A3B8; }
+.dark [data-role="guardian"],         .dark[data-role="guardian"]          { --role-accent: #E8558F; }
+
+/* Utilities so components can use the accent without knowing the role. */
+.accent-text   { color: var(--role-accent); }
+.accent-bg     { background-color: var(--role-accent); }
+.accent-soft   { background-color: var(--role-accent-soft); }
+.accent-border { border-color: var(--role-accent-border); }
+.accent-ring:focus-visible {
+  outline: 2px solid var(--role-accent);
+  outline-offset: 2px;
 }

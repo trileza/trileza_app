@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   Home,
-  BookOpen, 
   Users,
   BookMarked,
   MessageSquare, 
@@ -54,6 +53,7 @@ const BottomNav = () => {
     { name: 'Wallet', icon: Wallet, path: '/wallet', roles: ['mentor', 'management'] },
     { name: 'Assignments', icon: FileText, path: '/assignments', roles: ['mentee'] },
     { name: 'Become a Mentor', icon: Shield, path: '/mentor/onboarding', roles: ['mentee'] },
+    { name: 'Admin Console', icon: Shield, path: '/superadmin', roles: ['management', 'staff', 'admin', 'super_admin'] },
     { name: 'Analytics', icon: BarChart3, path: '/analytics', roles: ['management', 'staff'] },
     { name: 'Profile', icon: User, path: '/profile', roles: ['mentee', 'mentor', 'management', 'staff'] },
     { name: 'Settings', icon: Settings, path: '/settings', roles: ['mentee', 'mentor', 'management', 'staff'] },

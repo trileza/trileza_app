@@ -8,7 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, Plus, Boxes, Users, Trash2, Megaphone, ArrowRightLeft, ArrowRight, UserPlus
+  X, Plus, Boxes, Trash2, Megaphone, ArrowRightLeft, ArrowRight, UserPlus
 } from 'lucide-react';
 import { useMeetingStore } from '../../store/meetingStore';
 import { liveService, type BreakoutPod } from '../../lib/services/live';

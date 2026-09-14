@@ -1,7 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore, resolveActiveRole } from '../../store/authStore';
-import { GraduationCap, Shield, Sparkles } from 'lucide-react';
+import { useSubscriptionStore } from '../../store/subscriptionStore';
+import { GraduationCap, Shield, Building2, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '../../utils';
 
@@ -11,89 +12,131 @@ export const RoleSwitcher: React.FC = () => {
 
   if (!user) return null;
 
-  const isMentorPermitted = 
-    user.role === 'mentor' || 
-    user.role === 'tutor' || 
-    user.metadata?.mentor_onboarded === true || 
-    user.metadata?.mentor_application_status === 'approved';
+  // User only has a dual profile if they have actually upgraded/onboarded as Mentor or Institution
+  const isInstitutionalUser = 
+    user.role === 'management' || 
+    (user.role as string) === 'tenant_admin' || 
+    user.role === 'staff' ||
+    user.mentor_tier === 'institutional' ||
+    user.metadata?.mentor_tier === 'institutional' ||
+    user.metadata?.subscription_tier === 'institutional' ||
+    Boolean(user.tenant_id) ||
+    Boolean(user.metadata?.institution_onboarded && user.metadata?.tenant_id);
 
-  const isDualRole = isMentorPermitted;
+  const isProUser = !isInstitutionalUser && (
+    user.mentor_tier === 'pro' ||
+    user.metadata?.mentor_tier === 'pro' ||
+    user.metadata?.subscription_tier === 'pro'
+  );
 
-  // Determine active state
-  const currentActive = activeRole || resolveActiveRole(user) || 'mentee';
-  const isMenteeActive = currentActive === 'mentee';
+  const isFreeMentorUser = !isInstitutionalUser && !isProUser && (
+    user.role === 'mentor' ||
+    user.role === 'tutor' ||
+    user.mentor_tier === 'free' ||
+    user.metadata?.mentor_tier === 'free' ||
+    user.metadata?.mentor_onboarded === true ||
+    user.metadata?.mentor_application_status === 'approved'
+  );
 
-  // ─── DUAL ROLE USER: THEMED SLIDING CONTROL PANEL (ORANGE TOGGLE) ───
-  if (isDualRole) {
-    return (
-      <div className="relative group">
-        {/* Soft, modern orange glowing backdrop aura */}
-        <div
-          className="absolute -inset-0.5 rounded-2xl blur-md opacity-25 group-hover:opacity-45 transition-all duration-500 bg-gradient-to-r from-orange-500 to-amber-500"
-        />
+  const hasDualProfile = isInstitutionalUser || isProUser || isFreeMentorUser;
 
-        {/* Minimalist Switcher container (Orange) */}
-        <div className="relative flex items-center p-1 rounded-2xl bg-orange-500 border border-orange-600 w-full shadow-lg">
-          {/* Sliding active capsule */}
-          <motion.div
-            layoutId="activeRoleCapsule"
-            className="absolute top-1 bottom-1 rounded-xl bg-white shadow-[0_2px_8px_rgba(0,0,0,0.18)]"
-            transition={{
-              type: "spring",
-              stiffness: 400,
-              damping: 25
-            }}
-            style={{
-              left: isMenteeActive ? '4px' : 'calc(50% + 2px)',
-              width: 'calc(50% - 6px)',
-            }}
-          />
-
-          {/* Option A: Mentee */}
-          <button
-            onClick={() => {
-              if (!isMenteeActive) {
-                setActiveRole('mentee');
-                if (window.location.pathname !== '/') {
-                  navigate('/');
-                }
-              }
-            }}
-            className={cn(
-              "flex-1 relative z-10 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 select-none cursor-pointer touch-target",
-              isMenteeActive
-                ? "text-slate-950 font-black"
-                : "text-white/90 hover:text-white font-bold"
-            )}
-          >
-            <GraduationCap size={15} className={isMenteeActive ? "text-slate-950 stroke-[2.5]" : "text-white/80"} />
-            <span className="font-extrabold tracking-wide">Mentee</span>
-          </button>
-
-          {/* Option B: Mentor */}
-          <button
-            onClick={() => {
-              if (isMenteeActive) {
-                setActiveRole('mentor');
-                if (window.location.pathname !== '/') {
-                  navigate('/');
-                }
-              }
-            }}
-            className={cn(
-              "flex-1 relative z-10 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 select-none cursor-pointer touch-target",
-              !isMenteeActive
-                ? "text-slate-950 font-black"
-                : "text-white/90 hover:text-white font-bold"
-            )}
-          >
-            <Shield size={14} className={!isMenteeActive ? "text-slate-950 stroke-[2.5]" : "text-white/80"} />
-            <span className="font-extrabold tracking-wide">Mentor</span>
-          </button>
-        </div>
-      </div>
-    );
+  // If user has not obtained a dual profile (pure mentee), NO toggle is shown
+  if (!hasDualProfile) {
+    return null;
   }
 
-  return null;
+  const currentActive = activeRole || resolveActiveRole(user) || 'mentee';
+  const currentRoleLower = (currentActive as string)?.toLowerCase() || '';
+
+  const isMenteeActive = currentRoleLower === 'mentee';
+
+  // Determine the secondary toggle details (Strictly 2 options maximum)
+  let secondRoleKey = 'mentor';
+  let secondRoleLabel = 'Free Mentor';
+  let secondRoleIcon = Shield;
+  let secondActiveBg = 'bg-amber-500 text-black';
+  let secondLayoutId = 'role-amber';
+
+  if (isInstitutionalUser) {
+    secondRoleKey = 'management';
+    secondRoleLabel = 'Institutional';
+    secondRoleIcon = Building2;
+    secondActiveBg = 'bg-emerald-600 text-white';
+    secondLayoutId = 'role-emerald';
+  } else if (isProUser) {
+    secondRoleKey = 'mentor';
+    secondRoleLabel = 'Mentor Pro';
+    secondRoleIcon = Zap;
+    secondActiveBg = 'bg-purple-600 text-white';
+    secondLayoutId = 'role-purple';
+  }
+
+  const isSecondActive = !isMenteeActive;
+
+  return (
+    <div className="relative group w-full">
+      <div className="relative flex items-center p-1 rounded-2xl bg-slate-900 border border-slate-800 w-full shadow-lg">
+        {/* Animated Active Capsule Slider */}
+        <motion.div
+          layoutId="twoWayRoleCapsule"
+          className={cn(
+            "absolute top-1 bottom-1 rounded-xl shadow-md transition-colors duration-200",
+            isMenteeActive ? "bg-white" : secondActiveBg
+          )}
+          transition={{
+            type: "spring",
+            stiffness: 450,
+            damping: 28
+          }}
+          style={{
+            left: isMenteeActive ? '4px' : 'calc(50% + 2px)',
+            width: 'calc(50% - 6px)',
+          }}
+        />
+
+        {/* Option 1: Mentee */}
+        <button
+          onClick={() => {
+            if (!isMenteeActive) {
+              setActiveRole('mentee');
+              if (window.location.pathname !== '/') navigate('/');
+            }
+          }}
+          className={cn(
+            "flex-1 relative z-10 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs uppercase tracking-wider select-none cursor-pointer transition-all duration-200",
+            isMenteeActive 
+              ? "text-slate-950 font-black" 
+              : "text-slate-400 hover:text-white font-bold"
+          )}
+        >
+          <GraduationCap size={14} className={isMenteeActive ? "text-slate-950 stroke-[2.5]" : "text-slate-400"} />
+          <span>Mentee</span>
+        </button>
+
+        {/* Option 2: Tailored Secondary Role (Free Mentor | Mentor Pro | Institutional) */}
+        <button
+          onClick={() => {
+            if (isMenteeActive) {
+              setActiveRole(secondRoleKey as any);
+              if (window.location.pathname !== '/') navigate('/');
+            }
+          }}
+          className={cn(
+            "flex-1 relative z-10 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs uppercase tracking-wider select-none cursor-pointer transition-all duration-200 truncate",
+            isSecondActive 
+              ? "font-black" 
+              : "text-slate-400 hover:text-white font-bold"
+          )}
+        >
+          {React.createElement(secondRoleIcon, {
+            size: 14,
+            className: isSecondActive ? "stroke-[2.5]" : "text-slate-400"
+          })}
+          <span className="truncate">{secondRoleLabel}</span>
+        </button>
+      </div>
+    </div>
+  );
 };
+
+export default RoleSwitcher;

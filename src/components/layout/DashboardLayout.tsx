@@ -10,6 +10,7 @@ import { GlobalCallManager } from '../messaging/GlobalCallManager';
 import { PlusCircle, Menu } from 'lucide-react';
 
 import BottomNav from './BottomNav';
+import { useRoleTheme } from '../../utils/useRoleTheme';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -20,6 +21,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const { user, activeRole } = useAuthStore();
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Stamps data-role on <html> so --role-accent resolves for this dashboard.
+  useRoleTheme();
 
   // Global Realtime & Call Signaling listener initialization
   useEffect(() => {
@@ -63,6 +67,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
       onTouchEnd={handleTouchEnd}
       className="min-h-screen bg-background text-foreground flex overflow-x-hidden transition-colors duration-300 pb-16 lg:pb-0"
     >
+      {/* Keyboard users land here first and can jump past the nav. Visually
+          hidden until focused. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[200] focus:px-5 focus:py-3 focus:rounded-xl focus:bg-brand-primary focus:text-white focus:font-bold focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
+
       {/* Sidebar (handles desktop static sidebar & mobile responsive overlay) */}
       {showNavigation && (
         <Sidebar 
@@ -79,7 +92,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         />
       )}
 
-      <main className={cn(
+      <main id="main-content" tabIndex={-1} className={cn(
         "flex-1 relative min-h-screen pb-6 lg:pb-8 transition-all duration-300 main-content-area",
         showNavigation ? "lg:ml-64" : "lg:ml-0"
       )}>
@@ -88,9 +101,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           <header className="lg:hidden sticky top-0 z-30 bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-border px-4 py-2 pt-safe flex items-center justify-between shadow-xs">
             <div className="flex items-center gap-2">
               <img 
-                src="/logo.png" 
+                src="/icon-192.png" 
                 alt="Trileza Logo" 
-                className="h-10 w-auto object-contain scale-110 drop-shadow-sm" 
+                className="h-10 w-auto object-contain scale-110 drop-shadow-sm dark:brightness-0 dark:invert dark:drop-shadow-[0_2px_8px_rgba(255,255,255,0.25)]" 
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = 'https://api.dicebear.com/7.x/initials/svg?seed=Tr&backgroundColor=16a34a';
                 }}

@@ -5,7 +5,6 @@ import {
   PlusCircle, 
   Coins, 
   Eye, 
-  Star, 
   LayoutGrid, 
   Sparkles, 
   UploadCloud, 

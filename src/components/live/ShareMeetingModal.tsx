@@ -3,7 +3,7 @@
  * ────────────────────────────────────────────────
  * Custom modal featuring a live card preview and one-click social sharing intents
  * for WhatsApp, Facebook, Twitter/X, LinkedIn, Instagram, Email, and Copy Link.
- * Target URL routes through Netlify Edge Functions for dynamic Open Graph previews.
+ * Shared links point directly at the classroom route.
  */
 import React, { useState, useEffect } from 'react';
 import { 
@@ -41,9 +41,15 @@ const ShareMeetingModal: React.FC<ShareMeetingModalProps> = ({
   const [loadingContacts, setLoadingContacts] = useState(false);
   const [invitedPartners, setInvitedPartners] = useState<Record<string, boolean>>({});
 
-  // The shareable URL points to our dynamic Edge Function endpoint
-  // Using dyte_meeting_id (the room name) as the identifier
-  const shareUrl = `${window.location.origin}/share/${meeting.dyte_meeting_id}`;
+  // Links straight to the classroom route. This previously pointed at /share/,
+  // an edge function that rendered Open Graph preview cards — it went with the
+  // Netlify removal, so that path now 404s for anyone who opens a shared link.
+  //
+  // Recipients land in the meeting instead. The trade-off is that social
+  // previews show the app's generic card rather than the meeting's own title
+  // and image; restoring rich previews needs an equivalent function on
+  // whichever platform this ends up hosted on.
+  const shareUrl = `${window.location.origin}/live/${meeting.dyte_meeting_id}`;
 
   const formattedDate = meeting.scheduled_at
     ? new Date(meeting.scheduled_at).toLocaleString([], {

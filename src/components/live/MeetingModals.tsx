@@ -5,7 +5,7 @@
  * White theme, clean borders, and clear typography.
  */
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { X, PhoneOff, Settings, Copy, CheckCircle, HardDrive, Cloud } from 'lucide-react';
 
 // ── End Meeting Confirmation ──

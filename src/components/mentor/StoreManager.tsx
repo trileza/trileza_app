@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { 
   Package, 
   Plus, 
-  Search, 
   TrendingUp, 
   DollarSign, 
   BookOpen, 
@@ -10,9 +9,6 @@ import {
   Edit3, 
   Trash2,
   Eye,
-  ExternalLink,
-  ChevronRight,
-  Upload,
   X,
   UploadCloud,
   Tag,
@@ -23,8 +19,6 @@ import {
   UserPlus,
   Image,
   FileType,
-  CheckCircle,
-  AlertTriangle
 } from 'lucide-react';
 import { cn, executeWithAutoRefresh } from '../../utils';
 import { Card, Button } from '../ui';

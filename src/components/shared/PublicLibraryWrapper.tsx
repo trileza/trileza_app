@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BookOpen, Unlock, Search, BookMarked, ShieldAlert, X, Star, Info,
   ShoppingBag, Clock, CheckCircle, Loader2, Shield, MessageSquare,
-  Share2, Trash2, Sparkles, Plus, ChevronRight, ChevronLeft, Highlighter,
-  Volume2, Play, Pause, Square, Eye, Type, Ruler, BookOpenCheck, Settings,
+  Share2, Trash2, Sparkles, ChevronRight, ChevronLeft, 
+  Volume2, Play, Pause, Square, BookOpenCheck, Settings,
   ZoomIn, ZoomOut
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -604,7 +604,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({
           margin-bottom: -2px;
         }
         .textLayer ::selection {
-          background-color: rgba(16, 185, 129, 0.35) !important; /* emerald selection color matching Trileza UI */
+          background-color: rgba(46, 125, 50, 0.35) !important; /* emerald selection color matching Trileza UI */
           border-radius: 2px;
         }
         .pdf-custom-highlight {
@@ -1324,18 +1324,19 @@ const PublicLibraryWrapper: React.FC = () => {
     }
 
     try {
-      const newHighlight = {
+      // Must go through libraryService (table `api_highlights`), same as
+      // handleSaveHighlight/handleSaveCommentHighlight below. This previously
+      // wrote straight to a `book_highlights` table that fetchHighlights()
+      // never reads from, so the highlight vanished on the very next fetch
+      // even though the user saw a success toast.
+      await libraryService.saveHighlight({
         id: `h-${Date.now()}`,
         user_id: user.id,
         book_id: selectedBook.id,
         passage_text: text.trim(),
-        comment: null,
         color: color,
-      };
-      
-      const { error } = await nexus.database.from('book_highlights').insert([newHighlight]);
-      if (error) throw error;
-      
+      });
+
       fetchHighlights();
       triggerNotification(`Highlighted successfully with ${color}!`);
     } catch (err: any) {
@@ -1414,8 +1415,8 @@ const PublicLibraryWrapper: React.FC = () => {
     if (!user) return;
     try {
       const { data } = await nexus.database
-        .from('profiles')
-        .select('*')
+        .from('public_profiles')
+        .select('id, full_name, avatar_url, role, username')
         .neq('id', user.id)
         .order('full_name', { ascending: true });
       if (data) setContacts(data);
@@ -2035,7 +2036,7 @@ const PublicLibraryWrapper: React.FC = () => {
                   key={cfg.color}
                   onClick={() => handleApplyHighlightColor(selectedText, cfg.color)}
                   className={cn("w-5.5 h-5.5 rounded-full hover:scale-110 active:scale-95 transition-transform cursor-pointer")}
-                  style={{ backgroundColor: cfg.color === 'rose' ? '#f43f5e' : cfg.color === 'yellow' ? '#fcd34d' : cfg.color === 'green' ? '#10b981' : '#38bdf8' }}
+                  style={{ backgroundColor: cfg.color === 'rose' ? '#f43f5e' : cfg.color === 'yellow' ? '#fcd34d' : cfg.color === 'green' ? '#43A047' : '#38bdf8' }}
                   title={`Highlight ${cfg.color}`}
                 />
               ))}
@@ -2491,7 +2492,7 @@ const PublicLibraryWrapper: React.FC = () => {
                                       <div className="flex justify-between items-start">
                                         <span 
                                           className="w-3.5 h-3.5 rounded-full shrink-0" 
-                                          style={{ backgroundColor: hl.color === 'rose' ? '#f43f5e' : hl.color === 'yellow' ? '#fcd34d' : hl.color === 'green' ? '#10b981' : '#38bdf8' }}
+                                          style={{ backgroundColor: hl.color === 'rose' ? '#f43f5e' : hl.color === 'yellow' ? '#fcd34d' : hl.color === 'green' ? '#43A047' : '#38bdf8' }}
                                         />
                                         <div className="flex gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
                                           <button

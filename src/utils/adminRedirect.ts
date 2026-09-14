@@ -1,5 +1,5 @@
 export const ROLE_SLUGS: Record<string, string> = {
-  super_admin: 'gate/superadmin',
+  super_admin: 'superadmin',
   content_manager: 'content-manager',
   user_manager: 'user-manager',
   finance_admin: 'finance-admin',
@@ -17,7 +17,7 @@ export const getAdminRedirectPath = (adminUser: any, requestedRole: string | nul
   if (requestedRole) {
     if (rolesList.includes(requestedRole)) {
       const slug = ROLE_SLUGS[requestedRole] || requestedRole;
-      return slug.startsWith('gate/') ? `/${slug}` : `/${slug}`;
+      return `/${slug}`;
     }
     // Doesn't have this role: redirect to apply
     return `/signup?role=${requestedRole}`;
@@ -25,12 +25,12 @@ export const getAdminRedirectPath = (adminUser: any, requestedRole: string | nul
   
   // Fallback defaults
   if (rolesList.includes('super_admin')) {
-    return '/gate/superadmin';
+    return '/superadmin';
   }
   if (rolesList.length > 0) {
     const firstRole = rolesList[0];
     return `/${ROLE_SLUGS[firstRole] || firstRole}`;
   }
   
-  return '/';
+  return '/superadmin';
 };

@@ -1,4 +1,4 @@
-export type UserRole = 'student' | 'tutor' | 'staff' | 'management' | 'mentee' | 'mentor' | 'tenant_admin' | 'super_admin' | 'support_staff';
+export type UserRole = 'student' | 'tutor' | 'staff' | 'management' | 'mentee' | 'mentor' | 'tenant_admin' | 'super_admin' | 'support_staff' | 'guardian';
 
 export type TenantPlan = 'starter' | 'growth' | 'enterprise';
 

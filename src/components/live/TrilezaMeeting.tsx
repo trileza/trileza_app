@@ -598,7 +598,7 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
       {/* Corner Trileza watermark logo */}
       {!loading && (
         <div className="absolute top-24 right-8 z-20 pointer-events-none opacity-80 animate-in fade-in duration-500">
-          <img src="/logo.png" className="h-8 object-contain" alt="Trileza Logo" />
+          <img src="/icon-192.png" className="h-8 object-contain" alt="Trileza Logo" />
         </div>
       )}
 
@@ -606,7 +606,7 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
       <div className="flex-1 w-full p-4 sm:p-8 flex z-10 overflow-hidden relative gap-4">
         {loading ? (
           <div className="flex flex-col items-center justify-center bg-white border border-slate-200 p-10 rounded-[2.5rem] shadow-xl w-full">
-            <img src="/logo.png" className="h-16 object-contain animate-pulse mb-6" alt="Trileza" />
+            <img src="/icon-192.png" className="h-16 object-contain animate-pulse mb-6" alt="Trileza" />
             <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
@@ -614,7 +614,7 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
             {/* Screen Share Area */}
             {screenSharingParticipant && screenSharingParticipant.screenShareTrack && !expandedParticipantId && (
               <div className="flex-1 flex flex-col gap-3 min-w-0">
-                <div className="flex-1 bg-slate-950 rounded-[2.5rem] overflow-hidden relative shadow-[0_25px_60px_-15px_rgba(16,185,129,0.15)] border-2 border-emerald-500/20">
+                <div className="flex-1 bg-slate-950 rounded-[2.5rem] overflow-hidden relative shadow-[0_25px_60px_-15px_rgba(46, 125, 50,0.15)] border-2 border-emerald-500/20">
                   <VideoTrack track={screenSharingParticipant.screenShareTrack} isLocal={screenSharingParticipant.id === 'local'} isScreenShare />
                   
                   {/* Top-left Pulse Broadcast Indicator */}

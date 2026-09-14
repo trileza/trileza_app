@@ -10,13 +10,13 @@
  * 6. Cloudflare CDN Storage for File Attachments & Previews.
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Button } from '../../components/ui';
+import { Button } from '../../components/ui';
 import {
-  Search, Send, ArrowLeft, Check, Paperclip, Smile,
-  PenSquare, Clock, Loader2, ChevronUp, X, MessageSquare,
-  Image as ImageIcon, FileText, Phone, Video, Pin, Users,
-  UserPlus, Trash2, Edit3, Download, Plus, CheckCheck,
-  Globe, Lock, AlertCircle, Sparkles, UserMinus
+  Search, Send, ArrowLeft, Check, Paperclip, 
+  PenSquare, Loader2, X, MessageSquare,
+  Image as FileText, Phone, Video, Pin, Users,
+  Trash2, Edit3, Download, Plus, CheckCheck,
+  Globe, Lock, Sparkles, UserMinus
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';

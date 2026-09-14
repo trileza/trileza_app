@@ -7,7 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, Monitor, MonitorOff,
-  PhoneOff, Maximize2, Minimize2, Users, Volume2, ShieldCheck
+  PhoneOff, Maximize2, Minimize2, Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../utils';

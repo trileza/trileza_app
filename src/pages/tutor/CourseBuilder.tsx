@@ -5,7 +5,7 @@ import {
   Calendar, Upload, Save, Award, PlayCircle,
   GripVertical, X, CheckCircle, Paperclip, Clock, ChevronRight,
   Globe, Target, Sparkles, BookOpen, Search, Link2, Image,
-  Settings, Layers, GraduationCap, UploadCloud, Users
+  Layers, GraduationCap, UploadCloud, Users
 } from 'lucide-react';
 import { cn, executeWithAutoRefresh } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
@@ -13,6 +13,10 @@ import { useUploadStore } from '../../store/uploadStore';
 import { courseService } from '../../lib/services/courses';
 import { LoadingOverlay, TrilezaVideoPlayer, PageHeader } from '../../components/shared';
 import { Button } from '../../components/ui';
+import { useSubscriptionStore } from '../../store/subscriptionStore';
+import { upgradeService } from '../../lib/services/upgrade';
+import { UpgradeModal } from '../../components/subscription/UpgradeModal';
+import { FeatureGate } from '../../components/subscription/FeatureGate';
 import { nexus } from '../../lib/nexus';
 import * as tus from 'tus-js-client';
 
@@ -1144,6 +1148,8 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
   const { courseId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { canPublishCourse, openUpgradeModal, checkFeature, tier } = useSubscriptionStore();
+  const [publishBlockedReason, setPublishBlockedReason] = useState<string | null>(null);
   const initUploads = useUploadStore(state => state.initUploads);
 
   useEffect(() => {
@@ -1372,6 +1378,22 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
     }
 
     if (publish) {
+      // Vetting first: a paid tier raises quotas, it does not confer the right
+      // to publish on the public marketplace.
+      if (!upgradeService.canPublishPublicly(user)) {
+        setPublishBlockedReason(
+          user?.metadata?.mentor_application_status === 'pending'
+            ? 'Your mentor application is still in review. You can keep building — publishing unlocks once it is approved.'
+            : 'Publishing to the marketplace requires an approved mentor application. Apply from your dashboard to get started.'
+        );
+        return false;
+      }
+
+      const check = canPublishCourse();
+      if (!check.allowed) {
+        openUpgradeModal('pro');
+        return false;
+      }
       if (!courseTitle.trim() || !courseDesc.trim()) {
         alert('Please fill out Course Title and Description before publishing.');
         return false;
@@ -2345,8 +2367,21 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
               >
                 Edit Curriculum
               </button>
+              {publishBlockedReason && (
+                <div className="w-full basis-full p-4 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 mb-3">
+                  <p className="text-xs font-bold text-amber-800 dark:text-amber-200 leading-relaxed">
+                    {publishBlockedReason}
+                  </p>
+                </div>
+              )}
               <button
                 onClick={async () => {
+                  const check = canPublishCourse();
+                  if (!check.allowed) {
+                    openUpgradeModal('pro');
+                    return;
+                  }
+                  // handleSave re-checks vetting and sets the reason banner.
                   const success = await handleSave(true);
                   if (success) setEditStep('deployed');
                 }}
@@ -2423,6 +2458,8 @@ const CourseBuilder = ({ onBack }: { onBack: () => void }) => {
           </div>
         </div>
       )}
+      {/* Subscription Upgrade Modal */}
+      <UpgradeModal />
     </div>
   );
 };

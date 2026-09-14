@@ -1,457 +1,305 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Button } from '../ui';
-import { ListChecks, FileText, Video, Upload, CheckCircle2, AlertCircle, PlayCircle, X, Loader2, Type } from 'lucide-react';
+import {
+  ListChecks, FileText, CheckCircle2, AlertCircle, X, Loader2, Clock, Award
+} from 'lucide-react';
 import { cn } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
-import { nexus } from '../../lib/nexus';
+import { useTenant } from '../../lib/tenantContext';
+import { assignmentService } from '../../lib/services/assignments';
+import type { Assignment, AssignmentSubmission } from '../../types/school';
 
+type Row = Assignment & { submission?: AssignmentSubmission };
+
+const formatDue = (iso?: string | null) => {
+  if (!iso) return 'No deadline';
+  const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  if (days < 0) return 'Overdue';
+  if (days === 0) return 'Due today';
+  if (days === 1) return 'Due tomorrow';
+  return `Due in ${days} days`;
+};
+
+/**
+ * The student's assignment list.
+ *
+ * Reads from the `assignments` table and writes real rows to
+ * `assignment_submissions`. Quizzes are marked on submit and the score is shown
+ * immediately; written work shows "Awaiting marking" until a teacher grades it.
+ */
 const AssignmentViewer = ({ showFeedback }: any) => {
   const { user } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'pending' | 'completed'>('pending');
-  const [loading, setLoading] = useState(false);
-  const [assignments, setAssignments] = useState<any[]>([]);
-  const [submissions, setSubmissions] = useState<any[]>([]);
+  const { tenant } = useTenant();
 
-  // Working task modal state
-  const [activeTask, setActiveTask] = useState<any | null>(null);
+  const [activeTab, setActiveTab] = useState<'pending' | 'completed'>('pending');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<Row[]>([]);
+
+  const [activeTask, setActiveTask] = useState<Row | null>(null);
   const [textAnswer, setTextAnswer] = useState('');
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
+    setError(null);
     try {
-      // 1. Fetch student's enrollments using correct column (item_id)
-      const { data: enrolls } = await nexus.database
-        .from('enrollments')
-        .select('*')
-        .eq('user_id', user.id);
-
-      const enrolledIds = enrolls?.map((e: any) => e.item_id || e.course_id).filter(Boolean) || [];
-
-      // 2. Fetch all profiles to extract assignments created by tutors/mentors
-      const { data: profiles } = await nexus.database
-        .from('profiles')
-        .select('*');
-
-      const allAssignments: any[] = [];
-      profiles?.forEach((p: any) => {
-        const created = p.metadata?.created_assignments;
-        if (Array.isArray(created)) {
-          created.forEach((asn: any) => {
-            // Show assignment if student is enrolled in the course OR if assigned to 'all' OR if student has no restriction
-            if (enrolledIds.length === 0 || enrolledIds.includes(asn.courseId) || asn.courseId === 'all' || !asn.courseId) {
-              allAssignments.push({
-                ...asn,
-                tutorName: p.full_name || 'Mentor',
-                tutorAvatar: p.avatar_url
-              });
-            }
-          });
-        }
-      });
-
-      // 3. Fallback: If no created assignments exist in the database profiles yet, provide initial seed assignments for testing & learning
-      if (allAssignments.length === 0) {
-        const demoAssignments = [
-          {
-            assignmentId: 'asn_demo_1',
-            courseId: enrolledIds[0] || 'c1',
-            title: 'Frontend Architecture & Component Design Assessment',
-            dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            points: 100,
-            type: 'multichoice',
-            tutorName: 'Dr. Bisi A.',
-            createdAt: new Date().toISOString(),
-            details: {
-              questions: [
-                {
-                  questionText: 'Which React hook is primarily used for handling side effects in a functional component?',
-                  options: ['useState', 'useEffect', 'useContext', 'useReducer'],
-                  correctOptionIndex: 1
-                },
-                {
-                  questionText: 'What is the default layout direction of a Flexbox container in CSS?',
-                  options: ['column', 'row', 'row-reverse', 'column-reverse'],
-                  correctOptionIndex: 1
-                }
-              ]
-            }
-          },
-          {
-            assignmentId: 'asn_demo_2',
-            courseId: enrolledIds[0] || 'c1',
-            title: 'System Design & API Integration Reflection',
-            dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            points: 50,
-            type: 'written',
-            tutorName: 'Prof. Sarah Jenkins',
-            createdAt: new Date().toISOString(),
-            details: {
-              writtenPrompt: 'Describe how WebSockets differ from HTTP REST endpoints in real-time collaboration apps. Provide 2 key advantages of WebSockets.'
-            }
-          }
-        ];
-        allAssignments.push(...demoAssignments);
-      }
-
-      setAssignments(allAssignments);
-
-      // 4. Fetch latest student submissions
-      const { data: studentProfile } = await nexus.database
-        .from('profiles')
-        .select('metadata')
-        .eq('id', user.id)
-        .single();
-
-      if (studentProfile) {
-        setSubmissions(studentProfile.metadata?.submissions || []);
-      }
-    } catch (e) {
-      console.error('Error loading assignments/submissions:', e);
+      setRows(await assignmentService.listForStudent(user.id));
+    } catch (err: any) {
+      setError(err.message || 'Could not load your assignments.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
-    if (user?.id) {
-      fetchData();
-    }
-    const handleSync = () => {
-      if (user?.id) fetchData();
-    };
+    fetchData();
+    const handleSync = () => fetchData();
     window.addEventListener('trileza-assignment-created', handleSync);
     return () => window.removeEventListener('trileza-assignment-created', handleSync);
-  }, [user]);
+  }, [fetchData]);
 
-  const handleSubmitAssignment = async () => {
-    if (!activeTask) return;
+  const isDone = (r: Row) =>
+    Boolean(r.submission && r.submission.status !== 'draft' && r.submission.status !== 'resubmit_requested');
+
+  const pending = rows.filter(r => !isDone(r));
+  const completed = rows.filter(isDone);
+  const visible = activeTab === 'pending' ? pending : completed;
+
+  const openTask = (row: Row) => {
+    setActiveTask(row);
+    setTextAnswer(row.submission?.body || '');
+    const restored: Record<number, number> = {};
+    (row.submission?.answers || []).forEach((a, i) => { if (typeof a === 'number') restored[i] = a; });
+    setQuizAnswers(restored);
+  };
+
+  const handleSubmit = async () => {
+    if (!activeTask || !user?.id || !tenant?.id) return;
     setSubmitting(true);
     try {
-      const { data: profile } = await nexus.database
-        .from('profiles')
-        .select('metadata')
-        .eq('id', user.id)
-        .single();
+      const answers = activeTask.type === 'quiz'
+        ? (activeTask.questions || []).map((_, i) => quizAnswers[i] ?? -1)
+        : undefined;
 
-      const metadata = profile?.metadata || {};
-      const currentSubmissions = metadata.submissions || [];
+      const submission = await assignmentService.submit({
+        assignmentId: activeTask.id,
+        studentId: user.id,
+        tenantId: tenant.id,
+        body: activeTask.type === 'quiz' ? undefined : textAnswer,
+        answers
+      });
 
-      let formattedAnswers: any = null;
-      if (activeTask.type === 'multichoice') {
-        const questions = activeTask.details?.questions || [];
-        formattedAnswers = questions.map((q: any, idx: number) => ({
-          question: q.questionText,
-          selected: q.options[quizAnswers[idx] ?? 0],
-          correct: q.options[q.correctOptionIndex]
-        }));
+      // A quiz is marked on the spot, so tell the student their score now.
+      if (submission.score !== null && submission.score !== undefined) {
+        showFeedback?.(`Submitted — you scored ${submission.score} of ${activeTask.points_possible}.`);
       } else {
-        formattedAnswers = textAnswer;
+        showFeedback?.('Assignment submitted. Your teacher will mark it.');
       }
 
-      const newSubmission = {
-        assignmentId: activeTask.assignmentId,
-        courseId: activeTask.courseId,
-        title: activeTask.title,
-        type: activeTask.type,
-        points: activeTask.points,
-        status: 'Pending Grade',
-        submittedAt: new Date().toISOString(),
-        answers: formattedAnswers,
-        score: '-',
-        grade: '-',
-        feedback: ''
-      };
-
-      const updatedSubmissions = [...currentSubmissions.filter((s: any) => s.assignmentId !== activeTask.assignmentId), newSubmission];
-      const updatedMetadata = {
-        ...metadata,
-        submissions: updatedSubmissions
-      };
-
-      const { error } = await nexus.database
-        .from('profiles')
-        .update({ metadata: updatedMetadata })
-        .eq('id', user.id);
-
-      if (error) throw error;
-
-      showFeedback('Assignment submitted successfully!');
       setActiveTask(null);
       setTextAnswer('');
       setQuizAnswers({});
       await fetchData();
-    } catch (e: any) {
-      console.error(e);
-      alert('Failed to submit assignment: ' + (e.message || e));
+    } catch (err: any) {
+      showFeedback?.(err.message || 'Could not submit your work.', 'info');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const getIcon = (type: string) => {
-    switch (type) {
-      case 'multichoice': return ListChecks;
-      case 'blanks': return Type;
-      case 'video': return Video;
-      default: return FileText;
+  const canSubmit = () => {
+    if (!activeTask) return false;
+    if (activeTask.type === 'quiz') {
+      return (activeTask.questions || []).every((_, i) => quizAnswers[i] !== undefined);
     }
+    return textAnswer.trim().length > 0;
   };
 
-  const completedIds = submissions.map(s => s.assignmentId);
-  const pendingTasks = assignments.filter(asn => !completedIds.includes(asn.assignmentId));
-  const completedTasks = submissions.map(sub => {
-    const orig = assignments.find(a => a.assignmentId === sub.assignmentId) || {};
-    return {
-      ...sub,
-      tutorName: orig.tutorName || 'Mentor',
-      tutorAvatar: orig.tutorAvatar
-    };
-  });
+  if (loading) {
+    return (
+      <Card className="p-12 rounded-[2rem] border-none flex items-center justify-center gap-3">
+        <Loader2 size={20} className="animate-spin text-emerald-500" />
+        <span className="font-bold text-slate-500">Loading assignments…</span>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
-        <button 
-          onClick={() => setActiveTab('pending')}
-          className={cn("font-bold pb-2 border-b-2 transition-all flex items-center gap-2", activeTab === 'pending' ? "border-amber-500 text-amber-600 dark:text-amber-400" : "border-transparent text-slate-500 hover:text-slate-700")}
-        >
-          <AlertCircle size={16} /> Pending Tasks ({pendingTasks.length})
-        </button>
-        <button 
-          onClick={() => setActiveTab('completed')}
-          className={cn("font-bold pb-2 border-b-2 transition-all flex items-center gap-2", activeTab === 'completed' ? "border-emerald-600 text-emerald-700 dark:text-emerald-400" : "border-transparent text-slate-500 hover:text-slate-700")}
-        >
-          <CheckCircle2 size={16} /> Completed ({completedTasks.length})
-        </button>
+      {error && (
+        <Card className="p-4 rounded-2xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 flex items-center gap-3">
+          <AlertCircle size={18} className="text-red-500 flex-none" />
+          <p className="text-sm font-semibold text-red-800 dark:text-red-200">{error}</p>
+        </Card>
+      )}
+
+      <div className="flex gap-2">
+        {(['pending', 'completed'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+              'px-5 py-2.5 rounded-2xl font-bold text-xs capitalize transition-all border cursor-pointer',
+              activeTab === tab
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-transparent shadow-lg'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+            )}
+          >
+            {tab}
+            <span className="ml-2 opacity-60">{tab === 'pending' ? pending.length : completed.length}</span>
+          </button>
+        ))}
       </div>
 
-      {loading ? (
-        <div className="text-center py-12 text-slate-500 font-semibold">Loading assignments...</div>
-      ) : activeTab === 'pending' && (
-        pendingTasks.length === 0 ? (
-          <div className="text-center py-12 text-slate-500 font-semibold bg-slate-50 dark:bg-slate-900/50 rounded-[2rem]">No pending assignments found! Keep it up.</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {pendingTasks.map(task => {
-              const TaskIcon = getIcon(task.type);
-              return (
-                <Card key={task.assignmentId} className="p-6 border-none shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 rounded-[2rem] bg-white dark:bg-slate-950 flex flex-col h-full group hover:shadow-2xl transition-all">
-                  <div className="w-12 h-12 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                    <TaskIcon size={24} className="text-slate-700 dark:text-slate-300" />
+      {visible.length === 0 ? (
+        <Card className="p-12 rounded-[2rem] border-none text-center">
+          <CheckCircle2 size={40} className="mx-auto text-slate-300 mb-4" />
+          <h3 className="text-lg font-black text-slate-900 dark:text-white">
+            {activeTab === 'pending' ? 'Nothing outstanding' : 'No completed work yet'}
+          </h3>
+          <p className="text-slate-500 font-medium mt-2">
+            {activeTab === 'pending'
+              ? 'You are up to date. New assignments will appear here as teachers publish them.'
+              : 'Work you submit will be listed here with its mark.'}
+          </p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {visible.map(row => {
+            const Icon = row.type === 'quiz' ? ListChecks : FileText;
+            const sub = row.submission;
+            const awaiting = sub && sub.score === null;
+
+            return (
+              <Card key={row.id} className="p-6 rounded-[2rem] border-none shadow-lg flex flex-col gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 flex-none">
+                    <Icon size={18} />
                   </div>
-                  <h4 className="font-black text-xl text-slate-900 dark:text-white mb-2 leading-tight">{task.title}</h4>
-                  <div className="flex items-center gap-4 text-xs font-bold text-slate-500 mb-8 uppercase tracking-wider">
-                    <span className="text-amber-500">Due: {task.dueDate}</span>
-                    <span>•</span>
-                    <span>{task.points} Pts</span>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="font-black text-slate-900 dark:text-white leading-snug">{row.title}</h4>
+                    <p className="text-xs font-bold text-slate-400 mt-1">
+                      {row.points_possible} points · {formatDue(row.due_at)}
+                    </p>
                   </div>
-                  <div className="mt-auto">
-                    <Button 
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl"
-                      onClick={() => {
-                        setActiveTask(task);
-                        setTextAnswer('');
-                        setQuizAnswers({});
-                      }}
-                    >
-                      <PlayCircle size={16} className="mr-2" /> Start Task
-                    </Button>
+                </div>
+
+                {row.instructions && (
+                  <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2">{row.instructions}</p>
+                )}
+
+                {sub ? (
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    {awaiting ? (
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-amber-600">
+                        <Clock size={13} /> Awaiting marking
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-sm font-black text-slate-900 dark:text-white tabular-nums">
+                        <Award size={14} className="text-emerald-500" />
+                        {sub.score} / {row.points_possible}
+                      </span>
+                    )}
+                    {sub.status === 'resubmit_requested' && (
+                      <Button size="sm" onClick={() => openTask(row)} className="rounded-xl text-[10px] font-black uppercase">
+                        Resubmit
+                      </Button>
+                    )}
                   </div>
-                </Card>
-              );
-            })}
-          </div>
-        )
+                ) : (
+                  <Button
+                    onClick={() => openTask(row)}
+                    className="w-full rounded-2xl h-11 bg-brand-primary text-white border-none font-black uppercase text-[10px] tracking-widest"
+                  >
+                    Start
+                  </Button>
+                )}
+
+                {sub?.feedback && (
+                  <p className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-900 rounded-xl p-3 leading-relaxed">
+                    <span className="font-black text-slate-400 uppercase tracking-wide text-[9px] block mb-1">Feedback</span>
+                    {sub.feedback}
+                  </p>
+                )}
+              </Card>
+            );
+          })}
+        </div>
       )}
 
-      {activeTab === 'completed' && (
-        completedTasks.length === 0 ? (
-          <div className="text-center py-12 text-slate-500 font-semibold bg-slate-50 dark:bg-slate-900/50 rounded-[2rem]">No completed tasks. Submit assignments to see grades here.</div>
-        ) : (
-          <Card className="p-8 border-none shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 rounded-[2.5rem] bg-white dark:bg-slate-950">
-            <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-              <CheckCircle2 className="text-emerald-500" /> Graded & Pending Assessments
-            </h3>
-            <div className="space-y-4">
-              {completedTasks.map(task => {
-                const TaskIcon = getIcon(task.type);
-                return (
-                  <div key={task.assignmentId} className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-2xl border border-emerald-100 dark:border-emerald-950 bg-emerald-50/30 dark:bg-emerald-950/10 gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-white dark:bg-slate-900 border border-emerald-100 dark:border-emerald-950 flex items-center justify-center">
-                        <TaskIcon size={20} className="text-emerald-600 dark:text-emerald-400" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 dark:text-white">{task.title}</h4>
-                        <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">
-                          {task.status === 'Graded' ? 'Completed • Graded' : 'Submitted • Pending Evaluation'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      <div className="text-right">
-                        <p className="font-black text-2xl text-emerald-600 dark:text-emerald-400">{task.grade || '-'}</p>
-                        <p className="text-xs font-bold text-slate-500">{task.score || '-'}</p>
-                      </div>
-                      {task.feedback && (
-                        <Button 
-                          variant="outline" 
-                          className="border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-400 font-bold bg-white dark:bg-slate-900"
-                          onClick={() => alert(`Feedback from Mentor:\n\n${task.feedback}`)}
-                        >
-                          Feedback
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        )
-      )}
-
-      {/* Task Execution Modal */}
+      {/* Task modal */}
       {activeTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 w-full max-w-2xl rounded-[2.5rem] shadow-2xl p-8 max-h-[90vh] overflow-y-auto space-y-6 animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div>
-                <h3 className="text-2xl font-black text-slate-900 dark:text-white">{activeTask.title}</h3>
-                <p className="text-sm font-semibold text-amber-500 mt-1">Due Date: {activeTask.dueDate} • {activeTask.points} Pts</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+          <Card className="w-full max-w-2xl rounded-[2rem] border-none max-h-[88vh] flex flex-col">
+            <div className="flex items-start justify-between gap-4 p-6 border-b border-slate-100 dark:border-slate-800">
+              <div className="min-w-0">
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">{activeTask.title}</h3>
+                <p className="text-xs font-bold text-slate-400 mt-0.5">
+                  {activeTask.points_possible} points · {formatDue(activeTask.due_at)}
+                </p>
               </div>
-              <button 
-                onClick={() => setActiveTask(null)}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-full transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-              >
+              <button onClick={() => setActiveTask(null)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer" aria-label="Close">
                 <X size={20} />
               </button>
             </div>
 
-            <div className="space-y-4">
-              {activeTask.type === 'multichoice' && (
-                <div className="space-y-6">
-                  {activeTask.details?.questions?.map((q: any, qIdx: number) => (
-                    <div key={qIdx} className="space-y-3 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-                      <p className="font-bold text-slate-900 dark:text-white text-lg">Q{qIdx + 1}: {q.questionText}</p>
-                      <div className="space-y-2">
-                        {q.options?.map((opt: string, optIdx: number) => (
-                          <label 
-                            key={optIdx} 
-                            className={cn(
-                              "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all",
-                              quizAnswers[qIdx] === optIdx
-                                ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-500 text-emerald-700 dark:text-emerald-400 font-semibold"
-                                : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                            )}
-                          >
-                            <input 
-                              type="radio" 
-                              name={`quiz-${qIdx}`}
-                              checked={quizAnswers[qIdx] === optIdx}
-                              onChange={() => setQuizAnswers({ ...quizAnswers, [qIdx]: optIdx })}
-                              className="hidden"
-                            />
-                            <span className="w-6 h-6 rounded-full border border-slate-300 flex items-center justify-center text-xs font-bold shrink-0">
-                              {String.fromCharCode(65 + optIdx)}
-                            </span>
-                            <span>{opt}</span>
-                          </label>
-                        ))}
-                      </div>
+            <div className="p-6 overflow-y-auto flex-1 space-y-5">
+              {activeTask.instructions && (
+                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{activeTask.instructions}</p>
+              )}
+
+              {activeTask.type === 'quiz' ? (
+                (activeTask.questions || []).map((q, qi) => (
+                  <div key={q.id || qi} className="space-y-2">
+                    <p className="font-bold text-sm text-slate-900 dark:text-white">
+                      {qi + 1}. {q.prompt}
+                    </p>
+                    <div className="space-y-1.5">
+                      {(q.options || []).map((opt, oi) => (
+                        <button
+                          key={oi}
+                          onClick={() => setQuizAnswers(a => ({ ...a, [qi]: oi }))}
+                          className={cn(
+                            'w-full text-left p-3 rounded-xl border text-sm font-semibold transition-all cursor-pointer',
+                            quizAnswers[qi] === oi
+                              ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 text-slate-900 dark:text-white'
+                              : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300'
+                          )}
+                        >
+                          {opt}
+                        </button>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {activeTask.type === 'blanks' && (
-                <div className="space-y-4">
-                  <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-                    <p className="font-semibold text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{activeTask.details?.textWithBlanks}</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-600 dark:text-slate-400 mb-2">Your Fill-in Answers / Text</label>
-                    <textarea 
-                      rows={5}
-                      value={textAnswer}
-                      onChange={(e) => setTextAnswer(e.target.value)}
-                      placeholder="Type your response here..."
-                      className="w-full p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium resize-none transition-colors"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {activeTask.type === 'written' && (
-                <div className="space-y-4">
-                  <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-                    <p className="font-bold text-slate-800 dark:text-white mb-2">Prompt:</p>
-                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{activeTask.details?.writtenPrompt}</p>
-                  </div>
-                  
-                  {activeTask.details?.requireFile && (
-                    <div className="p-4 border-2 border-dashed border-slate-300 dark:border-slate-800 rounded-2xl text-center hover:border-emerald-500 transition-colors">
-                      <Upload className="mx-auto text-slate-400 mb-2" size={32} />
-                      <span className="text-sm font-bold text-slate-600 dark:text-slate-400 block mb-2">Drag file or click to select PDF/ZIP</span>
-                      <input 
-                        type="file" 
-                        onChange={(e) => {
-                          if (e.target.files && e.target.files.length > 0) {
-                            setTextAnswer(e.target.files[0].name + " (File attached)");
-                            showFeedback("File selected successfully!");
-                          }
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-bold text-slate-600 dark:text-slate-400 mb-2">Your Answer</label>
-                    <textarea 
-                      rows={6}
-                      value={textAnswer}
-                      onChange={(e) => setTextAnswer(e.target.value)}
-                      placeholder="Type your response or paste code/github URLs..."
-                      className="w-full p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium resize-none transition-colors"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {activeTask.type === 'video' && (
-                <div className="space-y-4">
-                  <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-                    <p className="font-bold text-slate-800 dark:text-white mb-2">Instructions:</p>
-                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{activeTask.details?.videoPrompt}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-600 dark:text-slate-400 mb-2">Video Response URL or Notes</label>
-                    <input 
-                      type="text"
-                      value={textAnswer}
-                      onChange={(e) => setTextAnswer(e.target.value)}
-                      placeholder="Paste your Loom or YouTube explanation URL..."
-                      className="w-full p-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium transition-colors"
-                    />
-                  </div>
-                </div>
+                ))
+              ) : (
+                <label className="block">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Your answer</span>
+                  <textarea
+                    rows={10}
+                    value={textAnswer}
+                    onChange={e => setTextAnswer(e.target.value)}
+                    placeholder="Write your response here…"
+                    className="mt-2 w-full p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm focus:outline-none focus:border-emerald-500 resize-y"
+                  />
+                </label>
               )}
             </div>
 
-            <div className="flex justify-end gap-4 border-t border-slate-100 dark:border-slate-800 pt-4">
-              <Button variant="ghost" onClick={() => setActiveTask(null)} className="font-bold text-slate-500">Cancel</Button>
-              <Button 
-                onClick={handleSubmitAssignment}
-                disabled={submitting}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-8 shadow-lg shadow-emerald-500/20"
+            <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex gap-3">
+              <Button variant="outline" onClick={() => setActiveTask(null)} className="flex-1 rounded-xl h-12 font-bold">Cancel</Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={!canSubmit() || submitting}
+                className="flex-1 rounded-xl h-12 bg-brand-primary text-white border-none font-bold"
               >
-                {submitting ? <img src="/logo.png" alt="Loading" className="w-4 h-4 object-contain animate-spin" /> : 'Submit Answer'}
+                {submitting ? 'Submitting…' : 'Submit'}
               </Button>
             </div>
-          </div>
+          </Card>
         </div>
       )}
     </div>

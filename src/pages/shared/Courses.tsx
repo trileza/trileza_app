@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Card, Button } from '../../components/ui';
-import { LoadingOverlay, PageHeader } from '../../components/shared';
+import { PageHeader } from '../../components/shared';
 import { useAuthStore } from '../../store/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useCheckout } from '../../lib/services/paystack';
@@ -8,11 +8,11 @@ import { nexus } from '../../lib/nexus';
 import { tenantService } from '../../lib/services/tenants';
 import type { Tenant } from '../../types';
 import {
-  Search, Star, BookOpen, Users, Clock, Award, Filter,
+  Search, Star, BookOpen, Users, Clock, 
   ChevronRight, X, CheckCircle2, XCircle, Heart, ChevronDown,
   GraduationCap, Sparkles, TrendingUp, Play, Shield,
   CreditCard, Send, AlertCircle, Calendar, Globe,
-  Layers, Zap, ArrowRight, BadgeCheck, Lock, Building2
+  Layers, Zap, ArrowRight, BadgeCheck, Lock
 } from 'lucide-react';
 import { cn, formatCurrency } from '../../utils';
 import { Toast } from '../../components/ui/Toast';
@@ -176,11 +176,59 @@ const Courses: React.FC = () => {
         if (isFirstLoad) {
           setIsLoadingData(true);
         }
-        // Fetch courses, profiles, and wallets
-        const { data: coursesRows } = await nexus.database.from('courses').select('*').eq('status', 'published');
-        const { data: profilesRows } = await nexus.database.from('profiles').select('*');
-        const { data: walletsRows } = await nexus.database.from('wallets').select('*');
-        const { data: mentorshipRows } = await nexus.database.from('mentorship_programs').select('*');
+        // This is a public catalog, so it reads `public_payout_accounts` — a view
+        // exposing only the Paystack subaccount code needed to route a split
+        // payment. Selecting from `wallets` here would publish every mentor's
+        // bank details and balances to anyone who opens this page.
+        //
+        // Three things this fetch used to get wrong, all of which showed up as
+        // load time on the catalog:
+        //   1. Four sequential awaits — four serial round trips for data that
+        //      has no ordering dependency. They now run as one batch.
+        //   2. `select('*')` pulled every column, including the large JSONB
+        //      (curriculum, materials, branding, social_triggers). The catalog
+        //      renders none of those; only the card fields are requested now.
+        //   3. Profiles were fetched WITHOUT a filter — every column of every
+        //      user on the platform — to look up author names. Authors are now
+        //      resolved in a second, narrow query keyed on the tutor ids that
+        //      actually appear in the results.
+        const COURSE_CARD_COLUMNS =
+          'id, tutor_id, title, description, category, rating, review_count, enrolled_count, ' +
+          'duration, modules, level, featured, thumbnail_url, price_standard, price_elite, ' +
+          'learning_objectives, tags, language, prerequisites, access_period, ' +
+          'certification_available, refund_policy, borrow_enabled';
+
+        const [coursesRes, walletsRes, mentorshipRes] = await Promise.all([
+          nexus.database.from('courses').select(COURSE_CARD_COLUMNS).eq('status', 'published'),
+          nexus.database.from('public_payout_accounts').select('user_id, paystack_subaccount_code'),
+          nexus.database.from('mentorship_programs').select('*')
+        ]);
+
+        const coursesRows = coursesRes.data as any[] | null;
+        const walletsRows = walletsRes.data as any[] | null;
+        const mentorshipRows = mentorshipRes.data as any[] | null;
+
+        // Only the authors actually on screen, and only the five columns the
+        // card renders.
+        const authorIds = Array.from(new Set([
+          ...(coursesRows || []).map(c => c.tutor_id),
+          ...(mentorshipRows || []).map(m => m.mentor_id)
+        ].filter(Boolean)));
+
+        const { data: profilesRows } = authorIds.length > 0
+          ? await nexus.database
+              .from('public_profiles')
+              .select('id, full_name, avatar_url, mentor_tier, bio')
+              .in('id', authorIds)
+          : { data: [] as any[] };
+
+        // Index once instead of .find() inside .map(), which was O(courses ×
+        // profiles) on every render of the catalog.
+        const profileById = new Map<string, any>();
+        (profilesRows || []).forEach((p: any) => profileById.set(p.id, p));
+
+        const walletByUser = new Map<string, any>();
+        (walletsRows || []).forEach((w: any) => walletByUser.set(w.user_id, w));
 
         const parseJsonArray = (val: any): string[] => {
           if (!val) return [];
@@ -206,8 +254,8 @@ const Courses: React.FC = () => {
         };
 
         const mapProfileToCourse = (c: any): CourseItem => {
-          const profile = profilesRows?.find(p => p.id === c.tutor_id);
-          const wallet = walletsRows?.find(w => w.user_id === c.tutor_id);
+          const profile = profileById.get(c.tutor_id);
+          const wallet = walletByUser.get(c.tutor_id);
           return {
             id: c.id,
             title: c.title,
@@ -239,8 +287,8 @@ const Courses: React.FC = () => {
         };
 
         const mapProfileToMentorship = (m: any): MentorshipProgram => {
-          const profile = profilesRows?.find(p => p.id === m.mentor_id);
-          const wallet = walletsRows?.find(w => w.user_id === m.mentor_id);
+          const profile = profileById.get(m.mentor_id);
+          const wallet = walletByUser.get(m.mentor_id);
           return {
             id: m.id,
             title: m.title,
@@ -1643,7 +1691,7 @@ const Courses: React.FC = () => {
                 <CreditCard size={32} />
               </div>
               <h2 className="text-xl font-black text-slate-900 dark:text-white">Confirm Payment</h2>
-              <p className="text-xs text-slate-400 font-bold mt-1">Secure checkout powered by Paystack</p>
+              <p className="text-xs text-slate-400 font-bold mt-1">256-Bit SSL Encrypted Secure Checkout</p>
             </div>
 
             <div className="p-8 space-y-4">
@@ -1766,7 +1814,7 @@ const Courses: React.FC = () => {
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl z-[120] flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="absolute w-[350px] h-[350px] bg-gradient-to-tr from-emerald-500/20 to-teal-500/10 rounded-full blur-[100px] pointer-events-none" />
           
-          <Card className="relative bg-slate-900/90 dark:bg-slate-950/90 border border-emerald-500/35 rounded-[3rem] shadow-[0_20px_50px_rgba(16,185,129,0.15)] w-full max-w-lg overflow-hidden text-center p-8 md:p-10 text-white">
+          <Card className="relative bg-slate-900/90 dark:bg-slate-950/90 border border-emerald-500/35 rounded-[3rem] shadow-[0_20px_50px_rgba(46, 125, 50,0.15)] w-full max-w-lg overflow-hidden text-center p-8 md:p-10 text-white">
             <div className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/5 to-transparent skew-x-12 animate-pulse pointer-events-none" />
 
             <div className="w-20 h-20 rounded-[2rem] bg-emerald-500/15 border-2 border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-emerald-500/10">

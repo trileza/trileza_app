@@ -14,7 +14,7 @@ const Vault = () => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-20 w-full">
       {/* Global Premium Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-8 md:p-12 rounded-2xl sm:rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden" style={{
-        background: 'linear-gradient(135deg, #052e16 0%, #14532d 25%, #166534 50%, #15803d 75%, #16a34a 100%)'
+        background: 'linear-gradient(135deg, #052e16 0%, #14532d 25%, #166534 50%, #15803d 75%, #2E7D32 100%)'
       }}>
         <div className="absolute -top-32 -left-32 w-80 h-80 bg-emerald-500/20 rounded-full blur-[100px] animate-pulse" />
         <div className="absolute right-0 bottom-0 w-80 h-80 bg-emerald-400/20 rounded-full blur-[100px] translate-y-1/2 translate-x-1/3" />

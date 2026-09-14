@@ -4,8 +4,8 @@ import { Card, Button } from '../../components/ui';
 import { PageHeader } from '../../components/shared';
 import { 
   Settings as SettingsIcon, Bell, Lock, User, Globe, Moon, Monitor, Sun, 
-  Shield, Key, Camera, Save, Loader2, CheckCircle2, Clock, XCircle, 
-  Volume2, Video, Eye, Type, HardDrive, Trash2, Download, RefreshCw, Palette
+  Shield, Key, Camera, Save, Loader2, 
+  Volume2, Video, Eye, HardDrive, Trash2, Download, RefreshCw, Palette
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -62,7 +62,7 @@ const Settings = () => {
     const timer = setTimeout(async () => {
       try {
         const { data } = await nexus.database
-          .from('profiles')
+          .from('public_profiles')
           .select('id')
           .eq('username', username)
           .neq('id', user?.id)
@@ -462,10 +462,11 @@ const Settings = () => {
           )}
 
           {/* APPEARANCE & FONTS TAB */}
+          {/* APPEARANCE & THEME TAB */}
           {activeTab === 'appearance' && (
             <Card className="p-8 rounded-[2.5rem] border-none shadow-xl bg-surface shadow-sm space-y-8 animate-in fade-in duration-300">
               <h2 className="text-2xl font-black text-foreground flex items-center gap-3 border-b border-border pb-4">
-                <Type className="text-emerald-500" /> Theme & Reading Preferences
+                <Palette className="text-emerald-500" /> Theme & Appearance Settings
               </h2>
 
               {/* 1. Theme Selector */}
@@ -525,57 +526,7 @@ const Settings = () => {
 
               <div className="border-t border-border my-6"></div>
 
-              {/* 2. Font & Reading Selector */}
-              <div className="space-y-4">
-                <h3 className="font-extrabold text-foreground text-base flex items-center gap-2">
-                  <Type size={18} className="text-emerald-500" /> Reading & Typography
-                </h3>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {/* Font Style Select */}
-                  <div className="space-y-2 text-left">
-                    <label className="text-sm font-bold text-foreground">Font Style</label>
-                    <select
-                      value={settings.reading.fontStyle}
-                      onChange={(e) => {
-                        settings.updateSettings({
-                          reading: { ...settings.reading, fontStyle: e.target.value as any }
-                        });
-                        setToast({ message: `Font style updated to ${e.target.value} (Saved to database)`, type: 'success' });
-                      }}
-                      className="w-full bg-slate-50 dark:bg-slate-800/40 border border-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium cursor-pointer"
-                    >
-                      <option value="sans">Sans-Serif (Inter - Clean & Modern)</option>
-                      <option value="serif">Serif (Lora - Classic Reading)</option>
-                      <option value="dyslexic">Dyslexic-Friendly (Lexend)</option>
-                    </select>
-                  </div>
-
-                  {/* Font Size Select */}
-                  <div className="space-y-2 text-left">
-                    <label className="text-sm font-bold text-foreground">Reading Text Size</label>
-                    <select
-                      value={settings.reading.fontSize}
-                      onChange={(e) => {
-                        settings.updateSettings({
-                          reading: { ...settings.reading, fontSize: e.target.value as any }
-                        });
-                        setToast({ message: `Reading text size updated to ${e.target.value} (Saved to database)`, type: 'success' });
-                      }}
-                      className="w-full bg-slate-50 dark:bg-slate-800/40 border border-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium cursor-pointer"
-                    >
-                      <option value="sm">Small</option>
-                      <option value="md">Medium (Default)</option>
-                      <option value="lg">Large</option>
-                      <option value="xl">Extra Large</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t border-border my-6"></div>
-
-              {/* 3. Accessibility & Sounds */}
+              {/* 2. Accessibility & Sounds */}
               <div className="space-y-4">
                 <h3 className="font-extrabold text-foreground text-base flex items-center gap-2">
                   <Volume2 size={18} className="text-slate-400" /> Accessibility & Interface Sounds

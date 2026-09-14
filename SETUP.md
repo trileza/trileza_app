@@ -159,8 +159,9 @@ Token authentication must be **on** for the pull zone (`ZoneSecurityEnabled`),
 otherwise signed URLs are pointless — every course video is readable by anyone
 who has the link, whether they paid or not.
 
-**Netlify** (site settings → environment variables): `INSFORGE_URL`,
-`INSFORGE_ANON_KEY`, plus the `VITE_` values so the build can embed them.
+**Hosting platform** (environment variables on whichever host serves the site):
+the `VITE_` values, so the build can embed them, plus `SITE_URL` — the public
+origin, which edge functions use to build links in outgoing email.
 
 ## 5. Run it
 
@@ -177,7 +178,7 @@ npm run build:admin    # admin console bundle
 2. Run the migrations against the new project (step 2)
 3. Create the storage buckets (step 3)
 4. Re-add every server-side secret (step 4) — these do not travel with the project
-5. Update the same values in Netlify
+5. Update the same values on the hosting platform
 6. Rotate the credentials of the account you left
 
 Data does **not** move between projects automatically. If the old account holds

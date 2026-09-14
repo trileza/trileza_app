@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, UserPlus, UserCheck, ShieldCheck, Mail, Calendar, MessageSquare, Loader2 } from 'lucide-react';
+import { X, UserPlus, UserCheck, ShieldCheck, Loader2 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useFeedStore } from '../../store/feedStore';
 import { feedService } from '../../lib/services/feeds';

@@ -8,7 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
-  ChevronLeft, Users, Clock, Circle, Lock, Unlock, Wifi, WifiOff, Signal,
+  ChevronLeft, Users, Clock, Circle, Lock, Unlock, WifiOff, Signal,
   Minimize2, Monitor,
 } from 'lucide-react';
 import { useMeetingStore } from '../../store/meetingStore';
@@ -88,7 +88,7 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
               <Minimize2 size={16} />
             </button>
           )}
-          <img src="/logo.png" className="h-8 object-contain shrink-0 hidden sm:block" alt="Trileza Logo" />
+          <img src="/icon-192.png" className="h-8 object-contain shrink-0 hidden sm:block" alt="Trileza Logo" />
           <div className="min-w-0">
             <h2 className="text-sm font-black text-slate-800 truncate flex items-center gap-2">
               {sessionTitle || 'Live Classroom'}

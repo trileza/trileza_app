@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '../../components/ui';
 import AssignmentCreator from '../../components/assignments/AssignmentCreator';
 import { Toast } from '../../components/ui/Toast';
-import { FileEdit, CheckCircle, Upload, Activity, BarChart3, ChevronRight, BookOpen, UserCheck, Search, MessageSquare, AlertCircle, X, Download } from 'lucide-react';
+import { FileEdit, CheckCircle, Upload, Activity, BookOpen, UserCheck, Search, MessageSquare, AlertCircle, X, Download } from 'lucide-react';
 import { PageHeader } from '../../components/shared';
 import { cn } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
@@ -161,7 +161,7 @@ const MentorshipAssessment = () => {
       const doc = new jsPDF();
       
       // Emerald Brand Top Banner
-      doc.setFillColor(16, 185, 129); // #10b981
+      doc.setFillColor(46, 125, 50); // #2E7D32 Deep Forest
       doc.rect(0, 0, 210, 30, 'F');
 
       // Title & Header Text

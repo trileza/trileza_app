@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Radio, Users, ArrowRight, Plus, Calendar, Clock, Video, Layout, Share2, Upload, Info
+  Radio, Calendar, Clock, Video, Share2, Upload, Info
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn, executeWithAutoRefresh } from '../../utils';

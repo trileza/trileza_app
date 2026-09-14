@@ -18,6 +18,7 @@ import { Card, Button } from '../../components/ui';
 import PageHeader from '../../components/shared/PageHeader';
 
 import { nexus } from '../../lib/nexus';
+import { publishUserEvent } from '../../lib/services/realtimeEvents';
 
 interface AuthorApplicationRecord {
   id: string;
@@ -143,6 +144,15 @@ const AuthorApplication: React.FC<AuthorApplicationProps> = ({ inline = false, o
 
       if (dbErr) throw dbErr;
 
+      // Realtime event for immediate Super Admin & Content Manager sync
+      publishUserEvent('author_application_submitted', {
+        userId: user.id,
+        userEmail: user.email,
+        penName: penName.trim(),
+        category,
+        submittedAt: new Date().toISOString()
+      });
+
       await fetchApplications();
       setIsApplyingNew(false);
 
@@ -177,6 +187,16 @@ const AuthorApplication: React.FC<AuthorApplicationProps> = ({ inline = false, o
 
   return (
     <div className={inline ? "space-y-6 font-sans" : "container mx-auto px-4 pb-20 animate-in fade-in duration-500 space-y-8 font-sans"}>
+      {!inline && (
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center p-2 shadow-sm">
+            <img src="/icon-192.png" alt="Trileza Logo" className="w-full h-full object-contain" />
+          </div>
+          <div>
+            <span className="font-extrabold text-lg text-slate-900 dark:text-white">Trileza Author Registry</span>
+          </div>
+        </div>
+      )}
       {!inline && (
         <PageHeader 
           title={

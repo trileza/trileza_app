@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '../../components/ui';
 import { useAuthStore, resolveActiveRole } from '../../store/authStore';
 import { 
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  ResponsiveContainer, Cell,
   PieChart, Pie
 } from 'recharts';
 import { 
-  Users, Shield, PlusCircle, Video, PlayCircle, 
-  CheckCircle2, AlertCircle, FileText, BrainCircuit,
+  Users, Shield, PlusCircle, Video, 
+  CheckCircle2, FileText, BrainCircuit,
   Award, Lock, ArrowLeft, MapPin, Plus, MicOff, Mic
 } from 'lucide-react';
 import { cn } from '../../utils';
@@ -333,7 +333,7 @@ const MenteeDashboard = ({ showFeedback }: any) => {
         const assignedMentorId = user.metadata?.assigned_mentor_id;
         if (assignedMentorId) {
           const { data: mentorProfile, error } = await nexus.database
-            .from('profiles')
+            .from('public_profiles')
             .select('*')
             .eq('id', assignedMentorId)
             .maybeSingle();
@@ -492,7 +492,7 @@ const MenteeDashboard = ({ showFeedback }: any) => {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={[{ value: goalProgress || 1 }, { value: 100 - (goalProgress || 1) }]} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={70} startAngle={90} endAngle={-270} stroke="none">
-                    <Cell fill={goalProgress > 0 ? "#16a34a" : "rgba(0,0,0,0.08)"} />
+                    <Cell fill={goalProgress > 0 ? "#2E7D32" : "rgba(0,0,0,0.08)"} />
                     <Cell fill="rgba(0,0,0,0.08)" />
                   </Pie>
                 </PieChart>
@@ -549,7 +549,7 @@ const Mentorship = () => {
             icon={BrainCircuit}
             rightContent={
               activeTab !== 'live' ? (
-                <Button className="font-black bg-[#16a34a] hover:bg-[#15803d] border-none rounded-xl py-3 px-6 flex items-center gap-2 shadow-lg shadow-green-600/25 text-white" onClick={() => setActiveTab('live')}>
+                <Button className="font-black bg-[#2E7D32] hover:bg-[#15803d] border-none rounded-xl py-3 px-6 flex items-center gap-2 shadow-lg shadow-green-600/25 text-white" onClick={() => setActiveTab('live')}>
                   <Video size={18} /> Join Live Room
                 </Button>
               ) : (

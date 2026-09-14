@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Bell, Heart, MessageSquare, UserPlus, AtSign, Check } from 'lucide-react';
+import { Bell, Heart, MessageSquare, UserPlus, AtSign } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useFeedStore } from '../../store/feedStore';
 import type { FeedNotification } from '../../lib/services/feeds';

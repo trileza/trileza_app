@@ -1,18 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Play, 
   BookOpen, 
   Download,
   Link as LinkIcon,
   ChevronLeft,
   CheckCircle,
   FileText,
-  Clock,
   CheckCircle2,
   HelpCircle,
   Video,
-  Award,
   BookMarked
 } from 'lucide-react';
 import { Button, Card } from '../../components/ui';

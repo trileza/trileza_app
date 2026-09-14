@@ -5,19 +5,12 @@ import 'react-phone-number-input/style.css';
 import { Button, Card } from '../../components/ui';
 import { LoadingOverlay } from '../../components/shared';
 import { useAuthStore } from '../../store/authStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import { nexus } from '../../lib/nexus';
 import type { UserRole } from '../../store/authStore';
 import { 
   GraduationCap, 
-  UserCircle, 
-  ShieldCheck, 
-  LayoutDashboard,
-  Award,
   Users,
-  Zap,
-  Sparkles,
-  Search,
-  PlayCircle,
   Mail,
   Lock,
   User,
@@ -25,23 +18,21 @@ import {
   EyeOff,
   ArrowLeft,
   Loader2,
-  Phone,
   Camera,
-  Briefcase,
-  Download,
-  BookOpen,
-  Target,
-  Globe,
-  AlertCircle
+  AlertCircle,
+  Sun,
+  Moon,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { cn } from '../../utils';
+import { PricingSection } from '../../components/pricing/PricingSection';
 
 type AuthView = 'landing' | 'login' | 'signup' | 'verify';
 
 const LoginPage = () => {
   const navigate = useNavigate();
   const { signIn, signUp, loading } = useAuthStore();
+  const { theme, updateSetting } = useSettingsStore();
   const [view, setView] = useState<AuthView>('landing');
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -63,6 +54,7 @@ const LoginPage = () => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('mentee');
 
   // Unified Profile State
+  const [username, setUsername] = useState('');
   const [surname, setSurname] = useState('');
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
@@ -98,88 +90,87 @@ const LoginPage = () => {
     if (error) setError(error);
   };
 
-  // Dynamic sign-in avatar lookup by email
-  React.useEffect(() => {
-    if (view !== 'login' || !email || !email.includes('@')) {
-      setSignInAvatarUrl(null);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
+  // Fetch avatar on blur when email is entered during sign-in
+  const handleEmailBlur = async () => {
+    if (view === 'login' && email && email.includes('@')) {
       try {
-        const { data, error } = await nexus.database
-          .from('profiles')
-          .select('avatar_url')
-          .eq('email', email.trim().toLowerCase())
-          .order('created_at', { ascending: false })
-          .limit(1);
+        // A function that returns the avatar alone: signed-out visitors can no
+        // longer read the profiles table.
+        const { data } = await nexus.database.rpc('get_sign_in_avatar', {
+          p_email: email.trim().toLowerCase()
+        });
 
-        if (!error && data && data.length > 0 && data[0].avatar_url) {
-          setSignInAvatarUrl(data[0].avatar_url);
+        if (typeof data === 'string' && data) {
+          setSignInAvatarUrl(data);
         } else {
           setSignInAvatarUrl(null);
         }
       } catch (err) {
-        console.error('Error fetching signin avatar:', err);
+        setSignInAvatarUrl(null);
       }
-    }, 400); // 400ms debounce
-
-    return () => clearTimeout(timer);
-  }, [email, view]);
+    }
+  };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    console.log('[SignUp] handleSignUp triggered');
 
+    const rawUsername = username.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase().trim();
+    if (rawUsername.length < 3) {
+      setError('Username handle must be at least 3 characters (e.g. @ileza).');
+      return;
+    }
+    const usernameHandle = `@${rawUsername}`;
+
+    if (!surname.trim() || !firstName.trim()) {
+      setError('Surname and First Name are strictly required.');
+      return;
+    }
+
+    if (!phoneNumber) {
+      setError('Phone number with country code is required.');
+      return;
+    }
+
+    if (!avatarFile) {
+      setError('Profile picture upload is mandatory to build an identity on Trileza.');
+      return;
+    }
+
+    // Check username uniqueness in profiles table
     try {
-      if (!avatarFile) {
-        setError('Profile photo is required. Please upload a photo to register.');
+      const { data: existingUser } = await nexus.database
+        .from('public_profiles')
+        .select('id')
+        .eq('username', usernameHandle)
+        .maybeSingle();
+
+      if (existingUser) {
+        setError(`The username "${usernameHandle}" is already taken. Please choose another handle.`);
         return;
       }
-      
-      if (password.length < 6) {
-        setError('Password must be at least 6 characters');
-        return;
-      }
+    } catch (err) {
+      // Continue if profiles query passes
+    }
 
-      const fullName = `${surname} ${firstName} ${middleName}`.trim();
-      const avatarUrl = avatarFile;
+    const fullName = [surname.trim(), firstName.trim(), middleName.trim()].filter(Boolean).join(' ');
 
-      const metadata = {
-        surname,
-        firstName,
-        middleName,
-        phoneNumber,
-        avatar_url: avatarUrl,
-      };
+    const metadata = {
+      username: usernameHandle,
+      surname: surname.trim(),
+      first_name: firstName.trim(),
+      middle_name: middleName.trim(),
+      phone_number: phoneNumber,
+      avatar_url: avatarFile,
+      full_name: fullName
+    };
 
-      console.log('[SignUp] Calling signUp store action with:', { email, fullName, metadata });
-      const { error: signUpError, requireVerification } = await signUp(email, password, fullName, 'mentee', metadata);
-      
-      console.log('[SignUp] signUp store action result:', { signUpError, requireVerification });
-
-      if (signUpError) {
-        setError(signUpError);
-      } else if (requireVerification) {
-        setPendingRegistration({
-          email,
-          fullName,
-          role: 'mentee',
-          metadata
-        });
-        
-        setSuccessMsg(`Authentication code sent to ${email}`);
-        setTimeout(() => {
-          setSuccessMsg(null);
-          setView('verify');
-        }, 1500);
-      } else {
-        setSuccessMsg('Profile established! Redirecting...');
-      }
-    } catch (err: any) {
-      console.error('[SignUp] Exception in handleSignUp:', err);
-      setError(err?.message || 'An unexpected error occurred during signup.');
+    const { error } = await signUp(email, password, fullName, selectedRole, metadata);
+    if (error) {
+      setError(error);
+    } else {
+      setPendingRegistration({ email, role: selectedRole, metadata });
+      setView('verify');
     }
   };
 
@@ -187,11 +178,27 @@ const LoginPage = () => {
     e.preventDefault();
     setError(null);
     const otp = verificationCode.join('');
+    
+    if (otp.length < 6) {
+      setError('Please enter the complete 6-digit access code.');
+      return;
+    }
 
-    const pendingData = pendingRegistration;
-    let registrationMetadata = null;
-    if (pendingData && pendingData.email === email) {
-      registrationMetadata = pendingData;
+    let registrationMetadata = pendingRegistration?.metadata;
+
+    if (!registrationMetadata) {
+      const fullName = [surname.trim(), firstName.trim(), middleName.trim()].filter(Boolean).join(' ');
+      const rawUsername = username.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase().trim();
+      const usernameHandle = rawUsername ? `@${rawUsername}` : undefined;
+      registrationMetadata = {
+        username: usernameHandle,
+        surname: surname.trim(),
+        first_name: firstName.trim(),
+        middle_name: middleName.trim(),
+        phone_number: phoneNumber,
+        avatar_url: avatarFile,
+        full_name: fullName
+      };
     }
 
     const { error } = await useAuthStore.getState().verifyEmail(email, otp, registrationMetadata);
@@ -207,6 +214,7 @@ const LoginPage = () => {
   const resetForm = () => {
     setEmail('');
     setPassword('');
+    setUsername('');
     setSurname('');
     setFirstName('');
     setMiddleName('');
@@ -216,77 +224,99 @@ const LoginPage = () => {
     setSuccessMsg(null);
   };
 
-  // ─── AUTH FORM (Login/Signup) ─────────────────────────────────
+  const toggleTheme = () => {
+    const isCurrentlyDark = document.documentElement.classList.contains('dark');
+    const nextTheme = isCurrentlyDark ? 'light' : 'dark';
+    updateSetting('theme', nextTheme);
+  };
+
   // ─── AUTH FORM (Login/Signup) ─────────────────────────────────
   if (view === 'login' || view === 'signup') {
     return (
-      <div className="min-h-screen bg-[#070c09] text-slate-100 flex items-center justify-center p-6 relative overflow-hidden font-sans">
-        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none -z-10" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-indigo-500/10 rounded-full blur-[140px] pointer-events-none -z-10" />
+      <div className="min-h-screen bg-[#F8F8F8] dark:bg-[#000000] text-slate-900 dark:text-slate-100 flex items-center justify-center p-6 relative overflow-hidden font-sans transition-colors duration-300">
+        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/10 dark:bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none -z-10" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-indigo-500/10 dark:bg-indigo-500/10 rounded-full blur-[140px] pointer-events-none -z-10" />
 
-        <header className="fixed top-0 left-0 w-full z-50 bg-[#070c09]/80 backdrop-blur-2xl border-b border-white/10 px-6 md:px-12 py-4 pt-safe flex items-center justify-between shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
+        <header className="fixed top-0 left-0 w-full z-50 bg-[#F8F8F8]/95 dark:bg-[#000000]/95 backdrop-blur-2xl border-b border-transparent px-6 md:px-12 py-4 pt-safe flex items-center justify-between shadow-xs dark:shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
           <button 
             onClick={() => { setView('landing'); resetForm(); }} 
             className="flex items-center gap-3 group cursor-pointer bg-transparent border-none outline-none"
           >
             <div className="w-12 h-12 flex items-center justify-center group-hover:scale-110 transition-all duration-300">
               <img 
-                src="/logo.png" 
+                src="/icon-192.png" 
                 alt="Trileza Logo" 
-                className="w-full h-full object-contain scale-110 logo-white-dark filter brightness-0 invert drop-shadow-[0_2px_10px_rgba(255,255,255,0.3)]" 
+                className="w-full h-full object-contain scale-110 logo-white-dark transition-all" 
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = 'https://api.dicebear.com/7.x/initials/svg?seed=Tr&backgroundColor=059669';
                 }} 
               />
             </div>
-            <span className="text-2xl font-black text-white tracking-tight hidden sm:block">Trileza</span>
+            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight hidden sm:block">Trileza</span>
           </button>
           
-          <button 
-            onClick={() => { setView('landing'); resetForm(); }}
-            className="flex items-center gap-2 text-slate-300 hover:text-white transition-all text-sm font-bold bg-white/10 hover:bg-white/15 px-4 py-2 rounded-full border border-white/15 hover:border-white/30 shadow-lg cursor-pointer"
-          >
-            <ArrowLeft size={16} /> Back to Home
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={toggleTheme}
+              className="p-2.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-white/15 transition-all cursor-pointer"
+              title="Toggle Theme"
+            >
+              <Sun className="hidden dark:block w-4 h-4 text-amber-400" />
+              <Moon className="block dark:hidden w-4 h-4 text-slate-700" />
+            </button>
+
+            <button 
+              onClick={() => { setView('landing'); resetForm(); }}
+              className="flex items-center gap-2 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition-all text-sm font-bold bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 px-4 py-2 rounded-full border border-slate-200 dark:border-white/15 shadow-sm dark:shadow-lg cursor-pointer"
+            >
+              <ArrowLeft size={16} /> Back to Home
+            </button>
+          </div>
         </header>
 
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-2xl pt-24 pb-12"
+          className={cn(
+            "w-full transition-all duration-300 pt-16 sm:pt-20 pb-12",
+            view === 'login' ? "max-w-[440px]" : "max-w-2xl"
+          )}
         >
-          <Card className="p-8 sm:p-10 border border-emerald-900/40 shadow-[0_30px_70px_-15px_rgba(0,0,0,0.9)] bg-[#0c1712] backdrop-blur-2xl rounded-[3rem] ring-1 ring-white/10">
+          <Card className={cn(
+            "border border-slate-200 dark:border-emerald-900/40 shadow-2xl dark:shadow-[0_30px_70px_-15px_rgba(0,0,0,0.9)] bg-white dark:bg-[#0c1712] backdrop-blur-2xl ring-1 ring-slate-200/50 dark:ring-white/10 transition-all duration-300",
+            view === 'login' ? "p-7 sm:p-9 rounded-[2rem]" : "p-8 sm:p-10 rounded-[3rem]"
+          )}>
             {view === 'login' && (
-              <div className="flex justify-center mb-6">
+              <div className="flex justify-center mb-5">
                 <div className="relative group">
                   <div className="absolute -inset-1 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 opacity-30 blur-md" />
                   {signInAvatarUrl ? (
                     <img 
                       src={signInAvatarUrl} 
-                      className="relative w-20 h-20 rounded-full border-4 border-[#162a20] shadow-2xl object-cover bg-slate-900 animate-in fade-in zoom-in duration-300"
+                      className="relative w-16 h-16 rounded-full border-3 border-slate-200 dark:border-[#162a20] shadow-xl object-cover bg-slate-100 dark:bg-slate-900 animate-in fade-in zoom-in duration-300"
                       alt="User Avatar"
                     />
                   ) : (
-                    <div className="relative w-20 h-20 rounded-full border-4 border-[#162a20] bg-[#122019] flex items-center justify-center text-slate-400 shadow-xl">
-                      <User size={36} className="text-emerald-400" />
+                    <div className="relative w-16 h-16 rounded-full border-3 border-slate-200 dark:border-[#162a20] bg-slate-100 dark:bg-[#122019] flex items-center justify-center text-slate-400 shadow-lg">
+                      <User size={28} className="text-emerald-600 dark:text-emerald-400" />
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            <div className="text-center mb-10">
-              <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+            <div className={cn("text-center", view === 'login' ? "mb-6" : "mb-10")}>
+              <h1 className={cn("font-black text-slate-900 dark:text-white tracking-tight", view === 'login' ? "text-2xl sm:text-3xl" : "text-3xl sm:text-4xl")}>
                 {view === 'login' ? 'Welcome Back' : 'Join Trileza'}
               </h1>
-              <p className="text-slate-400 font-medium mt-2 text-sm sm:text-base">
+              <p className="text-slate-600 dark:text-slate-400 font-medium mt-1.5 text-xs sm:text-sm">
                 {view === 'login' 
                   ? 'Sign in to your elite learning dashboard' 
                   : 'Create your detailed professional profile'}
               </p>
             </div>
 
-            <form onSubmit={view === 'login' ? handleLogin : handleSignUp} className="space-y-7">
+            <form onSubmit={view === 'login' ? handleLogin : handleSignUp} className={view === 'login' ? "space-y-4" : "space-y-7"}>
               {view === 'signup' && (
                 <div className="flex flex-col items-center gap-4">
                   <div className="relative group cursor-pointer">
@@ -308,150 +338,214 @@ const LoginPage = () => {
                     {avatarFile ? (
                       <img 
                         src={avatarFile} 
-                        className="w-24 h-24 rounded-full bg-[#122019] ring-4 ring-emerald-500/40 shadow-2xl transition-all group-hover:scale-105 object-cover"
+                        className="w-24 h-24 rounded-full bg-slate-100 dark:bg-[#122019] ring-4 ring-emerald-500/40 shadow-2xl transition-all group-hover:scale-105 object-cover"
                         alt="Avatar Preview"
                       />
                     ) : (
-                      <div className="w-24 h-24 rounded-full bg-[#122019] border-2 border-emerald-900/50 shadow-2xl transition-all group-hover:scale-105 flex items-center justify-center text-slate-400">
+                      <div className="w-24 h-24 rounded-full bg-slate-100 dark:bg-[#122019] border-2 border-slate-300 dark:border-emerald-900/50 shadow-2xl transition-all group-hover:scale-105 flex items-center justify-center text-slate-400">
                         <User size={44} className="text-slate-400" />
                       </div>
                     )}
-                    <div className="absolute bottom-0 right-0 p-2 rounded-full bg-emerald-500 text-slate-950 shadow-lg group-hover:bg-emerald-400 transition-colors z-0 font-bold">
+                    <div className="absolute bottom-0 right-0 p-2 rounded-full bg-emerald-500 text-white dark:text-slate-950 shadow-lg group-hover:bg-emerald-400 transition-colors z-0 font-bold">
                       <Camera size={15} />
                     </div>
                   </div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    Upload Profile Picture <span className="text-rose-400 font-bold">*</span>
+                  <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
+                    Upload Profile Picture <span className="text-rose-500 font-bold">*</span>
                   </p>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className={view === 'login' ? "space-y-4" : "grid grid-cols-1 md:grid-cols-2 gap-5"}>
                 {view === 'signup' && (
                   <>
                     <div className="space-y-2">
-                      <label className="text-xs font-black text-slate-300 uppercase tracking-[0.15em]">Surname</label>
+                      <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">Surname</label>
                       <input 
                         type="text"
                         value={surname}
                         onChange={(e) => setSurname(e.target.value)}
                         placeholder="Last name"
                         required
-                        className="w-full px-5 py-4 bg-[#122019] border border-emerald-900/50 rounded-2xl text-sm font-semibold text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                        className="w-full px-5 py-4 bg-slate-50 dark:bg-[#122019] border border-slate-200 dark:border-emerald-900/50 rounded-2xl text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-black text-slate-300 uppercase tracking-[0.15em]">First Name</label>
+                      <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">First Name</label>
                       <input 
                         type="text"
                         value={firstName}
                         onChange={(e) => setFirstName(e.target.value)}
                         placeholder="First name"
                         required
-                        className="w-full px-5 py-4 bg-[#122019] border border-emerald-900/50 rounded-2xl text-sm font-semibold text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                        className="w-full px-5 py-4 bg-slate-50 dark:bg-[#122019] border border-slate-200 dark:border-emerald-900/50 rounded-2xl text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-black text-slate-300 uppercase tracking-[0.15em]">Middle Name</label>
+                      <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">Middle Name</label>
                       <input 
                         type="text"
                         value={middleName}
                         onChange={(e) => setMiddleName(e.target.value)}
                         placeholder="Middle name"
-                        className="w-full px-5 py-4 bg-[#122019] border border-emerald-900/50 rounded-2xl text-sm font-semibold text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                        className="w-full px-5 py-4 bg-slate-50 dark:bg-[#122019] border border-slate-200 dark:border-emerald-900/50 rounded-2xl text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-black text-slate-300 uppercase tracking-[0.15em]">Phone Number</label>
-                      <div className="relative flex items-center bg-[#122019] border border-emerald-900/50 rounded-2xl px-4 py-3 focus-within:ring-2 focus-within:ring-emerald-500/30 focus-within:border-emerald-500 transition-all">
-                        <Phone size={16} className="text-emerald-400 mr-2 flex-shrink-0" />
-                        <PhoneInput 
-                          international
-                          defaultCountry="NG"
+                      <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">Phone Identity</label>
+                      <div className="relative phone-input-container">
+                        <PhoneInput
+                          placeholder="Phone number"
                           value={phoneNumber}
                           onChange={setPhoneNumber}
-                          className="w-full text-sm font-semibold text-white outline-none bg-transparent phone-input-override"
+                          defaultCountry="NG"
+                          international
                         />
                       </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em] flex items-center justify-between">
+                        <span>Username Handle</span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold lowercase tracking-normal">for tagging & search</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-400 dark:text-slate-500 select-none text-base">
+                          @
+                        </div>
+                        <input 
+                          type="text"
+                          value={username.startsWith('@') ? username.slice(1) : username}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
+                            setUsername(raw ? `@${raw}` : '');
+                          }}
+                          placeholder="ileza"
+                          required
+                          className="w-full px-5 py-4 pl-9 bg-slate-50 dark:bg-[#122019] border border-slate-200 dark:border-emerald-900/50 rounded-2xl text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium ml-1">Must be unique (e.g. @ileza).</p>
                     </div>
                   </>
                 )}
 
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-xs font-black text-slate-300 uppercase tracking-[0.15em]">Email Address</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">Email Identity</label>
                   <div className="relative">
-                    <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400" />
                     <input 
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@example.com"
+                      onBlur={handleEmailBlur}
+                      placeholder="alex@trileza.com"
                       required
-                      className="w-full pl-12 pr-4 py-4 bg-[#122019] border border-emerald-900/50 rounded-2xl text-sm font-semibold text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                      className="w-full px-4 py-3.5 pl-11 bg-slate-50 dark:bg-[#122019] border border-slate-200 dark:border-emerald-900/50 rounded-xl text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
                     />
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={17} />
                   </div>
                 </div>
 
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-xs font-black text-slate-300 uppercase tracking-[0.15em]">Password</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">Security Key</label>
                   <div className="relative">
-                    <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400" />
                     <input 
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
+                      placeholder="••••••••••••"
                       required
-                      className="w-full pl-12 pr-12 py-4 bg-[#122019] border border-emerald-900/50 rounded-2xl text-sm font-semibold text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                      className="w-full px-4 py-3.5 pl-11 pr-11 bg-slate-50 dark:bg-[#122019] border border-slate-200 dark:border-emerald-900/50 rounded-xl text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
                     />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors bg-transparent border-none cursor-pointer">
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={17} />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                     </button>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-3">
-                {error && (
-                  error.startsWith('Account Restrained:') ? (
-                    <div className="bg-rose-950/40 border border-rose-800/60 p-4 rounded-2xl flex items-start gap-3 text-left mb-4">
-                      <AlertCircle className="text-rose-400 shrink-0 mt-0.5" size={18} />
+              {view === 'signup' && (
+                <div className="space-y-3">
+                  <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">Intended Capacity</label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRole('mentee')}
+                      className={cn(
+                        "p-5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between h-28 relative overflow-hidden",
+                        selectedRole === 'mentee'
+                          ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-300 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500"
+                          : "bg-slate-50 dark:bg-[#122019] border-slate-200 dark:border-emerald-900/30 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-emerald-800"
+                      )}
+                    >
+                      <GraduationCap size={24} className={selectedRole === 'mentee' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} />
                       <div>
-                        <p className="text-xs font-black text-rose-300 uppercase tracking-wider">Account Restrained</p>
-                        <p className="text-xs text-rose-200 mt-1 leading-relaxed font-semibold">
-                          {error.replace('Account Restrained: ', '')}
-                        </p>
+                        <div className="font-black text-sm tracking-tight">Student / Mentee</div>
+                        <div className="text-[11px] font-semibold opacity-75">Learn & expand impact</div>
                       </div>
-                    </div>
-                  ) : (
-                    <p className="text-rose-400 text-xs font-bold mb-4 text-center bg-rose-950/30 border border-rose-900/40 py-2.5 px-4 rounded-xl">{error}</p>
-                  )
-                )}
-                {successMsg && (
-                  <div className="mb-4 p-4 bg-emerald-950/50 border border-emerald-500/40 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
-                    <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-slate-950 font-bold">
-                      <Mail size={14} />
-                    </div>
-                    <p className="text-xs font-black text-emerald-300 uppercase tracking-widest">{successMsg}</p>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRole('mentor')}
+                      className={cn(
+                        "p-5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between h-28 relative overflow-hidden",
+                        selectedRole === 'mentor'
+                          ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-300 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500"
+                          : "bg-slate-50 dark:bg-[#122019] border-slate-200 dark:border-emerald-900/30 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-emerald-800"
+                      )}
+                    >
+                      <Users size={24} className={selectedRole === 'mentor' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} />
+                      <div>
+                        <div className="font-black text-sm tracking-tight">Mentor / Instructor</div>
+                        <div className="text-[11px] font-semibold opacity-75">Guide & instruct learners</div>
+                      </div>
+                    </button>
                   </div>
-                )}
-                <Button 
-                  type="submit"
-                  disabled={loading || !!successMsg}
-                  className="w-full py-5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-emerald-500/30 transition-all border-none disabled:opacity-50 cursor-pointer"
+                </div>
+              )}
+
+              {error && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-xl flex items-center gap-2.5 text-rose-700 dark:text-rose-400 text-xs font-bold"
                 >
-                  {loading ? 'Processing...' : (view === 'login' ? 'Sign In' : 'Next \u2192')}
-                </Button>
-              </div>
+                  <AlertCircle size={16} className="shrink-0" />
+                  <span>{error}</span>
+                </motion.div>
+              )}
+
+              <Button
+                type="submit"
+                disabled={loading}
+                className={cn(
+                  "w-full rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:text-slate-950 font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/25 transition-all border-none cursor-pointer",
+                  view === 'login' ? "py-4" : "py-5 rounded-2xl"
+                )}
+              >
+                {loading ? (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="animate-spin" size={16} />
+                    <span>Synchronizing...</span>
+                  </div>
+                ) : (
+                  view === 'login' ? 'Authenticate Access' : 'Establish Profile'
+                )}
+              </Button>
             </form>
 
-            <div className="text-center mt-8 pt-6 border-t border-white/10">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+            <div className={cn("text-center border-t border-slate-200 dark:border-emerald-900/40", view === 'login' ? "mt-6 pt-5" : "mt-8 pt-6")}>
+              <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
                 {view === 'login' ? 'New to the network?' : 'Identity already exists?'}
                 {' '}
                 <button 
                   onClick={() => { setView(view === 'login' ? 'signup' : 'login'); setError(null); }} 
-                  className="text-emerald-400 hover:text-emerald-300 transition-colors ml-2 font-black cursor-pointer bg-transparent border-none"
+                  className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors ml-1.5 font-black cursor-pointer bg-transparent border-none"
                 >
                   {view === 'login' ? 'Sign up for access' : 'Sign in here'}
                 </button>
@@ -465,16 +559,13 @@ const LoginPage = () => {
 
   if (view === 'verify') {
     return (
-      <div className="min-h-screen bg-[#070c09] text-slate-100 flex items-center justify-center p-6 relative overflow-hidden font-sans">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#070c09] text-slate-900 dark:text-slate-100 flex items-center justify-center p-6 relative overflow-hidden font-sans transition-colors duration-300">
         <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none -z-10" />
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
-          <Card className="p-8 sm:p-10 border border-emerald-900/40 shadow-2xl shadow-black/90 bg-[#0c1712] backdrop-blur-2xl rounded-[3rem] ring-1 ring-white/10">
+          <Card className="p-8 sm:p-10 border border-slate-200 dark:border-emerald-900/40 shadow-2xl bg-white dark:bg-[#0c1712] backdrop-blur-2xl rounded-[3rem] ring-1 ring-slate-200/50 dark:ring-white/10">
             <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl">
-                <ShieldCheck size={32} />
-              </div>
-              <h1 className="text-2xl font-black text-white tracking-tight">Verify Identity</h1>
-              <p className="text-slate-400 font-medium mt-2 text-sm">Enter the code sent to <span className="text-emerald-400 font-semibold">{email}</span></p>
+              <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Verify Identity</h1>
+              <p className="text-slate-600 dark:text-slate-400 font-medium mt-2 text-sm">Enter the code sent to <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{email}</span></p>
             </div>
 
             <form onSubmit={handleVerify} className="space-y-8">
@@ -500,14 +591,14 @@ const LoginPage = () => {
                         prev?.focus();
                       }
                     }}
-                    className="otp-input w-12 h-14 bg-[#122019] border border-emerald-900/60 rounded-xl text-center text-xl font-black text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+                    className="otp-input w-12 h-14 sm:w-14 sm:h-16 bg-slate-100/90 hover:bg-white focus:bg-white dark:bg-[#122019] dark:focus:bg-[#162a20] border-2 border-slate-300 hover:border-slate-400 focus:border-emerald-600 dark:border-emerald-900/80 dark:hover:border-emerald-500/50 dark:focus:border-emerald-400 rounded-2xl text-center text-2xl font-black text-slate-950 dark:text-emerald-300 outline-none shadow-xs focus:shadow-md focus:ring-4 focus:ring-emerald-500/20 dark:focus:ring-emerald-500/30 transition-all cursor-text"
                   />
                 ))}
               </div>
 
-              {error && <p className="text-rose-400 text-xs font-bold text-center bg-rose-950/30 border border-rose-900/40 py-2.5 px-4 rounded-xl">{error}</p>}
+              {error && <p className="text-rose-600 dark:text-rose-400 text-xs font-bold text-center bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 py-2.5 px-4 rounded-xl">{error}</p>}
               
-              <Button type="submit" disabled={loading} className="w-full py-5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/25 transition-all border-none cursor-pointer">
+              <Button type="submit" disabled={loading} className="w-full py-5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:text-slate-950 font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/25 transition-all border-none cursor-pointer">
                 {loading ? 'Verifying...' : 'Establish Profile'}
               </Button>
             </form>
@@ -519,93 +610,172 @@ const LoginPage = () => {
 
   // ─── LANDING PAGE ─────────────────
   return (
-    <div className="landing-root-container w-full min-h-screen bg-[#070c09] text-white">
+    <div className="landing-root-container w-full min-h-screen">
       <style dangerouslySetInnerHTML={{ __html: `
-        :root{
-          --ink:#ffffff;
-          --bg-dark:#070c09;
-          --bg-card:#0c1712;
-          --bg-card-hover:#11221a;
-          --gray-900:#f8fafc;
-          --gray-600:#cbd5e1;
-          --gray-400:#94a3b8;
-          --gray-200:rgba(255,255,255,0.08);
-          --gray-100:#0e1a14;
-          --white:#ffffff;
-          --emerald:#10b981;
-          --emerald-deep:#059669;
-          --mint:#34d399;
-          --blue:#38bdf8;
-          --orange:#fb923c;
-          --purple:#c084fc;
-          --pink:#fb7185;
-          --teal:#2dd4bf;
-          --shadow-sm:0 2px 8px rgba(0,0,0,0.5);
-          --shadow-md:0 12px 32px rgba(0,0,0,0.7);
-          --shadow-lg:0 24px 60px rgba(0,0,0,0.85);
+        :root, .light {
+          --lp-bg: #F8F8F8;
+          --lp-bg-subtle: #EFEFEF;
+          --lp-card: #ffffff;
+          --lp-card-hover: #f1f5f9;
+          --lp-border: rgba(15, 23, 42, 0.08);
+          --lp-border-accent: rgba(46, 125, 50, 0.4);
+          --lp-text-title: #0f172a;
+          --lp-text-body: #475569;
+          --lp-text-muted: #64748b;
+          --lp-accent-mint: #059669;
+          --lp-nav-bg: #F8F8F8;
+          --lp-nav-border: rgba(15, 23, 42, 0.06);
+          --lp-nav-text: #475569;
+          --lp-eyebrow-bg: #ecfdf5;
+          --lp-eyebrow-border: rgba(46, 125, 50, 0.3);
+          --lp-eyebrow-text: #059669;
+          --lp-dots: rgba(0, 0, 0, 0.08);
+          --lp-glow-1: rgba(250, 204, 21, 0.035);
+          --lp-glow-2: rgba(245, 158, 11, 0.025);
+          --lp-glow-illo: rgba(251, 191, 36, 0.04);
+          --lp-btn-primary-bg: #43A047;
+          --lp-btn-primary-text: #ffffff;
+          --lp-btn-primary-hover: #059669;
+          --lp-btn-sec-bg: #ffffff;
+          --lp-btn-sec-border: rgba(15, 23, 42, 0.12);
+          --lp-btn-sec-text: #0f172a;
+          --lp-btn-sec-hover: #f1f5f9;
+          --lp-pricing-featured-bg: #f0fdf4;
+          --lp-chip-bg: rgba(255, 255, 255, 0.96);
+          --lp-chip-border: rgba(15, 23, 42, 0.10);
+          --lp-chip-text: #0f172a;
+          --lp-app-band-bg: linear-gradient(135deg, #065f46 0%, #047857 50%, #064e3b 100%);
+          --lp-footer-bg: #F8F8F8;
+          --lp-footer-border: rgba(15, 23, 42, 0.08);
+          --lp-footer-text: #64748b;
+          --lp-illo-bg: #EFEFEF;
+          --lp-illo-border: rgba(15, 23, 42, 0.08);
+          --lp-illo-leaves1: #e2e8f0;
+          --lp-illo-leaves2: #cbd5e1;
+          --lp-illo-gears: #047857;
+          --lp-illo-center: #ffffff;
+          --lp-illo-card: #ffffff;
+          --lp-illo-card-border: #cbd5e1;
         }
+
+        .dark {
+          --lp-bg: #000000;
+          --lp-bg-subtle: #080c09;
+          --lp-card: #0b120e;
+          --lp-card-hover: #101a14;
+          --lp-card-border: rgba(52, 211, 153, 0.14);
+          --lp-border: rgba(52, 211, 153, 0.14);
+          --lp-border-accent: rgba(52, 211, 153, 0.45);
+          --lp-text-title: #ffffff;
+          --lp-text-body: #cbd5e1;
+          --lp-text-muted: #94a3b8;
+          --lp-accent-mint: #34d399;
+          --lp-nav-bg: #000000;
+          --lp-nav-border: transparent;
+          --lp-nav-text: #cbd5e1;
+          --lp-eyebrow-bg: #0c1e15;
+          --lp-eyebrow-border: rgba(52, 211, 153, 0.3);
+          --lp-eyebrow-text: #34d399;
+          --lp-dots: rgba(52, 211, 153, 0.12);
+          --lp-glow-1: rgba(46, 125, 50, 0.12);
+          --lp-glow-2: rgba(99, 102, 241, 0.10);
+          --lp-glow-illo: rgba(46, 125, 50, 0.15);
+          --lp-btn-primary-bg: #43A047;
+          --lp-btn-primary-text: #020617;
+          --lp-btn-primary-hover: #34d399;
+          --lp-btn-sec-bg: rgba(255, 255, 255, 0.06);
+          --lp-btn-sec-border: rgba(255, 255, 255, 0.14);
+          --lp-btn-sec-text: #ffffff;
+          --lp-btn-sec-hover: rgba(255, 255, 255, 0.12);
+          --lp-pricing-featured-bg: #0a1f16;
+          --lp-chip-bg: rgba(11, 18, 14, 0.94);
+          --lp-chip-border: rgba(52, 211, 153, 0.28);
+          --lp-chip-text: #ffffff;
+          --lp-app-band-bg: linear-gradient(135deg, #07472e 0%, #09281a 50%, #05140d 100%);
+          --lp-footer-bg: #000000;
+          --lp-footer-border: rgba(255, 255, 255, 0.08);
+          --lp-footer-text: #94a3b8;
+          --lp-illo-bg: #0b2419;
+          --lp-illo-border: rgba(52, 211, 153, 0.2);
+          --lp-illo-leaves1: #144d32;
+          --lp-illo-leaves2: #1e734c;
+          --lp-illo-gears: #073522;
+          --lp-illo-center: #051f14;
+          --lp-illo-card: #08140e;
+          --lp-illo-card-border: #1f4230;
+        }
+
         .landing-root-container {
-          background: #070c09;
-          color: #f8fafc;
+          background: var(--lp-bg);
+          color: var(--lp-text-body);
           font-family: 'Inter', sans-serif;
           -webkit-font-smoothing: antialiased;
           overflow-x: hidden;
+          transition: background-color 0.3s ease, color 0.3s ease;
         }
         .landing-root-container a { color: inherit; text-decoration: none; }
         .wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+
+        /* Ensure borders within landing page are visible */
+        .landing-root-container .lp-bordered {
+          border: 1px solid var(--lp-border) !important;
+        }
+
+        /* ---------- LOGO INVERSION ---------- */
+        .dark .landing-root-container img[src*="logo.png"],
+        .dark .logo-white-dark {
+          filter: brightness(0) invert(1) drop-shadow(0 2px 8px rgba(255, 255, 255, 0.25)) !important;
+        }
 
         /* ---------- NAV ---------- */
         .landing-root-container nav {
           display: flex; align-items: center; justify-content: space-between;
           padding: 18px 40px;
-          border-bottom: 1px solid rgba(255,255,255,0.08);
-          position: sticky; top: 0; background: rgba(7,12,9,0.85); backdrop-filter: blur(16px);
+          border-bottom: 1px solid var(--lp-nav-border) !important;
+          position: sticky; top: 0; background: var(--lp-nav-bg); backdrop-filter: blur(16px);
           z-index: 50;
+          transition: all 0.3s ease;
         }
         .brand { display: flex; align-items: center; gap: 12px; }
-        .brand-text .name { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 22px; letter-spacing: -0.04em; color: #ffffff; }
-        .nav-links { display: flex; gap: 32px; font-size: 14px; font-weight: 600; color: #cbd5e1; }
-        .nav-links a:hover { color: #ffffff; }
+        .brand-text .name { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 22px; letter-spacing: -0.04em; color: var(--lp-text-title); }
+        .nav-links { display: flex; gap: 32px; font-size: 14px; font-weight: 600; color: var(--lp-nav-text); }
+        .nav-links a:hover { color: var(--lp-text-title); }
         .nav-right { display: flex; align-items: center; gap: 16px; }
-        .btn-ghost { font-size: 14px; font-weight: 600; color: #cbd5e1; background: transparent; border: none; cursor: pointer; transition: color .15s ease; }
-        .btn-ghost:hover { color: #ffffff; }
-        .btn-solid { font-size: 14px; font-weight: 700; color: #020617; background: #10b981; padding: 9px 18px; border-radius: 8px; transition: all .15s ease; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(16,185,129,0.3); }
-        .btn-solid:hover { background: #34d399; transform: translateY(-1px); }
 
         /* ---------- HERO ---------- */
-        .hero { position: relative; overflow: hidden; background: #070c09; }
+        .hero { position: relative; overflow: hidden; background: var(--lp-bg); transition: background 0.3s ease; }
         .grid-dots {
           position: absolute; inset: 0; z-index: 0;
-          background-image: radial-gradient(circle, rgba(52,211,153,0.18) 1.2px, transparent 1.2px);
+          background-image: radial-gradient(circle, var(--lp-dots) 1.2px, transparent 1.2px);
           background-size: 28px 28px;
-          mask-image: radial-gradient(ellipse 75% 65% at 20% 35%, black 25%, transparent 75%);
+          mask-image: radial-gradient(ellipse 85% 75% at 30% 35%, black 35%, transparent 80%);
         }
         .hero-glow-1 {
           position: absolute; top: -150px; left: -100px; width: 500px; height: 500px;
-          background: rgba(16,185,129,0.12); border-radius: 50%; filter: blur(140px); pointer-events: none; z-index: 0;
+          background: var(--lp-glow-1); border-radius: 50%; filter: blur(140px); pointer-events: none; z-index: 0;
         }
         .hero-glow-2 {
           position: absolute; bottom: -100px; right: -50px; width: 450px; height: 450px;
-          background: rgba(99,102,241,0.1); border-radius: 50%; filter: blur(140px); pointer-events: none; z-index: 0;
+          background: var(--lp-glow-2); border-radius: 50%; filter: blur(140px); pointer-events: none; z-index: 0;
         }
         .hero-inner {
           max-width: 1200px; margin: 0 auto;
           display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: center; gap: 32px;
-          padding: 72px 40px 40px;
+          padding: 72px 40px 48px;
           position: relative; z-index: 2;
         }
-        .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #34d399; background: #0c1e15; border: 1px solid rgba(52,211,153,0.3); padding: 7px 16px; border-radius: 100px; margin-bottom: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-        .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: #34d399; box-shadow: 0 0 10px #34d399; }
-        h1 { font-weight: 800; font-size: clamp(36px,4.3vw,54px); line-height: 1.12; letter-spacing: -0.03em; color: #ffffff; max-width: 540px; text-align: left; }
-        h1 .accent { color: #34d399; position: relative; text-shadow: 0 0 24px rgba(52,211,153,0.35); }
+        .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--lp-eyebrow-text); background: var(--lp-eyebrow-bg); border: 1px solid var(--lp-eyebrow-border) !important; padding: 7px 16px; border-radius: 100px; margin-bottom: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
+        .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lp-eyebrow-text); box-shadow: 0 0 10px var(--lp-eyebrow-text); }
+        h1 { font-weight: 800; font-size: clamp(36px,4.3vw,54px); line-height: 1.12; letter-spacing: -0.03em; color: var(--lp-text-title); max-width: 540px; text-align: left; }
+        h1 .accent { color: var(--lp-accent-mint); position: relative; text-shadow: 0 0 24px rgba(52,211,153,0.35); }
         h1 .accent svg { position: absolute; left: 0; bottom: -8px; width: 100%; height: 14px; overflow: visible; }
-        .hero-sub { max-width: 480px; margin: 20px 0 32px; font-size: 17px; line-height: 1.65; color: #cbd5e1; text-align: left; }
+        .hero-sub { max-width: 480px; margin: 20px 0 32px; font-size: 17px; line-height: 1.65; color: var(--lp-text-body); text-align: left; }
         .hero-ctas-desktop { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 24px; }
         .hero-ctas-mobile { display: none; }
-        .btn-primary { display: inline-flex; align-items: center; gap: 8px; background: #10b981; color: #020617; font-size: 15px; font-weight: 800; padding: 14px 28px; border-radius: 12px; transition: all .2s ease; border: none; cursor: pointer; box-shadow: 0 10px 25px -4px rgba(16,185,129,0.45); }
-        .btn-primary:hover { background: #34d399; transform: translateY(-2px); box-shadow: 0 14px 30px -4px rgba(52,211,153,0.55); }
-        .btn-secondary { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.08); color: #ffffff; font-size: 15px; font-weight: 700; padding: 14px 24px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(8px); cursor: pointer; transition: all .2s ease; }
-        .btn-secondary:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.35); transform: translateY(-2px); }
+        .btn-primary { display: inline-flex; align-items: center; gap: 8px; background: var(--lp-btn-primary-bg); color: var(--lp-btn-primary-text); font-size: 15px; font-weight: 800; padding: 14px 28px; border-radius: 12px; transition: all .2s ease; border: none; cursor: pointer; box-shadow: 0 10px 25px -4px rgba(46, 125, 50,0.45); }
+        .btn-primary:hover { background: var(--lp-btn-primary-hover); transform: translateY(-2px); box-shadow: 0 14px 30px -4px rgba(52,211,153,0.55); }
+        .btn-secondary { display: inline-flex; align-items: center; gap: 8px; background: var(--lp-btn-sec-bg); color: var(--lp-btn-sec-text); font-size: 15px; font-weight: 700; padding: 14px 24px; border-radius: 12px; border: 1px solid var(--lp-btn-sec-border) !important; backdrop-filter: blur(8px); cursor: pointer; transition: all .2s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
+        .btn-secondary:hover { background: var(--lp-btn-sec-hover); transform: translateY(-2px); border-color: var(--lp-border-accent) !important; }
 
         /* store badges */
         .store-row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -620,7 +790,7 @@ const LoginPage = () => {
           border-radius: 10px;
           transition: transform .15s ease, background .15s ease, border-color .15s ease;
           text-decoration: none;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.12);
         }
         .store-badge:hover {
           background: #111111 !important;
@@ -680,25 +850,35 @@ const LoginPage = () => {
         }
 
         /* illustration */
-        .illo-wrap { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; }
-        .illo-wrap svg { width: 100%; max-width: 460px; height: auto; }
+        .illo-wrap { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; width: 100%; }
+        .hero-illustration-img {
+          width: 100%;
+          max-width: 480px;
+          height: auto;
+          object-fit: contain;
+          filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.35));
+          transition: transform 0.3s ease;
+        }
+        .hero-illustration-img:hover {
+          transform: translateY(-4px) scale(1.02);
+        }
         .float-chip {
           position: absolute; z-index: 3;
-          background: rgba(12, 23, 18, 0.94);
-          border: 1px solid rgba(52, 211, 153, 0.28);
+          background: var(--lp-chip-bg);
+          border: 1px solid var(--lp-chip-border) !important;
           border-radius: 16px;
           padding: 12px 18px;
-          box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px rgba(52, 211, 153, 0.12);
+          box-shadow: 0 20px 40px rgba(0,0,0,0.08), 0 0 20px rgba(52, 211, 153, 0.10);
           backdrop-filter: blur(12px);
           display: flex; align-items: center; gap: 12px;
           animation: float 6s ease-in-out infinite;
         }
         .float-chip.chip-1 { top: 6%; left: -2%; animation-delay: 0s; }
-        .float-chip.chip-2 { bottom: 8%; right: -4%; animation-delay: 2s; border-color: rgba(192, 132, 252, 0.3); box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px rgba(192, 132, 252, 0.12); }
+        .float-chip.chip-2 { bottom: 8%; right: -4%; animation-delay: 2s; border-color: rgba(192, 132, 252, 0.3) !important; }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
         .chip-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
-        .chip-text .big { font-size: 14px; font-weight: 700; color: #ffffff; line-height: 1.15; text-align: left; }
-        .chip-text .small { font-size: 11.5px; color: #94a3b8; text-align: left; font-weight: 500; }
+        .chip-text .big { font-size: 14px; font-weight: 700; color: var(--lp-text-title); line-height: 1.15; text-align: left; }
+        .chip-text .small { font-size: 11.5px; color: var(--lp-text-muted); text-align: left; font-weight: 500; }
 
         @media (max-width:900px){
           .hero-inner { grid-template-columns: 1fr; text-align: center; padding: 48px 24px 24px; }
@@ -707,104 +887,383 @@ const LoginPage = () => {
           .hero-ctas-desktop { display: none; }
           .hero-ctas-mobile { display: flex; justify-content: center; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 32px; }
           .float-chip { display: none; }
-          .illo-wrap svg { max-width: 330px; }
+          .hero-illustration-img { max-width: 320px; }
         }
 
         /* ---------- SECTION HEAD ---------- */
-        .section-head { max-width: 600px; margin: 0 auto 48px; text-align: center; }
-        .section-head h2 { font-weight: 800; font-size: clamp(28px,3.2vw,40px); line-height: 1.2; letter-spacing: -0.025em; color: #ffffff; }
-        .section-head p { color: #cbd5e1; margin-top: 12px; font-size: 16px; line-height: 1.6; }
-        .section-eyebrow { font-size: 12px; color: #34d399; margin-bottom: 12px; display: inline-block; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; background: #0c1e15; border: 1px solid rgba(52,211,153,0.3); padding: 5px 14px; border-radius: 100px; }
+        .section-head { max-width: 650px; margin: 0 auto 48px; text-align: center; }
+        .section-head h2 { font-weight: 800; font-size: clamp(28px,3.2vw,40px); line-height: 1.2; letter-spacing: -0.025em; color: var(--lp-text-title); }
+        .section-head p { color: var(--lp-text-body); margin-top: 12px; font-size: 16px; line-height: 1.6; }
+        .section-eyebrow { font-size: 12px; color: var(--lp-eyebrow-text); margin-bottom: 12px; display: inline-block; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; background: var(--lp-eyebrow-bg); border: 1px solid var(--lp-eyebrow-border) !important; padding: 5px 14px; border-radius: 100px; }
+
+        /* ---------- TRUSTED BAND ---------- */
+        .trusted-band {
+          padding: 44px 0;
+          background: var(--lp-bg-subtle);
+          border-top: 1px solid var(--lp-border) !important;
+          border-bottom: 1px solid var(--lp-border) !important;
+          transition: background 0.3s ease, border-color 0.3s ease;
+        }
+        .trusted-label {
+          font-size: 11.5px;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: var(--lp-accent-mint);
+          margin-bottom: 22px;
+          text-align: center;
+        }
+        .trusted-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: center;
+          gap: 16px;
+        }
+        .trusted-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 12px;
+          background: var(--lp-card);
+          border: 1px solid var(--lp-border) !important;
+          padding: 10px 20px;
+          border-radius: 16px;
+          font-size: 13.5px;
+          font-weight: 700;
+          color: var(--lp-text-title);
+          box-shadow: 0 4px 14px rgba(0,0,0,0.03);
+          transition: all 0.2s ease;
+        }
+        .trusted-pill:hover {
+          transform: translateY(-2px);
+          border-color: var(--lp-border-accent) !important;
+          background: var(--lp-card-hover);
+        }
+        .trusted-tag {
+          width: 32px;
+          height: 32px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11.5px;
+          font-weight: 900;
+          border: 1px solid currentColor !important;
+        }
 
         /* ---------- FEATURES ---------- */
-        .features { padding: 90px 0 100px; background: #070c09; }
-        .f-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .features { padding: 90px 0 100px; background: var(--lp-bg); transition: background 0.3s ease; }
+        .f-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
         .f-card {
-          background: #0c1712;
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: var(--lp-card);
+          border: 1px solid var(--lp-border) !important;
           border-radius: 20px;
           padding: 28px;
           transition: all .25s ease;
           text-align: left;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+          box-shadow: 0 10px 25px rgba(0,0,0,0.03);
         }
         .f-card:hover {
-          background: #11221a;
-          border-color: rgba(52, 211, 153, 0.4);
+          background: var(--lp-card-hover);
+          border-color: var(--lp-border-accent) !important;
           transform: translateY(-4px);
-          box-shadow: 0 18px 40px rgba(0,0,0,0.7), 0 0 25px rgba(52,211,153,0.1);
+          box-shadow: 0 18px 40px rgba(0,0,0,0.06), 0 0 25px rgba(52,211,153,0.12);
         }
         .f-icon {
           width: 46px; height: 46px; border-radius: 13px;
           display: flex; align-items: center; justify-content: center;
           font-size: 20px; font-weight: bold; margin-bottom: 18px; color: #ffffff;
-          box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+          box-shadow: 0 6px 16px rgba(0,0,0,0.15);
         }
-        .f-card h3 { font-size: 17.5px; font-weight: 700; margin-bottom: 8px; color: #ffffff; }
-        .f-card p { font-size: 14px; line-height: 1.6; color: #cbd5e1; }
+        .f-card h3 { font-size: 18px; font-weight: 800; margin-bottom: 8px; color: var(--lp-text-title); letter-spacing: -0.01em; }
+        .f-card p { font-size: 14px; line-height: 1.6; color: var(--lp-text-body); }
         @media (max-width: 860px) { .f-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 560px) { .f-grid { grid-template-columns: 1fr; } }
+
+        /* ---------- FOR INSTITUTIONS SHOWCASE ---------- */
+        .institutions-section {
+          padding: 90px 0 100px;
+          background: var(--lp-bg-subtle);
+          border-top: 1px solid var(--lp-border) !important;
+          border-bottom: 1px solid var(--lp-border) !important;
+          transition: background 0.3s ease, border-color 0.3s ease;
+        }
+        .inst-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 24px;
+        }
+        .inst-card {
+          background: var(--lp-card);
+          border: 1px solid var(--lp-border) !important;
+          border-radius: 24px;
+          padding: 32px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          text-align: left;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.03);
+          transition: all 0.25s ease;
+        }
+        .inst-card:hover {
+          background: var(--lp-card-hover);
+          border-color: var(--lp-border-accent) !important;
+          transform: translateY(-4px);
+          box-shadow: 0 18px 40px rgba(0,0,0,0.06), 0 0 25px rgba(52,211,153,0.12);
+        }
+        .inst-icon-wrap {
+          width: 52px;
+          height: 52px;
+          border-radius: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 22px;
+        }
+        .inst-card h3 {
+          font-size: 19px;
+          font-weight: 800;
+          letter-spacing: -0.02em;
+          color: var(--lp-text-title);
+        }
+        .inst-card p {
+          font-size: 14px;
+          line-height: 1.65;
+          color: var(--lp-text-body);
+        }
+        @media (max-width: 860px) { .inst-grid { grid-template-columns: 1fr; } }
+
+        /* ---------- INSTITUTIONAL PRICING TIERS ---------- */
+        .pricing-section {
+          padding: 90px 0 100px;
+          background: var(--lp-bg);
+          transition: background 0.3s ease;
+        }
+        .pricing-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 28px;
+          align-items: stretch;
+        }
+        .pricing-card {
+          background: var(--lp-card);
+          border: 1px solid var(--lp-border) !important;
+          border-radius: 24px;
+          padding: 36px 30px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          text-align: left;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.03);
+          transition: all 0.25s ease;
+          position: relative;
+        }
+        .pricing-card:hover {
+          border-color: var(--lp-border-accent) !important;
+          transform: translateY(-4px);
+          box-shadow: 0 18px 40px rgba(0,0,0,0.06), 0 0 25px rgba(52,211,153,0.12);
+        }
+        .pricing-card.featured {
+          background: var(--lp-pricing-featured-bg);
+          border: 2px solid var(--lp-accent-mint) !important;
+          box-shadow: 0 20px 45px rgba(46, 125, 50, 0.15), 0 0 35px rgba(52, 211, 153, 0.18);
+          transform: scale(1.02);
+        }
+        .pricing-card.featured:hover {
+          transform: scale(1.02) translateY(-4px);
+          box-shadow: 0 25px 55px rgba(46, 125, 50, 0.22), 0 0 45px rgba(52, 211, 153, 0.28);
+        }
+        .pricing-badge {
+          position: absolute;
+          top: -14px;
+          right: 24px;
+          background: var(--lp-accent-mint);
+          color: #ffffff;
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          padding: 5px 14px;
+          border-radius: 100px;
+          box-shadow: 0 4px 12px rgba(46, 125, 50, 0.4);
+        }
+        .dark .pricing-badge {
+          color: #020617;
+        }
+        .pricing-name {
+          font-size: 22px;
+          font-weight: 800;
+          letter-spacing: -0.02em;
+          color: var(--lp-text-title);
+          margin-bottom: 6px;
+        }
+        .pricing-desc {
+          font-size: 13.5px;
+          color: var(--lp-text-muted);
+          line-height: 1.5;
+          min-height: 42px;
+        }
+        .pricing-price-wrap {
+          margin: 20px 0 24px;
+          display: flex;
+          align-items: baseline;
+          gap: 6px;
+        }
+        .pricing-amount {
+          font-size: 42px;
+          font-weight: 900;
+          letter-spacing: -0.04em;
+          color: var(--lp-text-title);
+        }
+        .pricing-card.featured .pricing-amount {
+          color: var(--lp-accent-mint);
+        }
+        .pricing-interval {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--lp-text-muted);
+        }
+        .pricing-features-list {
+          list-style: none;
+          padding: 20px 0 0;
+          margin: 0;
+          border-top: 1px solid var(--lp-border) !important;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--lp-text-body);
+        }
+        .pricing-features-list li {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .pricing-check {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: rgba(46, 125, 50, 0.18);
+          color: var(--lp-accent-mint);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          font-weight: 900;
+          flex-shrink: 0;
+        }
+        .pricing-btn-primary {
+          width: 100%;
+          margin-top: 28px;
+          background: var(--lp-btn-primary-bg);
+          color: var(--lp-btn-primary-text);
+          font-size: 14px;
+          font-weight: 800;
+          padding: 14px 20px;
+          border-radius: 12px;
+          border: none;
+          cursor: pointer;
+          box-shadow: 0 8px 20px rgba(46, 125, 50, 0.35);
+          transition: all 0.2s ease;
+        }
+        .pricing-btn-primary:hover {
+          background: var(--lp-btn-primary-hover);
+          transform: translateY(-2px);
+          box-shadow: 0 12px 26px rgba(46, 125, 50, 0.45);
+        }
+        .pricing-btn-secondary {
+          width: 100%;
+          margin-top: 28px;
+          background: var(--lp-btn-sec-bg);
+          color: var(--lp-btn-sec-text);
+          border: 1px solid var(--lp-btn-sec-border) !important;
+          font-size: 14px;
+          font-weight: 700;
+          padding: 14px 20px;
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .pricing-btn-secondary:hover {
+          background: var(--lp-btn-sec-hover);
+          border-color: var(--lp-border-accent) !important;
+          transform: translateY(-2px);
+        }
+        @media (max-width: 860px) {
+          .pricing-grid { grid-template-columns: 1fr; }
+          .pricing-card.featured { transform: none; }
+          .pricing-card.featured:hover { transform: translateY(-4px); }
+        }
 
         /* ---------- APP DOWNLOAD BAND ---------- */
         .app-band {
           margin: 0 32px 100px;
-          background: linear-gradient(135deg, #07472e 0%, #09281a 50%, #05140d 100%);
-          border: 1px solid rgba(52,211,153,0.35);
+          background: var(--lp-app-band-bg);
+          border: 1px solid rgba(52,211,153,0.35) !important;
           border-radius: 28px;
           padding: 56px;
           display: flex; align-items: center; justify-content: space-between;
           gap: 32px; flex-wrap: wrap;
           position: relative; overflow: hidden;
           text-align: left;
-          box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.8), 0 0 30px rgba(52, 211, 153, 0.15);
+          box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.25), 0 0 30px rgba(52, 211, 153, 0.15);
         }
         .app-band::before {
           content: ''; position: absolute; right: -40px; top: -60px;
           width: 220px; height: 220px; border-radius: 50%;
-          border: 1px solid rgba(255,255,255,0.18);
+          border: 1px solid rgba(255,255,255,0.18) !important;
         }
         .app-band h2 { font-weight: 800; color: #ffffff; font-size: clamp(24px,2.8vw,32px); max-width: 440px; line-height: 1.25; position: relative; z-index: 2; }
         .app-band p { color: #d1fae5; margin-top: 10px; font-size: 15px; max-width: 420px; position: relative; z-index: 2; line-height: 1.55; }
         .app-band .store-row { position: relative; z-index: 2; }
 
         /* ---------- TESTIMONIALS ---------- */
-        .testimonials { padding: 0 0 100px; background: #070c09; }
-        .t-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+        .testimonials {
+          padding: 90px 0 100px;
+          background: var(--lp-bg-subtle);
+          border-top: 1px solid var(--lp-border) !important;
+          border-bottom: 1px solid var(--lp-border) !important;
+          transition: background 0.3s ease, border-color 0.3s ease;
+        }
+        .t-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
         .t-card {
-          background: #0c1712;
-          border: 1px solid rgba(255,255,255,0.08);
+          background: var(--lp-card);
+          border: 1px solid var(--lp-border) !important;
           border-radius: 20px;
           padding: 28px;
           display: flex; flex-direction: column; gap: 18px; text-align: left;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-          transition: border-color .2s ease, transform .2s ease;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.03);
+          transition: border-color .2s ease, transform .2s ease, background 0.3s ease;
         }
         .t-card:hover {
-          border-color: rgba(52,211,153,0.35);
+          border-color: var(--lp-border-accent) !important;
           transform: translateY(-2px);
+          background: var(--lp-card-hover);
         }
-        .t-quote { font-size: 15px; line-height: 1.65; color: #e2e8f0; font-style: italic; }
+        .t-quote { font-size: 15px; line-height: 1.65; color: var(--lp-text-body); font-style: italic; }
         .t-person { display: flex; align-items: center; gap: 12px; }
-        .t-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #ffffff; }
-        .t-name { font-size: 14px; font-weight: 700; color: #ffffff; }
-        .t-role { font-size: 12px; color: #94a3b8; font-weight: 500; }
+        .t-avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #ffffff; }
+        .t-name { font-size: 14px; font-weight: 700; color: var(--lp-text-title); }
+        .t-role { font-size: 12px; color: var(--lp-text-muted); font-weight: 500; }
         @media (max-width: 700px) { .t-grid { grid-template-columns: 1fr; } }
 
         /* ---------- FOOTER ---------- */
-        footer { border-top: 1px solid rgba(255,255,255,0.08); padding: 48px 32px; background: #040705; }
+        footer { border-top: 1px solid var(--lp-footer-border) !important; padding: 48px 32px; background: var(--lp-footer-bg); transition: all 0.3s ease; }
         .footer-inner { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px; }
-        .footer-links { display: flex; gap: 28px; font-size: 14px; color: #94a3b8; font-weight: 500; }
-        .footer-links a:hover { color: #ffffff; }
-        .footer-copy { font-size: 13px; color: #64748b; font-weight: 500; }
+        .footer-links { display: flex; gap: 28px; font-size: 14px; color: var(--lp-footer-text); font-weight: 500; }
+        .footer-links a:hover { color: var(--lp-text-title); }
+        .footer-copy { font-size: 13px; color: var(--lp-text-muted); font-weight: 500; }
       ` }} />
 
+      {/* ═══════════ NAVIGATION ═══════════ */}
       <nav>
         <div className="brand cursor-pointer" onClick={() => setView('landing')}>
           <div className="w-14 h-14 flex items-center justify-center">
             <img 
-              src="/logo.png" 
+              src="/icon-192.png" 
               alt="Trileza Logo" 
-              className="w-full h-full object-contain scale-110 logo-white-dark filter brightness-0 invert drop-shadow-[0_2px_10px_rgba(255,255,255,0.3)]" 
+              className="w-full h-full object-contain scale-110 logo-white-dark transition-all" 
               onError={(e) => {
                 (e.target as HTMLImageElement).src = 'https://api.dicebear.com/7.x/initials/svg?seed=Tr&backgroundColor=059669';
               }} 
@@ -813,8 +1272,17 @@ const LoginPage = () => {
           <div className="brand-text hidden sm:block"><div className="name">Trileza</div></div>
         </div>
 
-        {/* Header Store Badges - Clearly visible on both mobile and desktop */}
+        {/* Header Badges & Theme Toggle Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            onClick={toggleTheme}
+            className="p-2 sm:p-2.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-white/15 transition-all cursor-pointer shadow-xs"
+            title="Toggle theme (Light / Dark)"
+          >
+            <Sun className="hidden dark:block w-4 h-4 text-amber-400" />
+            <Moon className="block dark:hidden w-4 h-4 text-slate-700" />
+          </button>
+
           <a className="store-badge header-store-badge" href="#">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" className="store-icon" style={{ marginRight: '2px' }}>
               <path d="M11.182.008C11.148-.03 9.923.023 8.857 1.18c-1.066 1.156-.902 2.482-.878 2.516s1.52.087 2.475-1.258.762-2.391.728-2.43m3.314 11.733c-.048-.096-2.325-1.234-2.113-3.422s1.675-2.789 1.698-2.854-.597-.79-1.254-1.157a3.7 3.7 0 0 0-1.563-.434c-.108-.003-.483-.095-1.254.116-.508.139-1.653.589-1.968.607-.316.018-1.256-.522-2.267-.665-.647-.125-1.333.131-1.824.328-.49.196-1.422.754-2.074 2.237-.652 1.482-.311 3.83-.067 4.56s.625 1.924 1.273 2.796c.576.984 1.34 1.667 1.659 1.899s1.219.386 1.843.067c.502-.308 1.408-.485 1.766-.472.357.013 1.061.154 1.782.539.571.197 1.111.115 1.652-.105.541-.221 1.324-1.059 2.238-2.758q.52-1.185.473-1.282"/>
@@ -835,6 +1303,7 @@ const LoginPage = () => {
         </div>
       </nav>
 
+      {/* ═══════════ HERO SECTION ═══════════ */}
       <section className="hero">
         <div className="grid-dots"></div>
         <div className="hero-glow-1"></div>
@@ -842,7 +1311,7 @@ const LoginPage = () => {
         <div className="hero-inner">
           <div className="hero-copy">
             <div className="eyebrow"><span className="dot"></span>The learning platform for individuals and institutions</div>
-            <h1>The hub of <span className="accent">unrestrained<svg viewBox="0 0 220 14" preserveAspectRatio="none"><path d="M2 9C40 2 90 2 110 7C130 12 180 4 218 9" stroke="#34d399" strokeWidth="2.8" fill="none" strokeLinecap="round"/></svg></span> impact</h1>
+            <h1>The hub of <span className="accent">unrestrained<svg viewBox="0 0 220 14" preserveAspectRatio="none"><path d="M2 9C40 2 90 2 110 7C130 12 180 4 218 9" stroke="var(--lp-accent-mint)" strokeWidth="2.8" fill="none" strokeLinecap="round"/></svg></span> impact</h1>
             <p className="hero-sub">A single platform for individual learners and institutions. Courses, books, mentors, and live classes — all from one clean, minimalist dashboard.</p>
             <div className="hero-ctas-desktop">
               <button className="btn-primary" onClick={() => { setSelectedRole('mentee'); setView('signup'); }}>
@@ -851,7 +1320,7 @@ const LoginPage = () => {
                   <path d="M3 8H13M13 8L9 4M13 8L9 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </button>
-              <button className="btn-secondary" style={{ background: '#4f46e5', color: '#ffffff', borderColor: 'rgba(129,140,248,0.35)', boxShadow: '0 10px 25px -4px rgba(79,70,229,0.35)' }} onClick={() => navigate('/institution-signup')}>
+              <button className="btn-secondary" onClick={() => navigate('/institution-signup')}>
                 🏢 For Institutions
               </button>
               <button className="btn-secondary" onClick={() => setView('login')}>Sign In</button>
@@ -860,7 +1329,7 @@ const LoginPage = () => {
 
           <div className="illo-wrap">
             <div className="float-chip chip-1">
-              <div className="chip-icon font-bold" style={{ background: 'rgba(16,185,129,0.2)', color: '#34d399' }}>✓</div>
+              <div className="chip-icon font-bold" style={{ background: 'rgba(46, 125, 50,0.2)', color: 'var(--lp-accent-mint)' }}>✓</div>
               <div className="chip-text"><div className="big">Course completed</div><div className="small">UX Fundamentals</div></div>
             </div>
             <div className="float-chip chip-2">
@@ -868,77 +1337,15 @@ const LoginPage = () => {
               <div className="chip-text"><div className="big">Live class in 10m</div><div className="small">with mentor Aisha</div></div>
             </div>
 
-            <svg viewBox="0 0 520 600" xmlns="http://www.w3.org/2000/svg">
-              <path d="M70,320 C60,150 190,50 330,58 C470,66 500,220 478,350 C456,480 320,565 175,548 C40,532 80,490 70,320 Z" fill="#0b2419" stroke="rgba(52,211,153,0.2)" strokeWidth="2"/>
-              <g opacity="0.95">
-                <path d="M40,560 C20,480 60,410 120,395 C110,460 100,510 60,560 Z" fill="#144d32"/>
-                <path d="M75,560 C65,500 95,450 140,435 C135,485 125,525 95,560 Z" fill="#1e734c"/>
-              </g>
-              <g opacity="0.95">
-                <path d="M480,540 C500,470 465,405 410,392 C418,455 428,500 462,540 Z" fill="#144d32"/>
-                <path d="M448,548 C455,492 428,448 388,436 C392,483 400,518 424,548 Z" fill="#1e734c"/>
-              </g>
-              <g fill="#f59e0b" opacity="0.9">
-                <path d="M100,120 l4,10 l10,4 l-10,4 l-4,10 l-4,-10 l-10,-4 l10,-4 Z"/>
-                <path d="M440,150 l3,8 l8,3 l-8,3 l-3,8 l-3,-8 l-8,-3 l8,-3 Z"/>
-              </g>
-              <g transform="translate(260,455)">
-                <g fill="#073522">
-                  <rect x="-8" y="-118" width="16" height="24" rx="3"/>
-                  <rect x="-8" y="94" width="16" height="24" rx="3"/>
-                  <rect x="-118" y="-8" width="24" height="16" rx="3"/>
-                  <rect x="94" y="-8" width="24" height="16" rx="3"/>
-                  <g transform="rotate(45)"><rect x="-8" y="-118" width="16" height="24" rx="3"/><rect x="-8" y="94" width="16" height="24" rx="3"/><rect x="-118" y="-8" width="24" height="16" rx="3"/><rect x="94" y="-8" width="24" height="16" rx="3"/></g>
-                  <g transform="rotate(22.5)"><rect x="-8" y="-118" width="16" height="24" rx="3"/><rect x="-8" y="94" width="16" height="24" rx="3"/><rect x="-118" y="-8" width="24" height="16" rx="3"/><rect x="94" y="-8" width="24" height="16" rx="3"/></g>
-                  <g transform="rotate(67.5)"><rect x="-8" y="-118" width="16" height="24" rx="3"/><rect x="-8" y="94" width="16" height="24" rx="3"/><rect x="-118" y="-8" width="24" height="16" rx="3"/><rect x="94" y="-8" width="24" height="16" rx="3"/></g>
-                </g>
-                <circle r="100" fill="#10b981"/>
-                <circle r="70" fill="#051f14"/>
-                <circle r="30" fill="#f59e0b"/>
-                <circle r="12" fill="#ffffff"/>
-              </g>
-              <g transform="translate(388,378)">
-                <g fill="#073522">
-                  <rect x="-5" y="-34" width="10" height="14" rx="2"/>
-                  <rect x="-5" y="20" width="10" height="14" rx="2"/>
-                  <rect x="-34" y="-5" width="14" height="10" rx="2"/>
-                  <rect x="20" y="-5" width="14" height="10" rx="2"/>
-                  <g transform="rotate(45)"><rect x="-5" y="-34" width="10" height="14" rx="2"/><rect x="-5" y="20" width="10" height="14" rx="2"/><rect x="-34" y="-5" width="14" height="10" rx="2"/><rect x="20" y="-5" width="14" height="10" rx="2"/></g>
-                </g>
-                <circle r="26" fill="#34d399"/>
-                <circle r="9" fill="#03170e"/>
-              </g>
-              <g transform="translate(232,178)">
-                <path d="M58,210 C50,250 46,270 50,300 L74,300 C76,268 80,246 84,212 Z" fill="#073522"/>
-                <path d="M18,214 C16,252 18,272 26,300 L50,300 C48,266 50,244 46,214 Z" fill="#10b981"/>
-                <rect x="46" y="296" width="32" height="14" rx="6" fill="#020617"/>
-                <rect x="12" y="296" width="32" height="14" rx="6" fill="#020617"/>
-                <path d="M4,90 C0,150 6,196 22,220 C46,236 78,234 98,214 C112,190 112,140 100,88 C86,64 22,62 4,90 Z" fill="#10b981"/>
-                <path d="M55,86 C58,140 56,188 46,220 L60,220 C72,188 74,138 70,86 Z" fill="#0a5c40" opacity="0.6"/>
-                <path d="M92,104 C114,108 128,124 130,150 C131,164 122,172 110,168 C104,150 98,130 88,116 Z" fill="#073522"/>
-                <path d="M18,104 C-6,100 -22,84 -28,56 C-30,44 -20,38 -10,44 C-4,62 4,82 22,100 Z" fill="#10b981"/>
-                <circle cx="-25" cy="42" r="11" fill="#f6d5b8"/>
-                <circle cx="46" cy="46" r="34" fill="#f6d5b8"/>
-                <path d="M14,40 C10,10 40,-8 66,4 C84,12 88,32 82,48 C78,34 70,28 60,26 C46,24 30,28 22,42 Z" fill="#111827"/>
-                <g transform="translate(46,10) rotate(-6)">
-                  <rect x="-34" y="4" width="68" height="9" rx="3" fill="#040d08"/>
-                  <path d="M-40,8 L0,-14 L40,8 L0,26 Z" fill="#06150e"/>
-                  <circle cx="0" cy="8" r="4" fill="#f59e0b"/>
-                  <path d="M0,8 C6,20 6,32 0,40" stroke="#f59e0b" strokeWidth="2.4" fill="none"/>
-                  <circle cx="0" cy="41" r="3.5" fill="#f59e0b"/>
-                </g>
-                <g stroke="#ffffff" strokeWidth="2.4" fill="none">
-                  <circle cx="34" cy="50" r="9"/>
-                  <circle cx="58" cy="50" r="9"/>
-                  <line x1="43" y1="50" x2="49" y2="50"/>
-                </g>
-                <g transform="translate(-70,-6)">
-                  <rect x="0" y="0" width="72" height="54" rx="10" fill="#08140e" stroke="#1f4230" strokeWidth="1.5"/>
-                  <polyline points="8,38 22,26 34,32 50,14 64,20" stroke="#34d399" strokeWidth="2.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                  <circle cx="64" cy="20" r="3.6" fill="#4ade80"/>
-                </g>
-              </g>
-            </svg>
+            <div className="relative flex items-center justify-center w-full">
+              <div className="absolute inset-8 bg-yellow-400/[0.05] dark:bg-emerald-500/15 rounded-full blur-3xl -z-10 pointer-events-none transition-all duration-300" />
+              <div className="absolute inset-14 bg-amber-300/[0.03] dark:bg-emerald-400/10 rounded-full blur-2xl -z-10 pointer-events-none" />
+              <img 
+                src="/hero-illustration.png" 
+                alt="Trileza Platform - Empowering Learning and Growth" 
+                className="hero-illustration-img w-full max-w-[480px] h-auto object-contain select-none"
+              />
+            </div>
           </div>
 
           {/* Mobile Hero CTAs */}
@@ -949,33 +1356,10 @@ const LoginPage = () => {
                 <path d="M3 8H13M13 8L9 4M13 8L9 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </button>
-            <button className="btn-secondary" style={{ background: '#4f46e5', color: '#ffffff', borderColor: 'rgba(129,140,248,0.35)' }} onClick={() => navigate('/institution-signup')}>
+            <button className="btn-secondary" onClick={() => navigate('/institution-signup')}>
               🏢 For Institutions
             </button>
             <button className="btn-secondary" onClick={() => setView('login')}>Sign In</button>
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════ TRUSTED BY INSTITUTIONS BANNER ═══════════ */}
-      <section className="py-12 bg-[#050a07] border-y border-white/10 text-slate-100">
-        <div className="max-w-6xl mx-auto px-6 text-center space-y-6">
-          <p className="text-xs font-mono font-bold uppercase tracking-widest text-[#34d399]">
-            Trusted by universities, schools, and training providers
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-10">
-            <div className="flex items-center gap-3 font-bold text-sm tracking-tight text-slate-200 bg-[#0c1712] border border-white/10 px-5 py-2.5 rounded-2xl shadow-md">
-              <span className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-black text-xs border border-indigo-500/30">MIT</span>
-              Massachusetts Institute of Technology
-            </div>
-            <div className="flex items-center gap-3 font-bold text-sm tracking-tight text-slate-200 bg-[#0c1712] border border-white/10 px-5 py-2.5 rounded-2xl shadow-md">
-              <span className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-black text-xs border border-emerald-500/30">OX</span>
-              Oxford Professional Academy
-            </div>
-            <div className="flex items-center gap-3 font-bold text-sm tracking-tight text-slate-200 bg-[#0c1712] border border-white/10 px-5 py-2.5 rounded-2xl shadow-md">
-              <span className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center font-black text-xs border border-purple-500/30">TC</span>
-              TechCorp Learning
-            </div>
           </div>
         </div>
       </section>
@@ -990,165 +1374,41 @@ const LoginPage = () => {
           </div>
           <div className="f-grid">
             <div className="f-card group">
-              <div className="f-icon" style={{ background: '#10b981', boxShadow: '0 8px 20px rgba(16,185,129,0.35)' }}>▶</div>
-              <h3 className="group-hover:text-emerald-300 transition-colors">Courses & Marketplace</h3>
+              <div className="f-icon" style={{ background: '#43A047', boxShadow: '0 8px 20px rgba(46, 125, 50,0.35)' }}>▶</div>
+              <h3>Courses & Marketplace</h3>
               <p>Take structured courses at your own pace from verified mentors and partner institutions.</p>
             </div>
             <div className="f-card group">
               <div className="f-icon" style={{ background: '#38bdf8', boxShadow: '0 8px 20px rgba(56,189,248,0.35)' }}>▤</div>
-              <h3 className="group-hover:text-sky-300 transition-colors">Public Library</h3>
+              <h3>Public Library</h3>
               <p>Buy or borrow books straight from the platform's own comprehensive digital library.</p>
             </div>
             <div className="f-card group">
               <div className="f-icon" style={{ background: '#fb923c', boxShadow: '0 8px 20px rgba(251,146,60,0.35)' }}>◐</div>
-              <h3 className="group-hover:text-amber-300 transition-colors">Mentorship</h3>
+              <h3>Mentorship</h3>
               <p>Connect with mentors, join mentorship programs, or apply to become an expert yourself.</p>
             </div>
             <div className="f-card group">
               <div className="f-icon" style={{ background: '#c084fc', boxShadow: '0 8px 20px rgba(192,132,252,0.35)' }}>●</div>
-              <h3 className="group-hover:text-purple-300 transition-colors">Live Classes</h3>
+              <h3>Live Classes</h3>
               <p>Join or schedule live interactive sessions with mentors and instructors in real time.</p>
             </div>
             <div className="f-card group">
               <div className="f-icon" style={{ background: '#fb7185', boxShadow: '0 8px 20px rgba(251,113,133,0.35)' }}>✦</div>
-              <h3 className="group-hover:text-rose-300 transition-colors">Community</h3>
+              <h3>Community</h3>
               <p>Discuss, share highlights, and message peers directly — no need to leave the app.</p>
             </div>
             <div className="f-card group">
               <div className="f-icon" style={{ background: '#2dd4bf', boxShadow: '0 8px 20px rgba(45,212,191,0.35)' }}>▥</div>
-              <h3 className="group-hover:text-teal-300 transition-colors">Minimalist Dashboard</h3>
-              <p>Everything above, in one ultra-clean dark view built to stay out of your way.</p>
+              <h3>Minimalist Dashboard</h3>
+              <p>Everything above, in one ultra-clean view built to stay out of your way.</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ═══════════ FOR INSTITUTIONS FEATURE SHOWCASE ═══════════ */}
-      <section className="py-20 bg-[#050907] text-slate-100 border-t border-white/10">
-        <div className="max-w-6xl mx-auto px-6 space-y-12">
-          <div className="text-center space-y-3 max-w-2xl mx-auto">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
-              Enterprise Multi-Tenant Infrastructure
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-black text-white">For Institutions & Organizations</h2>
-            <p className="text-slate-300 text-sm sm:text-base">
-              Operate an independent, dedicated learning environment with data isolation, tenant management, and custom branding.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-[#0c1712] border border-white/10 hover:border-indigo-500/40 rounded-3xl p-7 space-y-4 shadow-xl transition-all hover:bg-[#112019]">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 flex items-center justify-center font-bold text-xl">
-                🔒
-              </div>
-              <h3 className="font-bold text-white text-lg">Isolated Tenant Environments</h3>
-              <p className="text-sm text-slate-300 leading-relaxed">
-                Strict Row Level Security (RLS) policies ensure your institution's users, courses, and records are completely isolated.
-              </p>
-            </div>
-
-            <div className="bg-[#0c1712] border border-white/10 hover:border-emerald-500/40 rounded-3xl p-7 space-y-4 shadow-xl transition-all hover:bg-[#112019]">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 flex items-center justify-center font-bold text-xl">
-                🎨
-              </div>
-              <h3 className="font-bold text-white text-lg">Custom Branding & Domain</h3>
-              <p className="text-sm text-slate-300 leading-relaxed">
-                Customize institution logos, primary colors, and map custom domain names (<code className="text-emerald-300 font-mono">lms.yourinstitution.edu</code>).
-              </p>
-            </div>
-
-            <div className="bg-[#0c1712] border border-white/10 hover:border-purple-500/40 rounded-3xl p-7 space-y-4 shadow-xl transition-all hover:bg-[#112019]">
-              <div className="w-12 h-12 rounded-2xl bg-purple-500/20 border border-purple-500/30 text-purple-300 flex items-center justify-center font-bold text-xl">
-                📥
-              </div>
-              <h3 className="font-bold text-white text-lg">User Management & Bulk CSV</h3>
-              <p className="text-sm text-slate-300 leading-relaxed">
-                Manage roles (Tenant Admin, Instructor, Learner, Support Staff) and import batches of users instantly via CSV.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════ INSTITUTIONAL PRICING TIERS ═══════════ */}
-      <section className="py-20 bg-[#070c09] text-slate-100 border-t border-white/10">
-        <div className="max-w-6xl mx-auto px-6 space-y-12">
-          <div className="text-center space-y-3 max-w-2xl mx-auto">
-            <span className="text-xs font-mono font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-              Institutional Plans
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-black text-white">Transparent Pricing for Every Institution</h2>
-            <p className="text-slate-300 text-sm sm:text-base">
-              Scalable pricing plans for small academies, growing training providers, and enterprise universities.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-[#0c1712] border border-white/10 rounded-3xl p-7 flex flex-col justify-between space-y-6 shadow-xl hover:border-slate-700 transition-all">
-              <div className="space-y-4">
-                <h3 className="font-bold text-white text-xl">Starter Tier</h3>
-                <p className="text-sm text-slate-400">For small academies and specialized training programs.</p>
-                <div className="pt-2">
-                  <span className="text-4xl font-extrabold text-white">$149</span>
-                  <span className="text-sm text-slate-400"> / month</span>
-                </div>
-                <ul className="text-sm text-slate-200 space-y-3 font-medium pt-4 border-t border-white/10">
-                  <li className="flex items-center gap-2"><span className="text-[#34d399] font-bold">✓</span> Up to 2,000 Active Users</li>
-                  <li className="flex items-center gap-2"><span className="text-[#34d399] font-bold">✓</span> Dedicated Subdomain</li>
-                  <li className="flex items-center gap-2"><span className="text-[#34d399] font-bold">✓</span> RLS Data Isolation</li>
-                  <li className="flex items-center gap-2"><span className="text-[#34d399] font-bold">✓</span> Standard Analytics</li>
-                </ul>
-              </div>
-              <Button variant="outline" onClick={() => navigate('/institution-signup')} className="w-full border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 py-3.5 rounded-2xl font-bold cursor-pointer">
-                Start Starter Tier
-              </Button>
-            </div>
-
-            <div className="bg-[#0e2118] border-2 border-emerald-500 rounded-3xl p-7 flex flex-col justify-between space-y-6 relative shadow-2xl shadow-emerald-500/15">
-              <span className="absolute -top-3.5 right-6 bg-emerald-500 text-slate-950 text-[11px] uppercase font-black px-4 py-1 rounded-full shadow-lg">
-                Most Popular
-              </span>
-              <div className="space-y-4">
-                <h3 className="font-bold text-white text-xl">Growth Tier</h3>
-                <p className="text-sm text-emerald-100/70">For expanding colleges and professional institutes.</p>
-                <div className="pt-2">
-                  <span className="text-4xl font-black text-emerald-400">$499</span>
-                  <span className="text-sm text-emerald-200/60"> / month</span>
-                </div>
-                <ul className="text-sm text-slate-100 space-y-3 font-medium pt-4 border-t border-emerald-500/30">
-                  <li className="flex items-center gap-2"><span className="text-emerald-300 font-bold">✓</span> Up to 10,000 Active Users</li>
-                  <li className="flex items-center gap-2"><span className="text-emerald-300 font-bold">✓</span> Custom Domain Mapping</li>
-                  <li className="flex items-center gap-2"><span className="text-emerald-300 font-bold">✓</span> Bulk CSV User Import</li>
-                  <li className="flex items-center gap-2"><span className="text-emerald-300 font-bold">✓</span> Printable PDF Analytics Reports</li>
-                </ul>
-              </div>
-              <Button variant="primary" onClick={() => navigate('/institution-signup')} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3.5 rounded-2xl shadow-lg shadow-emerald-500/30 cursor-pointer border-none">
-                Start Growth Tier
-              </Button>
-            </div>
-
-            <div className="bg-[#0c1712] border border-white/10 rounded-3xl p-7 flex flex-col justify-between space-y-6 shadow-xl hover:border-slate-700 transition-all">
-              <div className="space-y-4">
-                <h3 className="font-bold text-white text-xl">Enterprise Tier</h3>
-                <p className="text-sm text-slate-400">For large universities and global enterprise teams.</p>
-                <div className="pt-2">
-                  <span className="text-4xl font-extrabold text-purple-400">$1,499</span>
-                  <span className="text-sm text-slate-400"> / month</span>
-                </div>
-                <ul className="text-sm text-slate-200 space-y-3 font-medium pt-4 border-t border-white/10">
-                  <li className="flex items-center gap-2"><span className="text-purple-400 font-bold">✓</span> Unlimited Active Users</li>
-                  <li className="flex items-center gap-2"><span className="text-purple-400 font-bold">✓</span> Custom Course Hierarchy</li>
-                  <li className="flex items-center gap-2"><span className="text-purple-400 font-bold">✓</span> Dedicated Account Specialist</li>
-                  <li className="flex items-center gap-2"><span className="text-purple-400 font-bold">✓</span> 24/7 Priority SLA Support</li>
-                </ul>
-              </div>
-              <Button variant="secondary" onClick={() => navigate('/institution-signup')} className="w-full bg-white/10 text-white hover:bg-white/20 border border-white/15 py-3.5 rounded-2xl font-bold cursor-pointer">
-                Contact Enterprise
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* ═══════════ THREE-TIER MONETIZATION & PRICING ═══════════ */}
+      <PricingSection id="pricing" showComparisonTable={true} />
 
       {/* ═══════════ APP DOWNLOAD BAND ═══════════ */}
       <div className="wrap">
@@ -1197,7 +1457,7 @@ const LoginPage = () => {
             <div className="t-card">
               <p className="t-quote">"Having courses, my mentor, and the community in one app means I actually keep going instead of losing my place across five different tools."</p>
               <div className="t-person">
-                <div className="t-avatar" style={{ background: '#10b981' }}>JN</div>
+                <div className="t-avatar" style={{ background: '#43A047' }}>JN</div>
                 <div><div className="t-name">J. Nakamura</div><div className="t-role">Student</div></div>
               </div>
             </div>
@@ -1218,9 +1478,9 @@ const LoginPage = () => {
           <div className="brand cursor-pointer" onClick={() => setView('landing')}>
             <div className="w-10 h-10 flex items-center justify-center">
               <img 
-                src="/logo.png" 
+                src="/icon-192.png" 
                 alt="Trileza Logo" 
-                className="w-full h-full object-contain scale-110 logo-white-dark filter brightness-0 invert drop-shadow-[0_2px_10px_rgba(255,255,255,0.25)]" 
+                className="w-full h-full object-contain scale-110 logo-white-dark transition-all" 
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = 'https://api.dicebear.com/7.x/initials/svg?seed=Tr&backgroundColor=059669';
                 }} 
@@ -1243,4 +1503,3 @@ const LoginPage = () => {
 };
 
 export default LoginPage;
-

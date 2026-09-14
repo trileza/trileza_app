@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { BookOpen, PlusCircle, X } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import PageHeader from '../../components/shared/PageHeader';

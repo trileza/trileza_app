@@ -4,7 +4,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useCartStore } from '../../store/cartStore';
 import { nexus } from '../../lib/nexus';
 import { Card, Button } from '../../components/ui';
-import { ArrowLeft, BookOpen, Clock, Tag, ShoppingBag, ShieldCheck, CheckCircle, BookMarked, Star } from 'lucide-react';
+import { ArrowLeft, BookOpen, Clock, Tag, ShoppingBag, ShieldCheck, BookMarked, Star } from 'lucide-react';
 import { formatCurrency, cn } from '../../utils';
 import { motion } from 'framer-motion';
 import { LoadingOverlay } from '../../components/shared';

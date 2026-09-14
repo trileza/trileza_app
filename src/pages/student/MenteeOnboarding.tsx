@@ -2,31 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   GraduationCap, 
-  User, 
-  Briefcase, 
   Award, 
   Shield, 
-  Globe, 
-  Lock, 
-  Mail, 
   BookOpen, 
   Sparkles, 
-  MapPin, 
-  Calendar, 
-  Clock, 
   HelpCircle, 
   CheckCircle2, 
   ChevronRight, 
-  ChevronLeft, 
   Camera,
-  FileText,
   Info,
   AlertCircle,
-  Fingerprint,
-  Check,
-  Chrome,
-  Facebook,
-  Apple,
   UploadCloud,
   Link2
 } from 'lucide-react';
@@ -235,13 +220,15 @@ const MenteeOnboarding = () => {
     }
   }, [dobDay, dobMonth, dobYear]);
 
-  // Sync default display name and legal name when user name is available
+  // Sync default display name, legal name, and avatar when user profile is loaded
   useEffect(() => {
-    if (user && !form.displayName) {
+    if (user) {
+      const userAvatar = user.avatar_url || (user.metadata as any)?.avatar_url || '';
       setForm(prev => ({
         ...prev,
-        displayName: user.full_name.split(' ')[0] || user.full_name,
-        legalCertificateName: user.full_name
+        displayName: prev.displayName || user.full_name?.split(' ')[0] || user.full_name || '',
+        legalCertificateName: prev.legalCertificateName || user.full_name || '',
+        avatarUrl: prev.avatarUrl || userAvatar
       }));
     }
   }, [user]);
@@ -436,13 +423,29 @@ const MenteeOnboarding = () => {
           key={i} 
           className={cn(
             "h-2 rounded-full transition-all duration-500",
-            i < current ? "w-8 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : i === current ? "w-12 bg-emerald-600 animate-pulse shadow-[0_0_12px_rgba(5,150,105,0.6)]" : "w-3 bg-slate-200 dark:bg-slate-800"
+            i < current ? "w-8 bg-emerald-500 shadow-[0_0_8px_rgba(46, 125, 50,0.4)]" : i === current ? "w-12 bg-emerald-600 animate-pulse shadow-[0_0_12px_rgba(5,150,105,0.6)]" : "w-3 bg-slate-200 dark:bg-slate-800"
           )} 
           title={`Step ${i + 1}`}
         />
       ))}
     </div>
   );
+
+  const handleExitToPortal = async () => {
+    try {
+      if (user) {
+        await updateProfile({
+          metadata: {
+            ...user.metadata,
+            mentee_onboarded: true
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Exit to portal notice:', e);
+    }
+    navigate('/', { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex justify-center items-start p-4 relative py-12 md:py-24 overflow-y-auto font-sans selection:bg-emerald-500/20">
@@ -453,6 +456,32 @@ const MenteeOnboarding = () => {
       <div className="absolute bottom-[-10%] left-[-10%] w-[60%] h-[60%] bg-gradient-to-tr from-indigo-500/15 to-purple-500/10 rounded-full blur-[130px] pointer-events-none animate-pulse duration-[10000ms]" />
 
       <div className="max-w-5xl w-full relative z-10 mx-auto">
+        {/* Trileza App Logo Header */}
+        <div className="flex items-center justify-between pb-8 mb-8 border-b border-slate-200/60 dark:border-slate-800/60">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center p-2 shadow-sm">
+              <img src="/icon-192.png" alt="Trileza Logo" className="w-full h-full object-contain" />
+            </div>
+            <div>
+              <div className="text-base font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                Trileza
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                  Academy Path
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Personalize your learning & academy journey</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleExitToPortal}
+            className="text-xs font-bold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white px-3.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors cursor-pointer"
+          >
+            Exit to Portal
+          </button>
+        </div>
+
         <AnimatePresence custom={direction} mode="wait">
           
           {/* ── WELCOME STEP ── */}
@@ -462,9 +491,6 @@ const MenteeOnboarding = () => {
               className="text-center space-y-12"
             >
               <div className="space-y-6">
-                <div className="w-28 h-28 bg-gradient-to-tr from-emerald-600 via-emerald-500 to-teal-400 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl shadow-emerald-500/30 hover:scale-105 transition-transform duration-500 cursor-pointer">
-                  <GraduationCap size={52} className="text-white" />
-                </div>
                 <h1 className="text-4xl md:text-6xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">
                   {isFastTrack ? (
                     <>Fast-Track to Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-400">Academy Path</span></>
@@ -520,20 +546,20 @@ const MenteeOnboarding = () => {
               key="account" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={1} total={6} />
               <PageHeader 
                 title="Account Security"
                 description="Verify credentials and configure social single-sign-on overlays."
                 tag="SECTION 1"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={1} total={6} />
 
-              <Card className="p-8 md:p-12 bg-white/70 dark:bg-slate-900/50 backdrop-blur-2xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] shadow-xl space-y-10">
+              <Card className="p-8 md:p-12 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] shadow-xl space-y-10">
                 {/* Email and Optional Fields */}
                 <div className="grid grid-cols-1 gap-6">
                   <div className="space-y-2">
-                    <label className="flex items-center gap-4 p-6 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-900/80 transition-all">
+                    <label className="flex items-center gap-4 p-6 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-900/80 transition-all">
                       <input 
                         type="checkbox" 
                         checked={form.wantsTwoFactor}
@@ -568,21 +594,21 @@ const MenteeOnboarding = () => {
               key="profile" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={2} total={6} />
               <PageHeader 
                 title="Personal Profile"
                 description="Establish your personal identifiers, custom birth selectors, and optional professional credentials."
                 tag="SECTION 2"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={2} total={6} />
 
-              <Card className="p-8 md:p-12 bg-white/95 dark:bg-slate-950/90 backdrop-blur-2xl border-2 border-emerald-500/25 shadow-[0_20px_50px_rgba(16,185,129,0.15)] rounded-[3rem] space-y-8 ring-1 ring-black/[0.03]">
+              <Card className="p-8 md:p-12 bg-white/95 dark:bg-slate-950/90 backdrop-blur-2xl border-2 border-emerald-500/25 shadow-[0_20px_50px_rgba(46, 125, 50,0.15)] rounded-[3rem] space-y-8 ring-1 ring-black/[0.03]">
                 {/* Upload or Generated Avatar */}
                 <div className="flex flex-col sm:flex-row items-center gap-6 p-6 bg-slate-50 dark:bg-slate-900/50 border border-slate-350 dark:border-slate-850 rounded-3xl shadow-inner">
                   <div className="relative group">
                     <img 
-                      src={form.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${form.displayName || 'seed'}`}
+                      src={form.avatarUrl || user?.avatar_url || (user?.metadata as any)?.avatar_url || (user?.metadata as any)?.pending_mentor_data?.identity?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${form.displayName || user?.full_name || 'seed'}`}
                       alt="Profile Avatar"
                       className="w-24 h-24 rounded-full bg-slate-200 dark:bg-slate-800 border-2 border-emerald-500 p-0.5 object-cover shadow-lg"
                     />
@@ -858,25 +884,25 @@ const MenteeOnboarding = () => {
               key="background" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={isFastTrack ? 1 : 3} total={isFastTrack ? 4 : 6} />
               <PageHeader 
                 title="Learning Background"
                 description="Establish your professional footprint to customize course recommendations."
                 tag="SECTION 3"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={isFastTrack ? 1 : 3} total={isFastTrack ? 4 : 6} />
 
-              <Card className="p-8 md:p-12 bg-white/70 dark:bg-slate-900/50 backdrop-blur-2xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] shadow-xl space-y-8">
+              <Card className="p-8 md:p-12 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] shadow-xl space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Education level */}
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Education Level</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Education Level</label>
                     <select 
                       value={form.education}
                       onChange={e => setForm({...form, education: e.target.value})}
                       required
-                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
+                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
                     >
                       <option value="">Select Level...</option>
                       {EDUCATION_LEVELS.map(lvl => <option key={lvl} value={lvl}>{lvl}</option>)}
@@ -885,12 +911,12 @@ const MenteeOnboarding = () => {
 
                   {/* Employment Status */}
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Employment Status</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Employment Status</label>
                     <select 
                       value={form.employment}
                       onChange={e => setForm({...form, employment: e.target.value})}
                       required
-                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
+                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
                     >
                       <option value="">Select Status...</option>
                       {EMPLOYMENT_STATUSES.map(emp => <option key={emp} value={emp}>{emp}</option>)}
@@ -899,19 +925,19 @@ const MenteeOnboarding = () => {
 
                   {/* Job Title */}
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Current Job Title</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Current Job Title</label>
                     <input 
-                      type="text"
+                      type="text" 
                       value={form.jobTitle}
                       onChange={e => setForm({...form, jobTitle: e.target.value})}
                       placeholder="e.g. Junior Systems Operator"
-                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all"
+                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all"
                     />
                   </div>
 
                   {/* Primary Career / Industry */}
                   <div className="space-y-2 relative">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Primary Careers / Industries</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Primary Careers / Industries</label>
                     <div className="relative">
                       <input 
                         type="text"
@@ -926,7 +952,7 @@ const MenteeOnboarding = () => {
                         }}
                         onKeyDown={handleCareerKeyDown}
                         placeholder="Type any digital career (e.g. prompt engineer, UX designer) & press Enter..."
-                        className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all"
+                        className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all"
                       />
                       
                       {/* Suggestion Dropdown */}
@@ -984,11 +1010,11 @@ const MenteeOnboarding = () => {
 
                   {/* Years of Experience */}
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Years of Work Experience</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Years of Work Experience</label>
                     <select 
                       value={form.yearsExp}
                       onChange={e => setForm({...form, yearsExp: e.target.value})}
-                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
+                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
                     >
                       <option value="0-2">0 - 2 Years</option>
                       <option value="2-5">2 - 5 Years</option>
@@ -999,12 +1025,12 @@ const MenteeOnboarding = () => {
 
                   {/* Reason for learning */}
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Primary Goal / Reason</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Primary Goal / Reason</label>
                     <select 
                       value={form.learningReason}
                       onChange={e => setForm({...form, learningReason: e.target.value})}
                       required
-                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
+                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
                     >
                       <option value="">Select Reason...</option>
                       <option value="Career Transition">Career Transition / Retraining</option>
@@ -1017,7 +1043,7 @@ const MenteeOnboarding = () => {
 
                 {/* Prior Knowledge Level */}
                 <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Prior Subject Knowledge Level</label>
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Prior Subject Knowledge Level</label>
                   <div className="grid grid-cols-3 gap-4">
                     {['Beginner', 'Intermediate', 'Advanced'].map(lvl => (
                       <button
@@ -1025,10 +1051,10 @@ const MenteeOnboarding = () => {
                         type="button"
                         onClick={() => setForm({...form, priorKnowledge: lvl})}
                         className={cn(
-                          "py-5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all border-2",
+                          "py-5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all border-2 cursor-pointer",
                           form.priorKnowledge === lvl
                             ? "bg-slate-950 dark:bg-emerald-600 text-white border-slate-950 dark:border-emerald-600 shadow-lg"
-                            : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-slate-100"
+                            : "bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100"
                         )}
                       >
                         {lvl}
@@ -1052,32 +1078,30 @@ const MenteeOnboarding = () => {
             </motion.div>
           )}
 
-
-
           {/* ── SECTION 4: CERTIFICATE POLICY ── */}
           {step === 'certificate' && (
             <motion.div 
               key="certificate" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={isFastTrack ? 2 : 4} total={isFastTrack ? 4 : 6} />
               <PageHeader 
                 title="Certificate Policy"
                 description="Review parameters for earning verified Trileza graduation certificates."
                 tag="SECTION 4"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={isFastTrack ? 2 : 4} total={isFastTrack ? 4 : 6} />
 
-              <Card className="p-8 md:p-12 bg-white/70 dark:bg-slate-900/50 backdrop-blur-2xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] shadow-xl space-y-6">
+              <Card className="p-8 md:p-12 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] shadow-xl space-y-6">
                 
                 {/* Visual notice about free audit lacking certificate */}
-                <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-4">
+                <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-3xl space-y-4">
                   <div className="flex gap-3">
                     <Info className="text-emerald-500 flex-shrink-0" size={20} />
                     <div className="space-y-1">
                       <h4 className="font-extrabold text-xs text-slate-800 dark:text-white uppercase tracking-wider">Verifiable Credentials Allocation Policy</h4>
-                      <p className="text-xs text-slate-400 leading-relaxed font-medium">
+                      <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
                         If you enrolled via **Free Audit Track**, please note that **certificates are excluded.** If you decide you need a verified certificate later, you must either submit a financial aid waiver application or transition to the premium track.
                       </p>
                     </div>
@@ -1086,15 +1110,15 @@ const MenteeOnboarding = () => {
 
                 {/* Certificate Legal Name (Important) */}
                 <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Certificate Verifiable Legal Name (Required)</label>
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-200 ml-2">Certificate Verifiable Legal Name (Required)</label>
                   <input 
                     type="text" 
                     value={form.legalCertificateName}
                     onChange={e => setForm({...form, legalCertificateName: e.target.value})}
                     placeholder="e.g. David Ileza Adamu"
-                    className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all"
+                    className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all"
                   />
-                  <span className="text-[10px] text-slate-400 font-medium ml-2 block leading-normal">Must match your government identity document. This legal name is stamped into the verification system for certificate verifications.</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium ml-2 block leading-normal">Must match your government identity document. This legal name is stamped into the verification system for certificate verifications.</span>
                 </div>
 
                 {/* Navigation Buttons */}
@@ -1118,19 +1142,19 @@ const MenteeOnboarding = () => {
               key="privacy" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={isFastTrack ? 3 : 5} total={isFastTrack ? 4 : 6} />
               <PageHeader 
                 title="Privacy & Alerts"
                 description="Control data sharing configurations and automated messaging alerts."
                 tag="SECTION 5"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={isFastTrack ? 3 : 5} total={isFastTrack ? 4 : 6} />
 
-              <Card className="p-8 md:p-12 bg-white/70 dark:bg-slate-900/50 backdrop-blur-2xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] shadow-xl space-y-6">
+              <Card className="p-8 md:p-12 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] shadow-xl space-y-6">
                 
                 {/* 1. Promotions */}
-                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
+                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
                   <input 
                     type="checkbox" 
                     checked={form.optInPromotions}
@@ -1139,12 +1163,12 @@ const MenteeOnboarding = () => {
                   />
                   <div>
                     <h4 className="font-bold text-sm text-slate-800 dark:text-white">Promotional Cohort Campaigns</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed mt-1">Send recommendations for newly verified micro-degree classes and exclusive pricing waivers.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-1">Send recommendations for newly verified micro-degree classes and exclusive pricing waivers.</p>
                   </div>
                 </label>
 
                 {/* 2. Reminders */}
-                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
+                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
                   <input 
                     type="checkbox" 
                     checked={form.optInReminders}
@@ -1153,12 +1177,12 @@ const MenteeOnboarding = () => {
                   />
                   <div>
                     <h4 className="font-bold text-sm text-slate-800 dark:text-white">Active Syllabus Reminders</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed mt-1">Receive weekly progress checkpoints, cohort assignment schedules, and tutor session calendar syncs.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-1">Receive weekly progress checkpoints, cohort assignment schedules, and tutor session calendar syncs.</p>
                   </div>
                 </label>
 
                 {/* 3. Share data */}
-                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
+                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
                   <input 
                     type="checkbox" 
                     checked={form.optInShareData}
@@ -1167,12 +1191,12 @@ const MenteeOnboarding = () => {
                   />
                   <div>
                     <h4 className="font-bold text-sm text-slate-800 dark:text-white">Corporate Recruiting Sharing Pool</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed mt-1">Allow Trileza to list my verified coding badges, resume/CV files, and contact details in directories shared with official organizational recruiters.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-1">Allow Trileza to list my verified coding badges, resume/CV files, and contact details in directories shared with official organizational recruiters.</p>
                   </div>
                 </label>
 
                 {/* 4. Surveys */}
-                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
+                <label className="flex items-start gap-4 p-5 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-slate-800 rounded-3xl cursor-pointer hover:bg-slate-100/50 transition-all">
                   <input 
                     type="checkbox" 
                     checked={form.optInSurveys}
@@ -1181,7 +1205,7 @@ const MenteeOnboarding = () => {
                   />
                   <div>
                     <h4 className="font-bold text-sm text-slate-800 dark:text-white">Pedagogy Surveys & Beta Pools</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed mt-1">Incorporate my active panel feedback in platform beta tests and localized user research exercises.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-1">Incorporate my active panel feedback in platform beta tests and localized user research exercises.</p>
                   </div>
                 </label>
 
@@ -1205,16 +1229,16 @@ const MenteeOnboarding = () => {
               key="review" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
               className="space-y-6"
             >
-              <StepIndicator current={isFastTrack ? 4 : 6} total={isFastTrack ? 4 : 6} />
               <PageHeader 
                 title="Terms & Submission"
                 description="Verify COPPA compliance and submit your customized academy dashboard."
                 tag="SECTION 6"
                 icon={Shield}
-                className="!mb-6"
+                className="!mb-4"
               />
+              <StepIndicator current={isFastTrack ? 4 : 6} total={isFastTrack ? 4 : 6} />
 
-              <Card className="p-8 md:p-12 bg-white/70 dark:bg-slate-900/50 backdrop-blur-2xl border-slate-200/50 dark:border-slate-800/50 rounded-[2.5rem] shadow-xl space-y-6">
+              <Card className="p-8 md:p-12 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-[2.5rem] shadow-xl space-y-6">
                 
                 {/* Visual recap card */}
                 <div className="flex items-center gap-6 pb-6 border-b border-slate-100 dark:border-slate-800">

@@ -6,7 +6,7 @@
  */
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus, BarChart3, CheckCircle, Trash2, Eye, EyeOff, UserX } from 'lucide-react';
+import { X, Plus, BarChart3, CheckCircle, Trash2, EyeOff, UserX } from 'lucide-react';
 import { useMeetingStore, type Poll } from '../../store/meetingStore';
 
 interface PollsPanelProps {

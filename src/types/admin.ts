@@ -100,9 +100,12 @@ export interface MentorApplication {
   checklist_profile_completeness: boolean;
   checklist_id_verification: boolean;
   checklist_qualifications: boolean;
-  checklist_intro_video: boolean;
-  video_url?: string;
   qualifications?: string;
+  /** Storage path of the government ID. Private bucket — open via signed URL. */
+  id_document_url?: string;
+  id_document_name?: string;
+  id_document_type?: string;
+  phone_number?: string;
   rejection_reason?: string;
   reviewed_by?: string;
   submitted_at: string;

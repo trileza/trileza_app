@@ -6,12 +6,10 @@ import {
   ShieldCheck, 
   AlertCircle,
   FileCheck,
-  MoreVertical,
   ArrowUpRight,
   Check,
   X,
   UserCheck,
-  Sparkles,
   CheckCircle2
 } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
@@ -314,7 +312,11 @@ const ManagementDashboard = () => {
     }
   };
 
-  const handleDecideMentorApplication = async (appId: string, status: 'approved' | 'denied') => {
+  const handleDecideMentorApplication = async (
+    appId: string,
+    status: 'approved' | 'denied',
+    rejectionReason?: string
+  ) => {
     try {
       const { data: app, error: fetchAppErr } = await nexus.database
         .from('mentor_applications')
@@ -332,7 +334,10 @@ const ManagementDashboard = () => {
         .from('mentor_applications')
         .update({
           status: dbStatus,
-          reviewed_at: new Date().toISOString()
+          reviewed_at: new Date().toISOString(),
+          rejection_reason: dbStatus === 'rejected'
+            ? (rejectionReason || 'Your application was not approved on this occasion.')
+            : null
         })
         .eq('id', appId);
 
@@ -350,9 +355,13 @@ const ManagementDashboard = () => {
         const currentMetadata = userProfile.metadata || {};
         
         if (status === 'approved') {
-          const { mentor_application_status, pending_mentor_data, ...rest } = currentMetadata;
+          const { pending_mentor_data, ...rest } = currentMetadata;
           const updatedMetadata = {
             ...rest,
+            // This has to be written, not just dropped: resolveActiveRole and
+            // the publish gate both read mentor_application_status, so an
+            // approval that omitted it left the mentor unable to publish.
+            mentor_application_status: 'approved',
             mentor_onboarded: true,
             active_role: 'mentor',
             mentor_onboarded_at: new Date().toISOString(),
@@ -380,8 +389,30 @@ const ManagementDashboard = () => {
             });
           }
 
+          // The mentor's own session listens on user:<id>. Without this the
+          // console showed "approved" while their app still said "pending"
+          // until the next background poll.
+          try {
+            await nexus.realtime.publish(`user:${userId}`, 'profile_updated', {
+              role: 'mentor',
+              metadata: updatedMetadata
+            });
+          } catch (realtimeErr) {
+            console.error('[Realtime] Mentor approval broadcast failed:', realtimeErr);
+          }
+
         } else {
-          const { mentor_application_status, pending_mentor_data, ...cleanedMetadata } = currentMetadata;
+          // Record the rejection rather than deleting the status field. Dropping
+          // it left the applicant with no status at all, so the onboarding page
+          // showed them a blank form again with no explanation.
+          const { pending_mentor_data, ...rest } = currentMetadata;
+          const cleanedMetadata = {
+            ...rest,
+            mentor_onboarded: false,
+            mentor_application_status: 'rejected',
+            rejection_reason: rejectionReason || 'Your application was not approved on this occasion.'
+          };
+
           const { error: profileUpdateErr } = await nexus.database
             .from('profiles')
             .update({
@@ -390,6 +421,14 @@ const ManagementDashboard = () => {
             .eq('id', userId);
 
           if (profileUpdateErr) throw profileUpdateErr;
+
+          try {
+            await nexus.realtime.publish(`user:${userId}`, 'profile_updated', {
+              metadata: cleanedMetadata
+            });
+          } catch (realtimeErr) {
+            console.error('[Realtime] Mentor rejection broadcast failed:', realtimeErr);
+          }
 
           if (userId === user?.id) {
             await updateProfile({

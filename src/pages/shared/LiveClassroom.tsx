@@ -11,7 +11,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useMeetingStore } from '../../store/meetingStore';
 import { liveService, type LiveSession } from '../../lib/services/live';
 import { nexus } from '../../lib/nexus';
-import { AlertCircle, ChevronLeft, ArrowRight, Loader2 } from 'lucide-react';
+import { AlertCircle, ChevronLeft, Loader2 } from 'lucide-react';
 import { LoadingOverlay } from '../../components/shared';
 
 // Bespoke components
@@ -61,7 +61,7 @@ const LiveClassroom: React.FC = () => {
             setSession(sessionData);
             // Fetch tutor profile to get the hostName
             const { data: tutorProfile } = await nexus.database
-              .from('profiles')
+              .from('public_profiles')
               .select('full_name')
               .eq('id', sessionData.tutor_id)
               .maybeSingle();
@@ -243,7 +243,7 @@ const LiveClassroom: React.FC = () => {
 
         <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 md:p-10 text-center space-y-8 shadow-2xl relative z-10">
           <div className="flex items-center justify-center pb-4 border-b border-slate-800">
-            <img src="/logo.png" alt="Trileza Logo" className="h-9 object-contain" />
+            <img src="/icon-192.png" alt="Trileza Logo" className="h-9 object-contain" />
           </div>
 
           <div className="space-y-4">

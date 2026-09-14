@@ -4,7 +4,6 @@ import {
   Timer, 
   ChevronRight, 
   ChevronLeft, 
-  CheckCircle2, 
   AlertCircle,
   FileUp,
   BrainCircuit,

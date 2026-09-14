@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Card, Button } from '../../components/ui';
 import { 
-  Users, MessageSquare, Search, CheckCircle2,
-  Heart, Share2, Award, MoreVertical, Send,
-  Image as ImageIcon, Video, Calendar, Bell, BellOff, Link, Clock, X, Radio, Rss
+  Users, 
+  Share2, 
+  Image as Calendar, Bell, BellOff, Clock, X, Radio, Rss
 } from 'lucide-react';
 import { cn } from '../../utils';
 import { Toast } from '../../components/ui/Toast';
@@ -143,7 +143,11 @@ const CommunityPortal: React.FC = () => {
         setScheduledMeetings(meetingsData.filter(m => m.status === 'scheduled' && new Date(m.scheduled_at) > now));
       }
 
-      const { data: profilesData } = await nexus.database.from('profiles').select('*');
+      // Author cards need five columns, not every column of every user.
+      const { data: profilesData } = await nexus.database
+        .from('public_profiles')
+        .select('id, full_name, username, avatar_url, bio, mentor_tier, role')
+        .limit(200);
       if (profilesData) {
         setProfiles(profilesData);
       }

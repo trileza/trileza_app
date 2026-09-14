@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { 
   Rss, 
-  Users, 
   User, 
-  Sparkles, 
   RefreshCw, 
   TrendingUp, 
   Compass,

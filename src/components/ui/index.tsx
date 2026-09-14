@@ -16,12 +16,12 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const variants = {
-    primary: 'bg-[linear-gradient(145deg,#22C55E,#16A34A)] text-[#06170C] hover:brightness-110 active:scale-95 shadow-lg shadow-emerald-500/10 focus-visible:ring-2 focus-visible:ring-[#4ADE80] focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-    secondary: 'bg-surface-2 border border-border text-foreground hover:bg-surface-2-hover focus-visible:ring-2 focus-visible:ring-[#4ADE80]',
-    outline: 'border border-border bg-transparent text-foreground hover:bg-surface focus-visible:ring-2 focus-visible:ring-[#4ADE80]',
-    ghost: 'bg-transparent text-text-secondary hover:text-foreground hover:bg-surface focus-visible:ring-2 focus-visible:ring-[#4ADE80]',
+    primary: 'bg-[linear-gradient(145deg,#43A047,#2E7D32)] text-[#06170C] hover:brightness-110 active:scale-95 shadow-lg shadow-emerald-500/10 focus-visible:ring-2 focus-visible:ring-[#66BB6A] focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+    secondary: 'bg-surface-2 border border-border text-foreground hover:bg-surface-2-hover focus-visible:ring-2 focus-visible:ring-[#66BB6A]',
+    outline: 'border border-border bg-transparent text-foreground hover:bg-surface focus-visible:ring-2 focus-visible:ring-[#66BB6A]',
+    ghost: 'bg-transparent text-text-secondary hover:text-foreground hover:bg-surface focus-visible:ring-2 focus-visible:ring-[#66BB6A]',
     danger: 'bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-200 hover:bg-red-500/20 focus-visible:ring-2 focus-visible:ring-red-500',
-    success: 'bg-[linear-gradient(145deg,#22C55E,#16A34A)] text-[#06170C] hover:brightness-110 shadow-lg shadow-emerald-500/10 focus-visible:ring-2 focus-visible:ring-[#4ADE80]',
+    success: 'bg-[linear-gradient(145deg,#43A047,#2E7D32)] text-[#06170C] hover:brightness-110 shadow-lg shadow-emerald-500/10 focus-visible:ring-2 focus-visible:ring-[#66BB6A]',
   };
 
   const sizes = {

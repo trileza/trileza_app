@@ -61,17 +61,13 @@ export async function reencodeVideoForBunny(
     onProgress(0, 'Your video is being optimized for streaming — this may take a few minutes.');
   }
 
-  // Strategy 1: Attempt Server-Side Processing Endpoint if configured
-  try {
-    const serverResult = await tryServerSideProcessing(file, onProgress);
-    if (serverResult) {
-      return serverResult;
-    }
-  } catch (serverErr) {
-    console.warn('[FFmpegProcessor] Server-side processing failed/unavailable, falling back to WebAssembly engine:', serverErr);
-  }
-
-  // Strategy 2: Client-side FFmpeg WebAssembly Transcoding
+  // Transcoding runs in the browser via FFmpeg WebAssembly.
+  //
+  // There was a server-side fast path here that POSTed the whole file to a
+  // Netlify function before falling back to WASM. That platform has been
+  // removed, so the request could only ever fail — and it failed *after*
+  // uploading the entire video, delaying every upload by that round trip for
+  // no benefit.
   try {
     const ffmpeg = await getFFmpeg(onProgress);
 
@@ -138,34 +134,3 @@ export async function reencodeVideoForBunny(
   }
 }
 
-/**
- * Server-side fallback processing via Netlify / API backend endpoint.
- */
-async function tryServerSideProcessing(
-  file: File,
-  onProgress?: (progress: number, statusText: string) => void
-): Promise<File | null> {
-  const formData = new FormData();
-  formData.append('video', file);
-
-  if (onProgress) {
-    onProgress(10, 'Sending video to optimization server...');
-  }
-
-  const response = await fetch('/.netlify/functions/process-video', {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    return null; // Fall back to WASM
-  }
-
-  if (onProgress) {
-    onProgress(90, 'Downloading optimized video from server...');
-  }
-
-  const blob = await response.blob();
-  const cleanName = file.name.substring(0, file.name.lastIndexOf('.')) || 'video';
-  return new File([blob], `${cleanName}_optimized.mp4`, { type: 'video/mp4' });
-}

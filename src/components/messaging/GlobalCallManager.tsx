@@ -6,8 +6,8 @@
  */
 import React from 'react';
 import {
-  Phone, PhoneOff, Video, Mic, MicOff, VideoOff, Monitor, MonitorOff,
-  Maximize2, Minimize2, X, PhoneCall, Volume2, ShieldCheck
+  Phone, PhoneOff, Video, 
+  PhoneCall
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMessageStore } from '../../store/messageStore';

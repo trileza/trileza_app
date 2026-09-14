@@ -61,6 +61,14 @@ export default async function(req: Request): Promise<Response> {
 
     const roleText = roles ? roles.map((r: string) => r.replace('_', ' ').toUpperCase()).join(', ') : '';
 
+    // Where the deployed site lives. Was hardcoded to a netlify.app address
+    // that no longer exists, which would have sent approved admins to a dead
+    // sign-in page.
+    const siteUrl = Deno.env.get('SITE_URL');
+    if (!siteUrl) {
+      throw new Error('SITE_URL is not configured; cannot build a working admin portal link.');
+    }
+
     let htmlContent = '';
     let subject = '';
 
@@ -70,7 +78,7 @@ export default async function(req: Request): Promise<Response> {
         <h2>Your Admin Application Has Been Approved!</h2>
         <p>Congratulations! Your request to become an administrator on Trileza has been approved.</p>
         <p>You now have access to the following role(s): <strong>${roleText}</strong>.</p>
-        <p>Please log in to the admin portal at <a href="https://trileza.netlify.app/gate/dashboard">trileza.netlify.app/gate</a> to access your dashboard.</p>
+        <p>Please log in to the admin portal at <a href="${siteUrl}/gate">${siteUrl.replace(/^https?:\/\//, '')}/gate</a> to access your dashboard.</p>
         <p><em>Note: Two-Factor Authentication (2FA) is mandatory for all administrators. You will be prompted to set it up or enter your code on your next login.</em></p>
       `;
     } else if (action === 'rejected') {

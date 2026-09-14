@@ -195,7 +195,13 @@ export default async function(req: Request): Promise<Response> {
 async function sendInviteEmail(email: string, token: string, roles: string[], note: string | null) {
   const smtpPass = Deno.env.get('SMTP_PASSWORD');
   const resendKey = Deno.env.get('RESEND_API_KEY');
-  const siteUrl = Deno.env.get('SITE_URL') || 'https://trileza.netlify.app';
+  // No default. The fallback was a netlify.app address that no longer exists,
+  // so a missing SITE_URL would send invitees a dead link that still looked
+  // legitimate. Failing loudly here is better than mailing a broken invite.
+  const siteUrl = Deno.env.get('SITE_URL');
+  if (!siteUrl) {
+    throw new Error('SITE_URL is not configured; cannot build a working invitation link.');
+  }
   const acceptLink = `${siteUrl}/gate/accept?token=${token}`;
   const roleText = roles.map(r => r.replace('_', ' ').toUpperCase()).join(', ');
 

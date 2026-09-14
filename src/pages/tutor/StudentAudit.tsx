@@ -2,8 +2,6 @@ import React from 'react';
 import { Card, Button } from '../../components/ui';
 import { 
   Search, 
-  Filter, 
-  ArrowUpRight, 
   CheckCircle2, 
   Clock, 
   AlertCircle,
@@ -177,7 +175,7 @@ const StudentAudit = () => {
       const emailHtml = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 24px; color: #1e293b; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
           <div style="text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #f1f5f9;">
-            <h1 style="font-size: 24px; font-weight: 800; color: #10b981; margin: 0;">Trileza Classroom</h1>
+            <h1 style="font-size: 24px; font-weight: 800; color: #43A047; margin: 0;">Trileza Classroom</h1>
             <p style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.15em; margin-top: 4px; margin-bottom: 0;">Attendance Audit Report</p>
           </div>
           <div style="margin-bottom: 24px; font-size: 14px;">
@@ -230,18 +228,40 @@ const StudentAudit = () => {
   React.useEffect(() => {
     const fetchStudents = async () => {
       try {
-        const { data: enrolls } = await nexus.database.from('enrollments').select('*');
-        const { data: profiles } = await nexus.database.from('profiles').select('*');
+        // Scoped to courses this tutor owns. It previously read every
+        // enrollment and profile on the platform, so the roster showed other
+        // tutors' students and the figures above it were wrong.
+        const { data: myCourses } = await nexus.database
+          .from('courses')
+          .select('id, title')
+          .eq('tutor_id', user?.id);
+
+        const myCourseIds = (myCourses || []).map((c: any) => c.id);
+
+        const { data: enrolls } = myCourseIds.length > 0
+          ? await nexus.database
+              .from('enrollments')
+              .select('id, user_id, item_id, item_title, progress, status, last_accessed, amount')
+              .in('item_id', myCourseIds)
+          : { data: [] as any[] };
+
+        const learnerIds = Array.from(new Set((enrolls || []).map((e: any) => e.user_id).filter(Boolean)));
+        const { data: profiles } = learnerIds.length > 0
+          ? await nexus.database
+              .from('profiles')
+              .select('id, full_name, avatar_url, last_active_at')
+              .in('id', learnerIds)
+          : { data: [] as any[] };
 
         if (enrolls && profiles) {
-          const profilesMap = profiles.reduce((acc: any, p: any) => {
+          const profilesMap = (profiles as any[]).reduce((acc: Record<string, any>, p: any) => {
             acc[p.id] = p;
             return acc;
-          }, {});
+          }, {} as Record<string, any>);
 
           const mapped = enrolls.map((e: any, idx: number) => {
             const prof = profilesMap[e.user_id] || {};
-            const progressVal = Number(e.progress) || Math.floor(Math.random() * 40) + 60;
+            const progressVal = Number(e.progress) || 0;
             return {
               id: e.id || idx,
               name: prof.full_name || e.item_title || 'Enrolled Mentee',
@@ -265,12 +285,10 @@ const StudentAudit = () => {
     fetchStudents();
   }, []);
 
-  const students = dbStudents.length > 0 ? dbStudents : [
-    { id: 1, name: 'Sarah Jenkins', course: 'UI Design Mastery', progress: 85, lastActive: '2h ago', status: 'On Track', enrolled: '2,400' },
-    { id: 2, name: 'Michael Obi', course: 'Advanced Agentic Coding', progress: 42, lastActive: '5h ago', status: 'Falling Behind', enrolled: '850' },
-    { id: 3, name: 'Aisha Yusuf', course: 'UX Case Study', progress: 100, lastActive: '1d ago', status: 'Completed', enrolled: '1,200' },
-    { id: 4, name: 'David Chen', course: 'UI Design Mastery', progress: 12, lastActive: '3d ago', status: 'At Risk', enrolled: '2,400' },
-  ];
+  // Only real enrolled learners. This list used to fall back to four invented
+  // students, which meant the "At Risk" counter reported on people who did not
+  // exist.
+  const students = dbStudents;
 
   const courses = Array.from(new Set(students.map(s => s.course)));
   const filteredStudents = students.filter(s => s.course === selectedCourse);

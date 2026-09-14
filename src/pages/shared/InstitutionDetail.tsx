@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui';
 import { tenantService } from '../../lib/services/tenants';
 import type { Tenant, Course } from '../../types';
-import { Building2, Globe, GraduationCap, BookOpen, Users, Star, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { Building2, Globe, BookOpen, ArrowLeft, ShieldCheck } from 'lucide-react';
 
 export const InstitutionDetail: React.FC = () => {
   const { institutionId } = useParams<{ institutionId: string }>();
