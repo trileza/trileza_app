@@ -34,28 +34,42 @@ const PreJoinScreen: React.FC<PreJoinScreenProps> = ({
   const [titleVal, setTitleVal] = useState(sessionTitle || roomName);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Request camera access for preview
+  // Request camera access for preview.
+  //
+  // The cleanup tracks the stream this run acquired, in a local variable.
+  // It previously read the `stream` state, which the closure captured from
+  // the render that created the effect — so toggling the camera or mic
+  // stopped the *previous* stream while the new one kept running, and the
+  // last stream was never stopped at all. The camera stayed live (and its
+  // indicator light on) after leaving the screen.
   useEffect(() => {
     let active = true;
+    let acquired: MediaStream | null = null;
+
     const getStream = async () => {
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia({
           video: videoEnabled,
           audio: audioEnabled,
         });
+        acquired = mediaStream;
         if (active) {
           setStream(mediaStream);
           setCameraError(false);
+        } else {
+          // Unmounted while getUserMedia was still resolving.
+          mediaStream.getTracks().forEach(t => t.stop());
         }
       } catch {
         if (active) setCameraError(true);
       }
     };
     getStream();
+
     return () => {
       active = false;
-      if (stream) {
-        stream.getTracks().forEach(t => t.stop());
+      if (acquired) {
+        acquired.getTracks().forEach(t => t.stop());
       }
     };
   }, [videoEnabled, audioEnabled]);

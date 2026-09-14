@@ -72,17 +72,47 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ profile, onClose, o
         const [coursesRes, booksRes, enrollRes, logsRes, menteesRes] = await Promise.all([
           nexus.database.from('courses').select('id, title, status, created_at').eq('tutor_id', profile.id),
           nexus.database.from('books').select('id, title, status, created_at').eq('author_id', profile.id),
-          nexus.database.from('enrollments').select('id, course_id, created_at, courses(title)').eq('student_id', profile.id),
+          // Keyed on user_id: enrollments has no `student_id` column, so this
+          // returned nothing and the modal always showed zero enrolments.
+          nexus.database.from('enrollments').select('id, item_id, course_id, item_title, created_at').eq('user_id', profile.id).limit(100),
           nexus.database.from('admin_audit_logs').select('*').or(`target_id.eq.${profile.id},admin_id.eq.${profile.id}`).order('created_at', { ascending: false }).limit(20),
-          profile.role === 'mentor' || profile.role === 'tutor'
-            ? nexus.database.from('enrollments').select('student_id, profiles!enrollments_student_id_fkey(full_name, avatar_url)').eq('course_id', profile.id).limit(50)
-            : Promise.resolve({ data: [] }),
+          // Mentees are the learners enrolled in this mentor's courses. The
+          // previous query matched `course_id` against the *mentor's* profile
+          // id — never a course id — and embedded through a foreign key named
+          // after the non-existent student_id column, so the mentee list was
+          // permanently empty. Resolved in two steps below instead.
+          Promise.resolve({ data: [] }),
         ]);
-        setCourses(coursesRes.data || []);
+        const ownCourses = coursesRes.data || [];
+        setCourses(ownCourses);
         setBooks(booksRes.data || []);
         setEnrollments(enrollRes.data || []);
         setAuditLogs(logsRes.data || []);
         setMentees(menteesRes.data || []);
+
+        // Learners enrolled in this mentor's courses: find the courses first,
+        // then the enrolments pointing at them. enrollments records the course
+        // on item_id (checkout) or course_id (payment webhook), so both are
+        // matched.
+        const isMentor = profile.role === 'mentor' || profile.role === 'tutor';
+        if (isMentor && ownCourses.length > 0) {
+          const courseIds = ownCourses.map((c: any) => c.id);
+          const idList = `(${courseIds.join(',')})`;
+          const { data: enrolled } = await nexus.database
+            .from('enrollments')
+            .select('user_id, item_title')
+            .or(`item_id.in.${idList},course_id.in.${idList}`)
+            .limit(100);
+
+          const learnerIds = Array.from(new Set((enrolled || []).map((e: any) => e.user_id).filter(Boolean)));
+          if (learnerIds.length > 0) {
+            const { data: learners } = await nexus.database
+              .from('public_profiles')
+              .select('id, full_name, avatar_url')
+              .in('id', learnerIds);
+            setMentees(learners || []);
+          }
+        }
       } catch (err) {
         console.error('[UserProfileModal] Fetch error:', err);
       } finally {
@@ -365,7 +395,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ profile, onClose, o
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {enrollments.map((e: any) => (
                         <div key={e.id} className="flex justify-between items-center px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs">
-                          <span className="font-bold text-slate-800 truncate">{(e as any).courses?.title || e.course_id}</span>
+                          <span className="font-bold text-slate-800 truncate">{e.item_title || e.course_id || e.item_id}</span>
                           <span className="text-[10px] text-slate-400 font-mono shrink-0">{e.created_at ? formatDate(e.created_at) : ''}</span>
                         </div>
                       ))}

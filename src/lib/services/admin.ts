@@ -919,7 +919,11 @@ export const adminService = {
       authorApplicationsRes
     ] = await Promise.all([
       nexus.database.from('profiles').select('*').eq('id', userId).maybeSingle(),
-      nexus.database.from('enrollments').select('*').eq('student_id', userId),
+      // enrollments keys the learner as `user_id`. This filtered on
+      // `student_id`, a column the table does not have, so the query matched
+      // nothing and every GDPR export silently omitted the person's entire
+      // enrollment history while still reporting success.
+      nexus.database.from('enrollments').select('*').eq('user_id', userId),
       nexus.database.from('messages').select('*').eq('sender_id', userId),
       nexus.database.from('messages').select('*').eq('receiver_id', userId),
       nexus.database.from('wallets').select('*').eq('user_id', userId).maybeSingle(),

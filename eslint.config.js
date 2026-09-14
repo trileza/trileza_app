@@ -12,7 +12,12 @@ export default defineConfig([
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
-      reactHooks.configs.flat.recommended,
+      // `configs.flat.recommended` in eslint-plugin-react-hooks 5.2: that
+      // namespace does not exist, so reading `.recommended` off it threw and
+      // ESLint refused to load the config at all. `npm run lint` has therefore
+      // been failing for everyone, on every file, rather than reporting
+      // anything about the code.
+      reactHooks.configs['recommended-latest'],
       reactRefresh.configs.vite,
     ],
     languageOptions: {
