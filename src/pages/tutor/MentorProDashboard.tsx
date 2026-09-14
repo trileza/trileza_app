@@ -166,7 +166,7 @@ export const MentorProDashboard: React.FC<MentorProDashboardProps> = ({
               {/* 2. Status then 3. Handle */}
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-black uppercase tracking-wider shadow-sm">
-                  <Zap size={12} className="fill-amber-400" /> Mentor Pro
+                  <Zap size={12} className="fill-amber-400" /> Pro Mentor
                 </span>
                 <span className="text-xs sm:text-sm font-bold text-emerald-200/90">
                   {handleName}

@@ -303,7 +303,7 @@ export const FreeMentorDashboard: React.FC<FreeMentorDashboardProps> = ({
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-emerald-500" />
             <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
-              Ready to scale your teaching? Upgrade to Mentor Pro
+              Ready to scale your teaching? Upgrade to Pro Mentor
             </h3>
           </div>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">

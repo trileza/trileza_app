@@ -37,7 +37,7 @@ export const PricingPage: React.FC = () => {
       a: 'All subscriptions are billed securely in Nigerian Naira (NGN). You can pay with bank cards, bank transfers, USSD, or digital checkout. Subscriptions renew automatically at your chosen interval (monthly or yearly), and you can cancel anytime from your dashboard.'
     },
     {
-      q: 'What happens if I upgrade from Free Mentor to Mentor Pro or Institutional mid-cycle?',
+      q: 'What happens if I upgrade from Free Mentor to Pro Mentor or Institutional mid-cycle?',
       a: 'Trileza calculates prorated billing in real-time. Any unused credit from your current active billing cycle is automatically discounted from your new plan charge immediately upon checkout.'
     },
     {
@@ -45,8 +45,8 @@ export const PricingPage: React.FC = () => {
       a: 'When you activate the Institutional tier, your dedicated subdomain (e.g. yourinstitution.trileza.com) is provisioned instantly with your custom logo, theme colors, and multi-tenant user isolation. You can also configure a custom domain like lms.youruniversity.edu.'
     },
     {
-      q: 'Can instructors on Mentor Pro earn from course sales?',
-      a: 'Yes! Mentor Pro unlocks full commercial capabilities, automated certificate delivery upon course completion, advanced drop-off analytics, and instant payout splits.'
+      q: 'Can instructors on Pro Mentor earn from course sales?',
+      a: 'Yes! Pro Mentor unlocks full commercial capabilities, automated certificate delivery upon course completion, advanced drop-off analytics, and instant payout splits.'
     }
   ];
 

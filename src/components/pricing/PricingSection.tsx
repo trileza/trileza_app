@@ -311,7 +311,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({
             className="w-full h-12 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 mt-4 cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-black shadow-xl shadow-emerald-500/25 hover:scale-[1.02]"
           >
             <CreditCard className="w-4 h-4" />
-            Upgrade to Mentor Pro
+            Upgrade to Pro Mentor
           </Button>
         </div>
 
@@ -348,7 +348,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({
                 <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center shrink-0 shadow-sm">
                   <Check className="w-3.5 h-3.5 stroke-[3]" />
                 </div>
-                <span><strong>Everything in Mentor Pro</strong> (Unlimited students)</span>
+                <span><strong>Everything in Pro Mentor</strong> (Unlimited students)</span>
               </li>
               <li className="flex items-center gap-3">
                 <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center shrink-0 shadow-sm">
@@ -463,7 +463,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({
                 <tr className="border-b-2 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200">
                   <th className="py-4 px-4 font-black">Plan Capabilities</th>
                   <th className="py-4 px-4 font-black text-center text-slate-600 dark:text-slate-400">Free Mentor (₦0)</th>
-                  <th className="py-4 px-4 font-black text-center text-emerald-600 dark:text-emerald-400">Mentor Pro (₦10k/mo)</th>
+                  <th className="py-4 px-4 font-black text-center text-emerald-600 dark:text-emerald-400">Pro Mentor (₦10k/mo)</th>
                   <th className="py-4 px-4 font-black text-center text-indigo-600 dark:text-indigo-400">Institutional (₦50k/mo)</th>
                 </tr>
               </thead>

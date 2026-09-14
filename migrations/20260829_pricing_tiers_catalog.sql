@@ -61,7 +61,7 @@ VALUES
 ),
 (
   'pro',
-  'Mentor Pro',
+  'Pro Mentor',
   'Most Popular',
   'For growing instructors and content creators.',
   10000,
@@ -87,7 +87,7 @@ VALUES
     'Priority email & in-app support',
     'Earn revenue from course sales'
   ],
-  'Start Mentor Pro',
+  'Start Pro Mentor',
   TRUE
 ),
 (
@@ -111,7 +111,7 @@ VALUES
     "support_level": "sla_backed"
   }'::jsonb,
   ARRAY[
-    'Everything in Mentor Pro + Unlimited students',
+    'Everything in Pro Mentor + Unlimited students',
     'Multi-instructor support & role permissions',
     'Custom branding (logo, colors, domain)',
     'Subdomain (institution.trileza.com)',

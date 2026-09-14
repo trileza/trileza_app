@@ -60,7 +60,7 @@ export const MONETIZATION_TIERS: Record<SubscriptionTier, TierDefinition> = {
   },
   pro: {
     id: 'pro',
-    name: 'Mentor Pro',
+    name: 'Pro Mentor',
     badge: 'Most Popular',
     tagline: 'For growing instructors and content creators.',
     pricing: {
@@ -76,7 +76,7 @@ export const MONETIZATION_TIERS: Record<SubscriptionTier, TierDefinition> = {
       'Priority email & in-app support',
       'Earn revenue from course sales'
     ],
-    ctaLabel: 'Start Mentor Pro',
+    ctaLabel: 'Start Pro Mentor',
     popular: true
   },
   institutional: {
@@ -90,7 +90,7 @@ export const MONETIZATION_TIERS: Record<SubscriptionTier, TierDefinition> = {
     },
     features: INSTITUTIONAL_TIER_FEATURES,
     highlights: [
-      'Everything in Mentor Pro + Unlimited students',
+      'Everything in Pro Mentor + Unlimited students',
       'Multi-instructor support & role permissions',
       'Custom branding (logo, colors, domain)',
       'Subdomain (institution.trileza.com)',

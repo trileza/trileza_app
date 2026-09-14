@@ -279,7 +279,7 @@ export const InstitutionalRegister: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   { id: 'starter', title: 'Free Mentor', users: '1 Course • 50 Students', price: '₦0 / forever' },
-                  { id: 'growth', title: 'Mentor Pro', users: 'Unlimited Courses • 500 Students', price: '₦10,000 / mo' },
+                  { id: 'growth', title: 'Pro Mentor', users: 'Unlimited Courses • 500 Students', price: '₦10,000 / mo' },
                   { id: 'enterprise', title: 'Institutional Tier', users: 'Unlimited Students • Custom Subdomain • SLA', price: '₦50,000 / mo', popular: true }
                 ].map((p) => (
                   <div

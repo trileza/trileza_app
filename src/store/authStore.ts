@@ -165,6 +165,16 @@ export const resolveActiveRole = (user: UserProfile | null, overrideRole?: UserR
     metadata.mentor_onboarded === true || 
     metadata.mentor_application_status === 'approved';
 
+  // 'default-tenant' is the shared marketplace tenant that every account
+  // belongs to, so `Boolean(user.tenant_id)` was true for everyone — which
+  // made every plain mentee resolve as institutional and land on the
+  // institution dashboard. Only a tenant other than the default one means
+  // the user actually belongs to an institution.
+  const institutionTenantId =
+    [user.tenant_id, metadata.tenant_id].find(
+      (t) => typeof t === 'string' && t && t !== 'default-tenant'
+    ) || null;
+
   const isInstitutionalPermitted =
     user.role === 'management' ||
     (user.role as string) === 'tenant_admin' ||
@@ -172,8 +182,7 @@ export const resolveActiveRole = (user: UserProfile | null, overrideRole?: UserR
     user.mentor_tier === 'institutional' ||
     metadata.mentor_tier === 'institutional' ||
     metadata.subscription_tier === 'institutional' ||
-    Boolean(user.tenant_id) ||
-    Boolean(metadata.tenant_id);
+    Boolean(institutionTenantId);
 
   // Explicit active role selection takes priority if permitted
   // Handle management/institutional roles

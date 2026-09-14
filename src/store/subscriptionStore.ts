@@ -492,7 +492,7 @@ export const useSubscriptionStore = create<SubscriptionState>()(
             allowed: false,
             current: count,
             max,
-            reason: `Your ${tierConfig.name} plan allows up to ${max} published course. Upgrade to Mentor Pro for unlimited course publishing.`
+            reason: `Your ${tierConfig.name} plan allows up to ${max} published course. Upgrade to Pro Mentor for unlimited course publishing.`
           };
         }
 

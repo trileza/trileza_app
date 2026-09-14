@@ -12,16 +12,25 @@ export const RoleSwitcher: React.FC = () => {
 
   if (!user) return null;
 
-  // User only has a dual profile if they have actually upgraded/onboarded as Mentor or Institution
-  const isInstitutionalUser = 
-    user.role === 'management' || 
-    (user.role as string) === 'tenant_admin' || 
+  // A dual profile requires an actual upgrade: Free Mentor, Pro Mentor or
+  // Institutional. A plain mentee sees no toggle at all.
+  //
+  // `Boolean(user.tenant_id)` used to be one of these conditions, which made
+  // every single user institutional: tenant_id defaults to 'default-tenant',
+  // the shared marketplace tenant that everyone belongs to. So the toggle
+  // appeared for mentees who had never upgraded to anything. Belonging to a
+  // real institution means a tenant that is not the default one.
+  const realTenantId =
+    user.tenant_id && user.tenant_id !== 'default-tenant' ? user.tenant_id : null;
+
+  const isInstitutionalUser =
+    user.role === 'management' ||
+    (user.role as string) === 'tenant_admin' ||
     user.role === 'staff' ||
     user.mentor_tier === 'institutional' ||
     user.metadata?.mentor_tier === 'institutional' ||
     user.metadata?.subscription_tier === 'institutional' ||
-    Boolean(user.tenant_id) ||
-    Boolean(user.metadata?.institution_onboarded && user.metadata?.tenant_id);
+    Boolean(realTenantId);
 
   const isProUser = !isInstitutionalUser && (
     user.mentor_tier === 'pro' ||
@@ -65,7 +74,7 @@ export const RoleSwitcher: React.FC = () => {
     secondLayoutId = 'role-emerald';
   } else if (isProUser) {
     secondRoleKey = 'mentor';
-    secondRoleLabel = 'Mentor Pro';
+    secondRoleLabel = 'Pro Mentor';
     secondRoleIcon = Zap;
     secondActiveBg = 'bg-purple-600 text-white';
     secondLayoutId = 'role-purple';
@@ -113,7 +122,7 @@ export const RoleSwitcher: React.FC = () => {
           <span>Mentee</span>
         </button>
 
-        {/* Option 2: Tailored Secondary Role (Free Mentor | Mentor Pro | Institutional) */}
+        {/* Option 2: Tailored Secondary Role (Free Mentor | Pro Mentor | Institutional) */}
         <button
           onClick={() => {
             if (isMenteeActive) {

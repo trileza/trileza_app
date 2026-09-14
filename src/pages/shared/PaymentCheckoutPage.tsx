@@ -323,7 +323,7 @@ export const PaymentCheckoutPage: React.FC = () => {
             <p className="text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
               {selectedTier === 'institutional'
                 ? 'You are now provisioned as a Tenant Admin! You can invite faculty instructors, bulk enroll students via CSV, configure custom branding, and manage your institution.'
-                : 'Your Mentor Pro creator privileges are active immediately. You can now publish unlimited courses, issue certificates, and access real-time creator analytics.'}
+                : 'Your Pro Mentor creator privileges are active immediately. You can now publish unlimited courses, issue certificates, and access real-time creator analytics.'}
             </p>
           </div>
 
@@ -396,7 +396,7 @@ export const PaymentCheckoutPage: React.FC = () => {
                 className="flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold"
               >
                 {([
-                  { id: 'pro' as const, label: 'Mentor Pro', Icon: Zap },
+                  { id: 'pro' as const, label: 'Pro Mentor', Icon: Zap },
                   { id: 'institutional' as const, label: 'Institutional', Icon: Building2 }
                 ]).map(({ id, label, Icon }) => (
                   <button
