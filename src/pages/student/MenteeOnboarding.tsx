@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { nexus } from '../../lib/nexus';
 import { 
   GraduationCap, 
   Award, 
@@ -157,6 +158,10 @@ const MenteeOnboarding = () => {
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [cvFileName, setCvFileName] = useState<string | null>(null);
   const [idFileUploaded, setIdFileUploaded] = useState<string | null>(null);
+  // The files themselves. Only their names were kept before, so the CV and ID
+  // the learner chose were discarded on submit.
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [idFile, setIdFile] = useState<File | null>(null);
   const [linkedinError, setLinkedinError] = useState(false);
 
   // State for forms
@@ -373,7 +378,55 @@ const MenteeOnboarding = () => {
     try {
       const selectedCourse = FREE_COURSES.find(c => c.id === form.selectedCourseId);
       
+      // The profile photo arrives as a base64 data URL from the file reader.
+      // It was written nowhere at all — not to storage, not even to metadata —
+      // so choosing a picture did nothing. Upload it and keep the URL.
+      let avatarUrl = user?.avatar_url || '';
+      if (form.avatarUrl && form.avatarUrl.startsWith('data:')) {
+        try {
+          const blob = await (await fetch(form.avatarUrl)).blob();
+          const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+          const path = `avatars/${user?.id}-${Date.now()}.${ext}`;
+          const { error: upErr } = await nexus.storage.from('uploads').upload(path, blob as any);
+          if (upErr) console.error('[Onboarding] Avatar upload failed:', upErr);
+          else avatarUrl = nexus.storage.from('uploads').getPublicUrl(path);
+        } catch (err) {
+          console.error('[Onboarding] Avatar upload threw:', err);
+        }
+      } else if (form.avatarUrl) {
+        avatarUrl = form.avatarUrl;
+      }
+
+      // CV and ID document. Both were previously kept as a filename in React
+      // state and nothing else, so whatever the learner attached was thrown
+      // away on submit while the UI showed a tick beside it.
+      const uploadDoc = async (file: File | null, kind: string): Promise<string> => {
+        if (!file) return '';
+        try {
+          const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
+          const path = `mentee-docs/${user?.id}-${kind}-${Date.now()}.${ext}`;
+          const { error: upErr } = await nexus.storage.from('uploads').upload(path, file);
+          if (upErr) { console.error(`[Onboarding] ${kind} upload failed:`, upErr); return ''; }
+          return nexus.storage.from('uploads').getPublicUrl(path);
+        } catch (err) {
+          console.error(`[Onboarding] ${kind} upload threw:`, err);
+          return '';
+        }
+      };
+
+      const [cvUrl, idUrl] = await Promise.all([
+        uploadDoc(cvFile, 'cv'),
+        uploadDoc(idFile, 'id'),
+      ]);
+
       const result = await updateProfile({
+        // Real columns, not only the metadata blob. `country` and the person's
+        // name have dedicated columns on profiles, but onboarding wrote them
+        // exclusively inside onboarding_data — so every report, filter and
+        // admin view querying those columns saw nothing for onboarded users.
+        full_name: form.legalCertificateName?.trim() || user?.full_name,
+        country: form.country,
+        ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
         metadata: {
           ...user?.metadata,
           mentee_onboarded: true,
@@ -390,7 +443,12 @@ const MenteeOnboarding = () => {
               timezone: form.timezone,
               language: form.language,
               linkedin: linkedinUrl,
-              cv_uploaded: cvFileName
+              // The stored file, not just the name it happened to have.
+              cv_file_name: cvFileName,
+              cv_url: cvUrl,
+              id_document_name: idFileUploaded,
+              id_document_url: idUrl,
+              id_verification_status: idUrl ? 'submitted' : 'not_provided'
             },
             learning_background: {
               education_level: form.education,
@@ -628,7 +686,7 @@ const MenteeOnboarding = () => {
                     </label>
                   </div>
                   <div className="space-y-1 text-center sm:text-left">
-                    <h4 className="font-black text-slate-900 dark:text-white text-base">Profile Photo (Optional)</h4>
+                    <h4 className="font-black text-slate-900 dark:text-white text-base">Profile Photo</h4>
                     <p className="text-xs text-slate-700 dark:text-slate-300 font-extrabold">Upload a professional headshot. Default is system-generated.</p>
                   </div>
                 </div>
@@ -636,7 +694,7 @@ const MenteeOnboarding = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Full Name */}
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100 ml-2">Full Legal Name</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100 ml-2">Full Legal Name (Required)</label>
                     <input 
                       type="text"
                       value={user?.full_name || ''}
@@ -812,14 +870,15 @@ const MenteeOnboarding = () => {
                             accept=".pdf,.doc,.docx"
                             className="hidden" 
                             onChange={(e) => {
-                              if (e.target.files?.[0]) setCvFileName(e.target.files[0].name);
+                              const f = e.target.files?.[0];
+                              if (f) { setCvFileName(f.name); setCvFile(f); }
                             }}
                           />
                         </label>
                         {cvFileName && (
                           <button 
                             type="button" 
-                            onClick={() => setCvFileName(null)}
+                            onClick={() => { setCvFileName(null); setCvFile(null); }}
                             className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-200 hover:bg-slate-350 dark:bg-slate-800 text-[10px] font-bold flex items-center justify-center text-slate-500"
                             title="Remove CV"
                           >
@@ -833,7 +892,7 @@ const MenteeOnboarding = () => {
 
                 {/* National or Institutional ID Upload */}
                 <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-slate-800">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">National or Institutional ID Verification (Required for Verified Certificates)</label>
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">National or Institutional ID (Optional — needed later for verified certificates)</label>
                   <div className="p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 rounded-[2rem] flex flex-col items-center justify-center text-center space-y-4">
                     <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-800 shadow-md flex items-center justify-center text-slate-400">
                       <UploadCloud size={28} />
@@ -849,7 +908,8 @@ const MenteeOnboarding = () => {
                         accept=".pdf,image/*" 
                         className="hidden" 
                         onChange={(e) => {
-                          if (e.target.files?.[0]) setIdFileUploaded(e.target.files[0].name);
+                          const f = e.target.files?.[0];
+                          if (f) { setIdFileUploaded(f.name); setIdFile(f); }
                         }}
                       />
                     </label>
