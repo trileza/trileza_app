@@ -453,13 +453,35 @@ export const useAuthStore = create<AuthState>((set, get) => {
         }
 
         if (data?.user) {
+          // Same File-vs-string problem as in verifyEmail: the sign-up form
+          // supplies a File for the avatar, which cannot be stored in the
+          // profile. This path runs when email verification is disabled.
+          const initialFields = { ...(metadata || {}) };
+          let initialAvatar = initialFields.avatar_url;
+
+          if (initialAvatar && typeof initialAvatar !== 'string') {
+            try {
+              const file = initialAvatar as File;
+              const ext = (file.name?.split('.').pop() || 'jpg').toLowerCase();
+              const path = `avatars/${data.user.id}-${Date.now()}.${ext}`;
+              const { error: upErr } = await nexus.storage.from('uploads').upload(path, file);
+              initialAvatar = upErr ? '' : nexus.storage.from('uploads').getPublicUrl(path);
+              if (upErr) console.error('[Auth] Avatar upload failed:', upErr);
+            } catch (err) {
+              console.error('[Auth] Avatar upload threw:', err);
+              initialAvatar = '';
+            }
+          }
+          if (typeof initialAvatar !== 'string') initialAvatar = '';
+          delete initialFields.avatar_url;
+
           // Set initial profile data in InsForge
           const { data: profile, error: profileError } = await nexus.auth.setProfile({
             full_name: fullName,
             role: role,
-            avatar_url: metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
+            avatar_url: initialAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
             created_at: new Date().toISOString(),
-            ...metadata
+            ...initialFields
           });
 
           if (profileError) {
@@ -509,9 +531,36 @@ export const useAuthStore = create<AuthState>((set, get) => {
         
         // If metadata is provided (from registration flow), set the profile immediately
         if (metadata) {
-          const customFields = metadata.metadata || metadata || {};
+          const customFields = { ...(metadata.metadata || metadata || {}) };
           const fullName = metadata.full_name || metadata.fullName || customFields.full_name || data.user.profile?.name;
-          const avatarUrl = metadata.avatar_url || customFields.avatar_url;
+          let avatarUrl = metadata.avatar_url || customFields.avatar_url;
+
+          // Sign-up collects the profile picture as a File and carried it all
+          // the way here unchanged, so `avatar_url` was a File object rather
+          // than a string. It cannot be serialised into the profile, which
+          // failed the whole verification step — the account was created but
+          // the profile never was, and the user saw only "Invalid token".
+          //
+          // The upload happens here, after verification, because this is the
+          // first point where a session exists to authorise it.
+          if (avatarUrl && typeof avatarUrl !== 'string') {
+            try {
+              const file = avatarUrl as File;
+              const ext = (file.name?.split('.').pop() || 'jpg').toLowerCase();
+              const path = `avatars/${data.user.id}-${Date.now()}.${ext}`;
+              const { error: upErr } = await nexus.storage.from('uploads').upload(path, file);
+              avatarUrl = upErr ? '' : nexus.storage.from('uploads').getPublicUrl(path);
+              if (upErr) console.error('[Auth] Avatar upload failed:', upErr);
+            } catch (err) {
+              console.error('[Auth] Avatar upload threw:', err);
+              avatarUrl = '';
+            }
+          }
+
+          // Never let a non-string reach the profile, whatever the source.
+          if (typeof avatarUrl !== 'string') avatarUrl = '';
+          delete customFields.avatar_url;
+
           const { data: updatedProfile, error: profileError } = await nexus.auth.setProfile({
             full_name: fullName,
             role: metadata.role || customFields.role || 'mentee',
