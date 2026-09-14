@@ -1,0 +1,13 @@
+# Cloudflare Pages SPA routing.
+#
+# The app is a single-page React Router application: /courses, /gate,
+# /live/<id> and the rest exist only in the browser, not as files on disk.
+# Without this rule Pages looks for a matching file, finds none, and returns
+# 404 for every route except "/" — including anyone who refreshes the page or
+# opens a shared link.
+#
+# The 200 (rather than 301) serves index.html while keeping the URL, so the
+# router sees the original path and renders the right screen.
+#
+# This replaces the equivalent redirect that lived in netlify.toml.
+/*    /index.html   200
