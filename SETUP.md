@@ -130,9 +130,34 @@ deployed environment.
 ```
 PAYSTACK_SECRET_KEY     INSFORGE_BASE_URL       API_KEY
 SMTP_PASSWORD           BUNNY_API_KEY           BUNNY_LIBRARY_ID
-BUNNY_PULL_ZONE         CLOUDFLARE_ACCOUNT_ID   CLOUDFLARE_APP_ID
-CLOUDFLARE_API_TOKEN
+BUNNY_PULL_ZONE         BUNNY_TOKEN_KEY         CLOUDFLARE_ACCOUNT_ID
+CLOUDFLARE_APP_ID       CLOUDFLARE_API_TOKEN
 ```
+
+### Bunny Stream uses three different secrets
+
+This trips people up, because all three are called "the key" somewhere in
+Bunny's dashboard, and using the wrong one fails at a different layer each time:
+
+| Secret | Where it comes from | Used for | Wrong value gives |
+|---|---|---|---|
+| `BUNNY_API_KEY` | the **video library**'s key (`ApiKey` in `GET /videolibrary/{id}`) | creating videos, upload signatures | 401 from `video.bunnycdn.com` |
+| `BUNNY_TOKEN_KEY` | the **pull zone**'s `ZoneSecurityKey` | signing playback URLs | 403 on every video |
+| account key | Account Settings → API | creating libraries/zones (setup only) | never belongs in the app |
+
+The account-level key is for provisioning and must not be given to the edge
+function: it can delete every library and zone you own.
+
+To read the library and zone values back at any time:
+
+```bash
+curl -H "AccessKey: $BUNNY_ACCOUNT_KEY" https://api.bunny.net/videolibrary/<id>
+curl -H "AccessKey: $BUNNY_ACCOUNT_KEY" https://api.bunny.net/pullzone/<pullZoneId>
+```
+
+Token authentication must be **on** for the pull zone (`ZoneSecurityEnabled`),
+otherwise signed URLs are pointless — every course video is readable by anyone
+who has the link, whether they paid or not.
 
 **Netlify** (site settings → environment variables): `INSFORGE_URL`,
 `INSFORGE_ANON_KEY`, plus the `VITE_` values so the build can embed them.

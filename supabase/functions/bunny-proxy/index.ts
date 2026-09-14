@@ -13,9 +13,19 @@ export default async function(req: Request): Promise<Response> {
     const body = await req.json();
     const { action, payload } = body;
 
-    const apiKey = '54a68871-34b2-4ef7-be18c84d4297-c7b9-4443';
-    const libraryId = '711161';
-    const pullZone = 'vz-5d94ab2c-5c7.b-cdn.net';
+    // Credentials come from the function environment only — never inline.
+    // Set BUNNY_API_KEY / BUNNY_LIBRARY_ID / BUNNY_PULL_ZONE as function secrets.
+    const apiKey = Deno.env.get('BUNNY_API_KEY');
+    const libraryId = Deno.env.get('BUNNY_LIBRARY_ID');
+    const pullZone = Deno.env.get('BUNNY_PULL_ZONE');
+
+    if (!apiKey || !libraryId || !pullZone) {
+      console.error('[bunny-proxy] Missing BUNNY_API_KEY / BUNNY_LIBRARY_ID / BUNNY_PULL_ZONE');
+      return new Response(
+        JSON.stringify({ error: 'Video service is not configured.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (action === 'create-video') {
       const { title, collectionId } = payload;
@@ -83,33 +93,44 @@ export default async function(req: Request): Promise<Response> {
         });
       }
 
-      const expires = Math.floor(Date.now() / 1000) + 86400; // 24 hours
-      const tokenPath = `/${videoId}/`;
-      
-      const tokenKey = apiKey;
-      const message = tokenPath + expires;
-      
-      const encoder = new TextEncoder();
-      const keyData = encoder.encode(tokenKey);
-      const messageData = encoder.encode(message);
-      
-      const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        keyData,
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-      );
-      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
-      
-      const hashArray = Array.from(new Uint8Array(signatureBuffer));
-      const base64String = btoa(String.fromCharCode(...hashArray));
-      const token = 'HS256-' + base64String
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=+$/g, "");
+      // Bunny CDN token authentication.
+      //
+      // Three things were wrong here and each one alone made every signed URL
+      // fail with 403, so course video never played from a token-protected
+      // zone:
+      //
+      //   1. It signed with BUNNY_API_KEY. Bunny validates against the pull
+      //      zone's *token authentication key*, which is a different secret —
+      //      set BUNNY_TOKEN_KEY to the zone's ZoneSecurityKey.
+      //   2. It used HMAC-SHA256. Bunny hashes a plain concatenation:
+      //      sha256(key + path + expires).
+      //   3. It wrote `bcdn_token=...` into the path before the filename.
+      //      Bunny reads `token` and `expires` as query parameters.
+      //
+      // The signed path must be the full path being requested, so HLS segment
+      // requests inherit the same token.
+      const tokenKey = Deno.env.get('BUNNY_TOKEN_KEY');
+      if (!tokenKey) {
+        console.error('[bunny-proxy] Missing BUNNY_TOKEN_KEY (pull zone token authentication key)');
+        return new Response(
+          JSON.stringify({ error: 'Video security is not configured.' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-      const signedUrl = `https://${pullZone}/bcdn_token=${token}&expires=${expires}&token_path=${encodeURIComponent(tokenPath)}/${videoId}/playlist.m3u8`;
+      const expires = Math.floor(Date.now() / 1000) + 86400; // 24 hours
+      const signedPath = `/${videoId}/playlist.m3u8`;
+
+      const digest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(tokenKey + signedPath + expires)
+      );
+      const token = btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+
+      const signedUrl = `https://${pullZone}${signedPath}?token=${token}&expires=${expires}`;
       const embedUrl = `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}?autoplay=true&loop=false&muted=false&preload=true`;
 
       return new Response(JSON.stringify({
