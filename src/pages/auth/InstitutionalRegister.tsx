@@ -138,7 +138,7 @@ export const InstitutionalRegister: React.FC = () => {
             <img src="/icon-192.png" alt="Trileza Logo" className="w-full h-full object-contain" />
           </div>
           <div>
-            <span className="font-extrabold text-xl tracking-tight text-slate-900 dark:text-white">Trileza</span>
+            <span className="font-extrabold text-xl lowercase text-brand-primary dark:text-emerald-400" style={{ fontFamily: "'Outfit', 'Inter', sans-serif", letterSpacing: "-0.04em" }}>trileza</span>
             <span className="text-xs font-semibold px-2.5 py-0.5 ml-2 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
               Enterprise Multi-Tenant LMS
             </span>

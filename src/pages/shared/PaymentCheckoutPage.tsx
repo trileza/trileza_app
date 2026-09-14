@@ -367,7 +367,7 @@ export const PaymentCheckoutPage: React.FC = () => {
               <span className="w-9 h-9 rounded-xl bg-surface dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center p-1.5 shrink-0">
                 <img src="/icon-192.png" alt="" aria-hidden="true" className="w-full h-full object-contain" />
               </span>
-              <span className="font-black text-slate-900 dark:text-white tracking-tight">Trileza</span>
+              <span className="font-extrabold lowercase text-brand-primary dark:text-emerald-400" style={{ fontFamily: "'Outfit', 'Inter', sans-serif", letterSpacing: "-0.04em" }}>trileza</span>
             </div>
 
             <button

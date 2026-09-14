@@ -354,7 +354,7 @@ const LoginPage = () => {
                 }} 
               />
             </div>
-            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight hidden sm:block">Trileza</span>
+            <span className="text-2xl font-extrabold lowercase text-brand-primary dark:text-emerald-400 hidden sm:block" style={{ fontFamily: "'Outfit', 'Inter', sans-serif", letterSpacing: "-0.04em" }}>trileza</span>
           </button>
           
           <div className="flex items-center gap-3">

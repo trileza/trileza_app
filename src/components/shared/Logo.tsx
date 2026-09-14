@@ -71,8 +71,19 @@ export const Logo: React.FC<LogoProps> = ({
       {mark}
       {variant === 'full' && (
         <span className="flex items-center gap-2 min-w-0">
-          <span className={cn(s.text, 'font-black tracking-tight text-slate-900 dark:text-white truncate')}>
-            Trileza
+          {/* The wordmark, set in Outfit and the brand green — matching the
+              printed logo. It was rendering in the default UI font in the
+              same colour as the nav labels around it, so the brand read as
+              just another line of interface text.
+              Lowercase and tightly tracked, as the logo is drawn. */}
+          <span
+            className={cn(
+              s.text,
+              'font-extrabold lowercase truncate text-brand-primary dark:text-emerald-400'
+            )}
+            style={{ fontFamily: "'Outfit', 'Inter', sans-serif", letterSpacing: '-0.04em' }}
+          >
+            trileza
           </span>
           {badge && (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 whitespace-nowrap">
