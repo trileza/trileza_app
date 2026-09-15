@@ -30,6 +30,8 @@ export interface LiveSession {
   recurring?: string;
   image_url?: string;
   description?: string;
+  /** Minutes the session may run, fixed at creation. `null` is unlimited. */
+  duration_limit_minutes?: number | null;
 }
 
 export interface SessionParticipant {
@@ -78,7 +80,14 @@ export const liveService = {
     scheduledAt: string,
     recurring: string = 'none',
     imageUrl?: string,
-    description?: string
+    description?: string,
+    /**
+     * Minutes this session may run, from the host's tier at creation time.
+     * Stored on the row so every participant counts down to the same moment,
+     * and so a later pricing change cannot shorten a session already running.
+     * `null` is unlimited.
+     */
+    durationLimitMinutes?: number | null
   ) {
     // 1. Create the RealtimeKit meeting. The backend checks that the caller is
     //    actually allowed to create one before spending account capacity.
@@ -100,7 +109,8 @@ export const liveService = {
         status: 'scheduled',
         recurring,
         image_url: imageUrl || null,
-        description: description || null
+        description: description || null,
+        duration_limit_minutes: durationLimitMinutes ?? null
       }])
       .select()
       .single();

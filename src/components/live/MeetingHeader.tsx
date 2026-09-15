@@ -5,13 +5,14 @@
  * participant count, recording indicator, screen share indicator,
  * connection quality, back/minimize buttons, exit fullscreen.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   ChevronLeft, Users, Clock, Circle, Lock, Unlock, WifiOff, Signal,
-  Minimize2, Monitor,
+  Minimize2, Monitor, Hourglass,
 } from 'lucide-react';
 import { useMeetingStore } from '../../store/meetingStore';
+import { WARNING_THRESHOLDS } from '../../config/sessionLimits';
 
 interface MeetingHeaderProps {
   sessionTitle?: string;
@@ -23,9 +24,15 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
   const {
     participantCount, isRecording, recordingState, isRoomLocked,
     startTime, connectionQuality, isFullscreen, activeScreenShareParticipantId,
+    sessionDeadline, addToast, hangup,
   } = useMeetingStore();
 
   const [elapsed, setElapsed] = useState('00:00');
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
+  // Thresholds already announced, so each warning fires once rather than on
+  // every tick after it is crossed.
+  const warnedRef = useRef<Set<number>>(new Set());
+  const endedRef = useRef(false);
 
   // Live timer
   useEffect(() => {
@@ -43,6 +50,70 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
     }, 1000);
     return () => clearInterval(interval);
   }, [startTime]);
+
+  // ── Session countdown ──
+  // Recomputed from the shared deadline on every tick rather than decremented,
+  // so a backgrounded tab (where timers are throttled) still shows the true
+  // remaining time when it comes back rather than a drifted one.
+  useEffect(() => {
+    if (!sessionDeadline) {
+      setRemainingMs(null);
+      return;
+    }
+
+    const tick = () => {
+      const left = sessionDeadline - Date.now();
+      setRemainingMs(left);
+
+      if (left <= 0) {
+        // Leave once. hangup() unmounts this component, but a throttled tab can
+        // fire the interval again before that happens.
+        if (!endedRef.current) {
+          endedRef.current = true;
+          addToast('Session time limit reached. Ending the room…', 'warning');
+          setTimeout(() => hangup(), 1200);
+        }
+        return;
+      }
+
+      const minutesLeft = Math.ceil(left / 60_000);
+      for (const threshold of WARNING_THRESHOLDS) {
+        if (minutesLeft <= threshold && !warnedRef.current.has(threshold)) {
+          warnedRef.current.add(threshold);
+          addToast(
+            threshold === 1
+              ? 'One minute left in this session.'
+              : `${threshold} minutes left in this session.`,
+            'warning'
+          );
+          break;
+        }
+      }
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [sessionDeadline, addToast, hangup]);
+
+  /** mm:ss, or h:mm:ss past an hour. */
+  const formatRemaining = (ms: number): string => {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  };
+
+  // Urgency shifts as the end approaches: neutral, then amber under ten
+  // minutes, then red under two.
+  const remainingMinutes = remainingMs === null ? null : remainingMs / 60_000;
+  const countdownTone =
+    remainingMinutes === null ? ''
+    : remainingMinutes <= 2 ? 'bg-red-500/15 border-red-500/30 text-red-300'
+    : remainingMinutes <= 10 ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+    : 'bg-slate-800/80 border-slate-700 text-slate-100';
 
   const qualityColor = {
     excellent: 'text-emerald-400',
@@ -139,6 +210,25 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
             <Clock size={12} className="text-slate-500" />
             <span className="text-xs font-black tabular-nums">{elapsed}</span>
           </div>
+
+          {/* Time remaining. Shown to everyone: a student needs to know when
+              the class ends as much as the host does. */}
+          {remainingMs !== null && (
+            <motion.div
+              animate={remainingMinutes !== null && remainingMinutes <= 2 ? { opacity: [1, 0.55, 1] } : { opacity: 1 }}
+              transition={{ duration: 1.5, repeat: remainingMinutes !== null && remainingMinutes <= 2 ? Infinity : 0 }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border ${countdownTone}`}
+              title="Time remaining in this session"
+            >
+              <Hourglass size={12} />
+              <span className="text-xs font-black tabular-nums">
+                {formatRemaining(remainingMs)}
+              </span>
+              <span className="text-[9px] font-black uppercase tracking-widest hidden sm:inline opacity-70">
+                left
+              </span>
+            </motion.div>
+          )}
 
           {/* Participants */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-100">

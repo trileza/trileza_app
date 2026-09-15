@@ -12,6 +12,12 @@ import { Toast } from '../../components/ui/Toast';
 import { PageHeader } from '../../components/shared';
 import ShareMeetingModal from '../../components/live/ShareMeetingModal';
 import { nexus, errorMessage } from '../../lib/nexus';
+import {
+  resolveSessionTier,
+  resolveSessionLimit,
+  formatLimit,
+  TIER_LABELS
+} from '../../config/sessionLimits';
 
 const LiveStudio: React.FC = () => {
   const { user } = useAuthStore();
@@ -22,6 +28,12 @@ const LiveStudio: React.FC = () => {
   // revealed the problem after they had filled the form, uploaded a
   // thumbnail and pressed Launch.
   const canHost = canHostLiveSessions(user);
+
+  // How long this host's sessions may run, from their plan. Stamped onto the
+  // session at creation rather than read at join time, so every participant
+  // counts down to the same moment.
+  const sessionTier = resolveSessionTier(user);
+  const sessionLimit = resolveSessionLimit(user);
   
   const [scheduledSessions, setScheduledSessions] = useState<LiveSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,7 +186,8 @@ const LiveStudio: React.FC = () => {
         scheduledTime,
         scheduleForm.type === 'recurring' ? scheduleForm.recurring : 'none',
         scheduleForm.imageUrl,
-        scheduleForm.description.trim()
+        scheduleForm.description.trim(),
+        sessionLimit
       );
 
       if (scheduleForm.type === 'instant') {
@@ -242,20 +255,13 @@ const LiveStudio: React.FC = () => {
              </div>
              <div className="space-y-2">
                <h2 className="text-xl font-black text-slate-800 tracking-tight">
-                 Hosting is for mentors
+                 Not available on this account
                </h2>
                <p className="text-slate-500 text-sm leading-relaxed">
-                 Your account is set up as a mentee, so you can join any live session
-                 you are invited to — but creating and broadcasting one needs an
-                 approved mentor profile.
+                 Guardian accounts follow a learner's progress rather than run
+                 sessions. Ask your learner to host from their own account.
                </p>
              </div>
-             <Button
-               onClick={() => navigate('/mentor/onboarding')}
-               className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-widest px-6 py-3 rounded-xl border-none"
-             >
-               Become a mentor
-             </Button>
            </Card>
          ) : (
          /* Studio Broadcasting Desk Form */
@@ -367,8 +373,21 @@ const LiveStudio: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Say the limit before they start, not when the room closes. */}
+                  <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Clock size={14} className="text-emerald-600 shrink-0" />
+                      <span className="text-[11px] font-bold text-slate-600 truncate">
+                        Session limit on {TIER_LABELS[sessionTier]}
+                      </span>
+                    </div>
+                    <span className="text-xs font-black text-slate-800 shrink-0">
+                      {formatLimit(sessionLimit)}
+                    </span>
+                  </div>
+
                   <div className="pt-4">
-                    <Button 
+                    <Button
                       type="submit"
                       disabled={isUploading}
                       className="w-full h-14 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-sm uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-500/10 border-none transition-all flex items-center justify-center gap-2 cursor-pointer"

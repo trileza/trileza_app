@@ -80,6 +80,16 @@ interface MeetingState {
   isJoined: boolean;
   startTime: number | null;
 
+  /**
+   * When the room closes, as an epoch milliseconds value, or null if uncapped.
+   *
+   * Derived from the session's `started_at` and `duration_limit_minutes` — not
+   * from when this particular client joined. A student arriving twenty minutes
+   * late must see the same deadline as the host, which a locally-anchored
+   * timer could not give them.
+   */
+  sessionDeadline: number | null;
+
   // ── Local user state ──
   isMuted: boolean;
   isCameraOn: boolean;
@@ -142,6 +152,7 @@ interface MeetingState {
     audioEnabled: boolean;
     videoEnabled: boolean;
     rtkMeetingId: string | null;
+    sessionDeadline?: number | null;
   }) => void;
   minimizeMeeting: () => void;
   maximizeMeeting: () => void;
@@ -224,6 +235,7 @@ const initialState = {
   meetingVideoEnabled: true,
 
   rtkMeetingId: null as string | null,
+  sessionDeadline: null as number | null,
   isJoined: false,
   startTime: null as number | null,
   isMuted: true,
@@ -277,6 +289,7 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
     meetingVideoEnabled: params.videoEnabled,
     showPreJoin: false,
     rtkMeetingId: params.rtkMeetingId,
+    sessionDeadline: params.sessionDeadline ?? null,
   }),
 
   minimizeMeeting: () => set({ isMinimized: true }),

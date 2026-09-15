@@ -17,6 +17,21 @@ import { LoadingOverlay } from '../../components/shared';
 // Bespoke components
 import PreJoinScreen from '../../components/live/PreJoinScreen';
 
+/**
+ * When this session's room closes, in epoch milliseconds, or null if uncapped.
+ *
+ * Anchored to `started_at` so everyone in the room shares one deadline. A
+ * session that has not started yet has no anchor, so it has no deadline until
+ * the host launches it — counting from `scheduled_at` would burn a host's
+ * allowance while they were still waiting to begin.
+ */
+const computeDeadline = (session: LiveSession | null): number | null => {
+  if (!session?.duration_limit_minutes || !session.started_at) return null;
+  const startedAt = new Date(session.started_at).getTime();
+  if (Number.isNaN(startedAt)) return null;
+  return startedAt + session.duration_limit_minutes * 60_000;
+};
+
 const LiveClassroom: React.FC = () => {
   const { meetingId } = useParams();
   const { user } = useAuthStore();
@@ -88,9 +103,17 @@ const LiveClassroom: React.FC = () => {
           return; // Stop here, poll status
         }
  
-        // Otherwise if host joins scheduled meeting, transition to live
+        // Otherwise if host joins scheduled meeting, transition to live.
+        // Keep the row that comes back: it carries the started_at just written,
+        // which is what the session countdown is anchored to. Discarding it
+        // left the host holding a row with a null started_at and therefore no
+        // deadline, while every student saw one.
         if (sessionData && sessionData.status === 'scheduled' && isHost) {
-          await liveService.updateStatus(sessionData.id, 'live');
+          const live = await liveService.updateStatus(sessionData.id, 'live');
+          if (live) {
+            sessionData = live as LiveSession;
+            setSession(live as LiveSession);
+          }
         }
  
         // Get the room token. Identity and host rights are resolved backend-side
@@ -177,6 +200,7 @@ const LiveClassroom: React.FC = () => {
       audioEnabled: settings.audio,
       videoEnabled: settings.video,
       rtkMeetingId: meetingId || null,
+      sessionDeadline: computeDeadline(session),
     });
 
     // Track the join event

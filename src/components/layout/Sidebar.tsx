@@ -93,6 +93,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpenOnMobile, onCloseMobile }) => {
     { name: 'My Learning', icon: BookOpen, path: '/learning' },
     { name: 'Assignments', icon: FileText, path: '/assignments' },
     { name: 'Books', icon: BookMarked, path: '/library' },
+    // Mentees host study pods here, capped shorter than a mentor's session.
+    { name: 'Live Studio', icon: Radio, path: '/live' },
     { name: 'Community', icon: Users, path: '/community' },
     { name: 'Messages', icon: MessageSquare, path: '/messages' },
     { name: 'Help & Support', icon: LifeBuoy, path: '/support' },

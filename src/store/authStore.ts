@@ -149,30 +149,20 @@ interface AuthState {
 }
 
 /**
- * Whether this account may host live sessions — teach, in other words.
+ * Whether this account may host live sessions.
  *
- * Kept as one exported predicate because the answer is not simply
- * `role === 'mentor'`: an approved or onboarded mentor can still carry
- * `role: 'mentee'` on their profile, since role tracks the context they are
- * currently in rather than what they are entitled to do.
+ * Every signed-in account can: a mentee hosts a study pod, a mentor hosts a
+ * class. What differs is how long the room stays open, which is the tier's job
+ * — see resolveSessionTier in src/config/sessionLimits.ts. Guardians are the
+ * exception, being a single-purpose parent portal with no teaching surface.
  *
- * The backend enforces the same rule independently (see the dyte-meeting edge
- * function) — this exists so the UI does not offer a broadcast form to someone
- * the server is going to refuse. Any change here needs the matching change
- * there, or the two disagree and the user gets a 403 from a button the app
- * told them they could press.
+ * Kept as one exported predicate so the UI and the dyte-meeting edge function
+ * answer the question identically. If they disagree, the user gets a 403 from a
+ * button the app told them they could press — change both together.
  */
 export const canHostLiveSessions = (user: UserProfile | null): boolean => {
   if (!user) return false;
-  const metadata = user.metadata || {};
-  const role = String(user.role || '').toLowerCase();
-
-  return (
-    ['mentor', 'tutor', 'teacher', 'author', 'management', 'staff', 'admin', 'super_admin']
-      .includes(role) ||
-    metadata.mentor_onboarded === true ||
-    metadata.mentor_application_status === 'approved'
-  );
+  return String(user.role || '').toLowerCase() !== 'guardian';
 };
 
 export const resolveActiveRole = (user: UserProfile | null, overrideRole?: UserRole | null): UserRole | null => {
