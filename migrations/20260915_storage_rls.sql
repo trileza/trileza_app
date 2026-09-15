@@ -89,9 +89,16 @@ CREATE POLICY storage_objects_owner_delete ON storage.objects
 -- --- Grants -------------------------------------------------------------
 -- RLS decides which rows; these decide whether the role may touch the table
 -- at all. Both are required.
+--
+-- Only `authenticated` is granted here. A GRANT to `anon` on this schema is
+-- accepted and then silently reverted by the platform, and it is not needed:
+-- anonymous reads of a public bucket never reach storage.objects. Requesting
+-- /api/storage/buckets/<bucket>/objects/<key> without a token returns a 302 to
+-- a signed CDN URL, so an <img> tag on a signed-out page resolves normally.
+-- A private bucket returns 401 on that same route. Verified on the live
+-- project against both.
 
-GRANT USAGE ON SCHEMA storage TO anon, authenticated;
-GRANT SELECT ON storage.objects TO anon;
+GRANT USAGE ON SCHEMA storage TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON storage.objects TO authenticated;
 
 
