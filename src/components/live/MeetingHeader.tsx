@@ -24,7 +24,7 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
   const {
     participantCount, isRecording, recordingState, isRoomLocked,
     startTime, connectionQuality, isFullscreen, activeScreenShareParticipantId,
-    sessionDeadline, addToast, hangup,
+    sessionDeadline, addToast, forceLeave,
   } = useMeetingStore();
 
   const [elapsed, setElapsed] = useState('00:00');
@@ -66,12 +66,12 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
       setRemainingMs(left);
 
       if (left <= 0) {
-        // Leave once. hangup() unmounts this component, but a throttled tab can
-        // fire the interval again before that happens.
+        // Leave once. forceLeave() unmounts this component, but a throttled tab
+        // can fire the interval again before that happens.
         if (!endedRef.current) {
           endedRef.current = true;
           addToast('Session time limit reached. Ending the room…', 'warning');
-          setTimeout(() => hangup(), 1200);
+          setTimeout(() => forceLeave(), 1200);
         }
         return;
       }
@@ -94,7 +94,7 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [sessionDeadline, addToast, hangup]);
+  }, [sessionDeadline, addToast, forceLeave]);
 
   /** mm:ss, or h:mm:ss past an hour. */
   const formatRemaining = (ms: number): string => {

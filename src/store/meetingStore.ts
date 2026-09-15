@@ -168,6 +168,13 @@ interface MeetingState {
   stopLocalRecording: () => void;
   muteAll: () => void;
   hangup: () => void;
+  /**
+   * Leave without asking. hangup() opens the End Meeting confirmation for a
+   * host, which is right when they click Leave and wrong when the session's
+   * time limit has run out — there is nothing left to confirm, and a modal
+   * waiting for a click would hold the room open indefinitely.
+   */
+  forceLeave: () => void;
 
   muteParticipant: (id: string) => void;
   kickParticipant: (id: string) => void;
@@ -523,6 +530,14 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
   },
 
   hangup: () => {
+    const { meeting } = get();
+    meeting?.leave();
+    set({ isJoined: false });
+  },
+
+  // Replaced at runtime by TrilezaMeeting, which knows how to close the
+  // session row and log attendance. This fallback just leaves the room.
+  forceLeave: () => {
     const { meeting } = get();
     meeting?.leave();
     set({ isJoined: false });

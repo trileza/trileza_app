@@ -137,9 +137,53 @@ export const liveService = {
   },
 
   /**
+   * Marks this session as still occupied.
+   *
+   * Called on a timer while someone is in the room. When the heartbeat goes
+   * stale the server treats the room as empty and ends the session — which is
+   * the only way to catch a host whose tab was closed, crashed or slept, since
+   * none of those send anything on the way out.
+   *
+   * Failures are swallowed: a missed beat is harmless, and the grace period is
+   * far longer than the interval.
+   */
+  async heartbeat(sessionId: string) {
+    try {
+      await nexus.database.rpc('touch_session_heartbeat', { p_session_id: sessionId });
+    } catch {
+      /* A dropped heartbeat is not worth surfacing. */
+    }
+  },
+
+  /**
+   * Closes sessions that are over their time limit or have been empty past the
+   * grace period, and returns how many were closed.
+   *
+   * Run before listing sessions so nobody is shown a room that no longer
+   * exists. Doing it here rather than on a schedule means expiry needs no cron:
+   * the moment anyone opens a list, stale rooms are cleared.
+   */
+  async expireAbandoned(): Promise<number> {
+    try {
+      const { data } = await nexus.database.rpc('expire_abandoned_sessions', {
+        p_grace_minutes: 5
+      });
+      return typeof data === 'number' ? data : 0;
+    } catch (err) {
+      console.warn('[Live] Could not sweep abandoned sessions:', err);
+      return 0;
+    }
+  },
+
+  /**
    * Fetch live sessions for a course (or 'global' for all).
+   *
+   * Sweeps abandoned sessions first, so the list reflects rooms that are
+   * genuinely open rather than rows nobody closed.
    */
   async getCourseSessions(courseId: string) {
+    await this.expireAbandoned();
+
     let query = nexus.database
       .from('live_sessions')
       .select('*')

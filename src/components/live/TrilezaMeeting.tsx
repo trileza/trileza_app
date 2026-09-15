@@ -154,6 +154,17 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
     if (rootRef.current) applyRtkTheme(rootRef.current);
   }, []);
 
+  // ── Heartbeat ──
+  // Tells the server someone is still in this room. When it stops, the session
+  // is expired server-side — the only way to catch a host whose tab was closed,
+  // crashed or slept, none of which send anything on the way out.
+  useEffect(() => {
+    if (!sessionId || !isJoined) return;
+    liveService.heartbeat(sessionId);
+    const id = setInterval(() => liveService.heartbeat(sessionId), 60_000);
+    return () => clearInterval(id);
+  }, [sessionId, isJoined]);
+
   // ── Fullscreen Handling ──
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -170,6 +181,17 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
     }
     if (sessionId) {
       liveService.trackEvent(sessionId, 'participant_left', userId);
+
+      // The host leaving ends the class. Previously only the End Meeting modal
+      // did this, so backing out, closing the tab or losing the connection left
+      // the room showing as Live in the Community hub with nobody inside it.
+      // The server-side sweep is the backstop for the cases that send nothing
+      // at all; this closes the room immediately when we do get the chance.
+      if (isHost) {
+        liveService.updateStatus(sessionId, 'ended').catch((err) =>
+          console.error('[Live] Failed to end session on leave:', err)
+        );
+      }
     }
 
     // Exit fullscreen if active
@@ -184,7 +206,7 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
     }
 
     onLeave();
-  }, [sessionId, userId, onLeave]);
+  }, [sessionId, userId, onLeave, isHost]);
 
   // ── End Meeting (Host only) ──
   const handleEndMeeting = () => {
@@ -205,12 +227,18 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
     }
   }, [isHost, handleCleanLeave]);
 
-  // Bind store's hangup trigger
+  // Bind the store's leave triggers.
+  //
+  // hangup() is the user asking to leave, so a host is asked to confirm.
+  // forceLeave() is the session ending on its own — the time limit running out
+  // — where there is nothing to confirm and a modal waiting for a click would
+  // hold the room open past its limit.
   useEffect(() => {
     useMeetingStore.setState({
       hangup: () => handleLeaveClick(),
+      forceLeave: () => handleCleanLeave(),
     });
-  }, [handleLeaveClick]);
+  }, [handleLeaveClick, handleCleanLeave]);
 
   // ── Initialize RTK Client ──
   useEffect(() => {
