@@ -110,7 +110,7 @@ const ChatPanel: React.FC = () => {
           <img
             src={msg.link}
             alt="Shared image"
-            className="max-w-full max-h-48 rounded-xl object-cover border border-slate-200"
+            className="max-w-full max-h-48 rounded-xl object-cover border border-slate-700"
           />
         </a>
       );
@@ -122,13 +122,13 @@ const ChatPanel: React.FC = () => {
           href={msg.link}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 hover:bg-slate-150 transition-colors"
+          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-800 transition-colors"
         >
-          <FileText size={16} className="text-slate-500 shrink-0" />
+          <FileText size={16} className="text-slate-400 shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-slate-700 truncate">{msg.fileName || 'File'}</p>
+            <p className="text-xs font-bold text-slate-200 truncate">{msg.fileName || 'File'}</p>
             {msg.fileSize && (
-              <p className="text-[10px] text-slate-400">{(msg.fileSize / 1024).toFixed(1)} KB</p>
+              <p className="text-[10px] text-slate-500">{(msg.fileSize / 1024).toFixed(1)} KB</p>
             )}
           </div>
           <Download size={14} className="text-emerald-500 shrink-0" />
@@ -140,18 +140,18 @@ const ChatPanel: React.FC = () => {
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-white">
+    <div className="w-full h-full flex flex-col bg-slate-900">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">Chat</h3>
-          <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-600 text-[9px] font-black tracking-widest">
+          <h3 className="text-sm font-black text-white uppercase tracking-wider">Chat</h3>
+          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-[9px] font-black tracking-widest">
             {chatMessages.length}
           </span>
         </div>
         <button
           onClick={() => setActivePanel('none')}
-          className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all border-none bg-transparent cursor-pointer"
+          className="p-2 rounded-xl hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-all border-none bg-transparent cursor-pointer"
         >
           <X size={16} />
         </button>
@@ -161,11 +161,11 @@ const ChatPanel: React.FC = () => {
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
         {chatMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center gap-3 py-12">
-            <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-150 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center">
               <span className="text-2xl">💬</span>
             </div>
-            <p className="text-xs font-bold text-slate-500">No messages yet</p>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            <p className="text-xs font-bold text-slate-400">No messages yet</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
               Start the conversation
             </p>
           </div>
@@ -178,19 +178,19 @@ const ChatPanel: React.FC = () => {
               className="group"
             >
               <div className="flex items-start gap-2 text-left">
-                <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
-                  <span className="text-[10px] font-black text-emerald-600">
+                <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="text-[10px] font-black text-emerald-400">
                     {msg.senderName?.charAt(0)?.toUpperCase() || '?'}
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2 mb-1">
-                    <span className="text-xs font-black text-slate-800 truncate">{msg.senderName}</span>
-                    <span className="text-[9px] font-bold text-slate-400">
+                    <span className="text-xs font-black text-white truncate">{msg.senderName}</span>
+                    <span className="text-[9px] font-bold text-slate-500">
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                     {msg.isEdited && (
-                      <span className="text-[9px] font-bold text-slate-400 italic">(edited)</span>
+                      <span className="text-[9px] font-bold text-slate-500 italic">(edited)</span>
                     )}
                     {msg.pinned && (
                       <Pin size={10} className="text-amber-500" />
@@ -205,19 +205,19 @@ const ChatPanel: React.FC = () => {
                         value={editText}
                         onChange={(e) => setEditText(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter') handleEdit(msg.id); if (e.key === 'Escape') setEditingMessageId(null); }}
-                        className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/10"
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/10"
                         autoFocus
                       />
                       <button onClick={() => handleEdit(msg.id)} className="px-2 py-1 rounded-lg bg-emerald-500 text-white text-xs font-bold">Save</button>
-                      <button onClick={() => setEditingMessageId(null)} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold">Cancel</button>
+                      <button onClick={() => setEditingMessageId(null)} className="px-2 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold">Cancel</button>
                     </div>
                   ) : (
-                    <div className={`px-3 py-2 rounded-2xl rounded-tl-md text-sm text-slate-700 leading-relaxed break-words border ${
+                    <div className={`px-3 py-2 rounded-2xl rounded-tl-md text-sm text-slate-200 leading-relaxed break-words border ${
                       msg.isAnnouncement
-                        ? 'bg-emerald-50 border-emerald-100'
+                        ? 'bg-emerald-500/15 border-emerald-500/25'
                         : msg.pinned
-                        ? 'bg-amber-50 border-amber-100'
-                        : 'bg-slate-50 border-slate-150'
+                        ? 'bg-amber-500/15 border-amber-500/25'
+                        : 'bg-slate-900 border-slate-800'
                     }`}>
                       {renderMessageContent(msg)}
                     </div>
@@ -229,7 +229,7 @@ const ChatPanel: React.FC = () => {
                       {msg.type === 'text' && (
                         <button
                           onClick={() => { setEditingMessageId(msg.id); setEditText(msg.message); }}
-                          className="p-1 rounded text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-all"
+                          className="p-1 rounded text-slate-500 hover:text-blue-500 hover:bg-blue-500/15 transition-all"
                           title="Edit"
                         >
                           <Pencil size={10} />
@@ -237,14 +237,14 @@ const ChatPanel: React.FC = () => {
                       )}
                       <button
                         onClick={() => deleteChatMessage(msg.id)}
-                        className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                        className="p-1 rounded text-slate-500 hover:text-red-500 hover:bg-red-500/15 transition-all"
                         title="Delete"
                       >
                         <Trash2 size={10} />
                       </button>
                       <button
                         onClick={() => msg.pinned ? unpinMessage(msg.id) : pinMessage(msg.id)}
-                        className="p-1 rounded text-slate-400 hover:text-amber-500 hover:bg-amber-50 transition-all"
+                        className="p-1 rounded text-slate-500 hover:text-amber-500 hover:bg-amber-500/15 transition-all"
                         title={msg.pinned ? 'Unpin' : 'Pin'}
                       >
                         {msg.pinned ? <PinOff size={10} /> : <Pin size={10} />}
@@ -261,12 +261,12 @@ const ChatPanel: React.FC = () => {
       {/* Emoji Picker */}
       {showEmoji && (
         <div className="px-4 pb-2">
-          <div className="bg-white rounded-2xl border border-slate-200 p-2 flex flex-wrap gap-1 shadow-lg">
+          <div className="bg-slate-900 rounded-2xl border border-slate-700 p-2 flex flex-wrap gap-1 shadow-lg">
             {emojis.map((emoji) => (
               <button
                 key={emoji}
                 onClick={() => { setInput(prev => prev + emoji); setShowEmoji(false); }}
-                className="w-9 h-9 rounded-xl hover:bg-slate-100 flex items-center justify-center text-lg transition-all hover:scale-110 border-none bg-transparent cursor-pointer"
+                className="w-9 h-9 rounded-xl hover:bg-slate-800 flex items-center justify-center text-lg transition-all hover:scale-110 border-none bg-transparent cursor-pointer"
               >
                 {emoji}
               </button>
@@ -280,24 +280,24 @@ const ChatPanel: React.FC = () => {
       <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
 
       {/* Input */}
-      <div className="px-4 pb-4 pt-2 border-t border-slate-100 shrink-0">
-        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-1 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
+      <div className="px-4 pb-4 pt-2 border-t border-slate-800 shrink-0">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-2xl px-3 py-1 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
           <button
             onClick={() => setShowEmoji(!showEmoji)}
-            className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-slate-100 transition-all shrink-0 border-none bg-transparent cursor-pointer"
+            className="p-2 rounded-xl text-slate-500 hover:text-emerald-400 hover:bg-slate-800 transition-all shrink-0 border-none bg-transparent cursor-pointer"
           >
             <Smile size={18} />
           </button>
           <button
             onClick={() => imageInputRef.current?.click()}
-            className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-slate-100 transition-all shrink-0 border-none bg-transparent cursor-pointer"
+            className="p-2 rounded-xl text-slate-500 hover:text-emerald-400 hover:bg-slate-800 transition-all shrink-0 border-none bg-transparent cursor-pointer"
             title="Send image"
           >
             <ImageIcon size={16} />
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 hover:bg-slate-100 transition-all shrink-0 border-none bg-transparent cursor-pointer"
+            className="p-2 rounded-xl text-slate-500 hover:text-emerald-400 hover:bg-slate-800 transition-all shrink-0 border-none bg-transparent cursor-pointer"
             title="Send file"
           >
             <Paperclip size={16} />
@@ -308,7 +308,7 @@ const ChatPanel: React.FC = () => {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
-            className="flex-1 bg-transparent border-none outline-none text-sm text-slate-800 placeholder-slate-455 py-2 focus:ring-0"
+            className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-slate-455 py-2 focus:ring-0"
           />
           <button
             onClick={handleSend}

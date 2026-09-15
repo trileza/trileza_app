@@ -176,7 +176,7 @@ const LiveClassroom: React.FC = () => {
       userRole: deriveUserRole(),
       audioEnabled: settings.audio,
       videoEnabled: settings.video,
-      dyteMeetingId: meetingId || null,
+      rtkMeetingId: meetingId || null,
     });
 
     // Track the join event

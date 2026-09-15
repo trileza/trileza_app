@@ -60,7 +60,7 @@ const MeetingOverlay: React.FC = () => {
     maximizeMeeting,
     deactivateMeeting,
     participants,
-    dyteMeetingId,
+    rtkMeetingId,
   } = useMeetingStore();
 
   // ── Auto-routing on minimize ──
@@ -72,8 +72,8 @@ const MeetingOverlay: React.FC = () => {
 
   const handleMaximize = () => {
     maximizeMeeting();
-    if (dyteMeetingId) {
-      navigate(`/live/${dyteMeetingId}`);
+    if (rtkMeetingId) {
+      navigate(`/live/${rtkMeetingId}`);
     }
   };
 
@@ -196,7 +196,7 @@ const PiPCard: React.FC<PiPCardProps> = ({
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onLeave(); }}
-              className="p-1.5 rounded-lg bg-red-500/80 text-white hover:bg-red-650 transition-all border-none cursor-pointer"
+              className="p-1.5 rounded-lg bg-red-500/80 text-white hover:bg-red-600 transition-all border-none cursor-pointer"
               title="Leave meeting"
             >
               <X size={12} />
@@ -240,6 +240,8 @@ const PiPCard: React.FC<PiPCardProps> = ({
 
         {/* Expand hint */}
         <div className="px-4 pb-3">
+          {/* This card floats over the app, not the meeting, so it keeps the
+              light palette the rest of the app uses. */}
           <div className="w-full py-2 rounded-xl bg-emerald-50 border border-emerald-100 text-center">
             <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
               Click to Return

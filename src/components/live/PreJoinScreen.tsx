@@ -94,7 +94,7 @@ const PreJoinScreen: React.FC<PreJoinScreenProps> = ({
   };
 
   return (
-    <div className="h-screen w-full bg-slate-900 flex items-center justify-center p-4 sm:p-8 relative overflow-hidden font-sans">
+    <div className="h-screen w-full bg-slate-950 flex items-center justify-center p-4 sm:p-8 relative overflow-hidden font-sans">
       {/* Background Video */}
       {videoEnabled && !cameraError ? (
         <div className="absolute inset-0 z-0">
@@ -124,7 +124,7 @@ const PreJoinScreen: React.FC<PreJoinScreenProps> = ({
                    </span>
                 )}
              </div>
-             <p className="text-sm font-bold text-slate-400">
+             <p className="text-sm font-bold text-slate-500">
                 {cameraError ? 'Camera unavailable' : 'Camera off'}
              </p>
           </div>
@@ -146,20 +146,20 @@ const PreJoinScreen: React.FC<PreJoinScreenProps> = ({
           <span className="text-xs font-black uppercase tracking-widest">Back to Dashboard</span>
         </button>
 
-        <div className="bg-white/95 backdrop-blur-md border border-white/20 rounded-[2.5rem] overflow-hidden shadow-2xl">
+        <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-[2.5rem] overflow-hidden shadow-2xl">
           {/* ── Join Info Panel ── */}
-          <div className="p-8 flex flex-col gap-6 text-slate-800">
+          <div className="p-8 flex flex-col gap-6 text-white">
             <div className="space-y-6">
               {/* Brand Logo & Sub-header */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-700">
                 <img src="/icon-192.png" alt="Trileza Logo" className="h-9 object-contain" />
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-600 bg-emerald-500/10 px-2.5 py-1 rounded-lg">
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg">
                   Live Broadcast
                 </span>
               </div>
 
               <div className="space-y-3">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-450 ml-0.5 block">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-0.5 block">
                   Meeting Name
                 </label>
                 <input
@@ -170,18 +170,18 @@ const PreJoinScreen: React.FC<PreJoinScreenProps> = ({
                     onTitleChange?.(e.target.value);
                   }}
                   placeholder="Classroom Room Name"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-bold"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-bold"
                 />
                 {hostName && (
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    Hosted by: <span className="text-slate-700 font-extrabold">{hostName}</span>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Hosted by: <span className="text-slate-200 font-extrabold">{hostName}</span>
                   </p>
                 )}
               </div>
 
               {/* Session Stats */}
               {participantCount > 0 && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-650 w-fit">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 w-fit">
                   <Users size={14} className="text-emerald-605" />
                   <span className="text-xs font-bold">
                     {participantCount} in session
@@ -190,20 +190,20 @@ const PreJoinScreen: React.FC<PreJoinScreenProps> = ({
               )}
 
               {/* User Info & Camera Toggles */}
-              <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-150">
+              <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-900 border border-slate-800">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center overflow-hidden shrink-0">
                     {avatarUrl ? (
                       <img src={avatarUrl} alt={displayName} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-base font-black text-emerald-600">
+                      <span className="text-base font-black text-emerald-400">
                         {displayName?.charAt(0)?.toUpperCase() || '?'}
                       </span>
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-black text-slate-850 truncate">{displayName}</p>
-                    <p className="text-[9px] font-black text-slate-450 uppercase tracking-widest">
+                    <p className="text-sm font-black text-slate-800 truncate">{displayName}</p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
                       Joining Member
                     </p>
                   </div>
@@ -216,8 +216,8 @@ const PreJoinScreen: React.FC<PreJoinScreenProps> = ({
                     onClick={() => setAudioEnabled(!audioEnabled)}
                     className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90 shadow-sm ${
                       audioEnabled
-                        ? 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                        : 'bg-red-500 text-white border-transparent hover:bg-red-650'
+                        ? 'bg-slate-900 border border-slate-700 text-slate-200 hover:bg-slate-900'
+                        : 'bg-red-500 text-white border-transparent hover:bg-red-600'
                     }`}
                   >
                     {audioEnabled ? <Mic size={14} /> : <MicOff size={14} />}
@@ -227,8 +227,8 @@ const PreJoinScreen: React.FC<PreJoinScreenProps> = ({
                     onClick={() => setVideoEnabled(!videoEnabled)}
                     className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90 shadow-sm ${
                       videoEnabled
-                        ? 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                        : 'bg-red-500 text-white border-transparent hover:bg-red-650'
+                        ? 'bg-slate-900 border border-slate-700 text-slate-200 hover:bg-slate-900'
+                        : 'bg-red-500 text-white border-transparent hover:bg-red-600'
                     }`}
                   >
                     {videoEnabled ? <Video size={14} /> : <VideoOff size={14} />}
@@ -248,7 +248,7 @@ const PreJoinScreen: React.FC<PreJoinScreenProps> = ({
                 <Zap size={18} strokeWidth={3} />
                 JOIN LIVE CLASSROOM
               </motion.button>
-              <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              <p className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                 Powered by Trileza Engine
               </p>
             </div>

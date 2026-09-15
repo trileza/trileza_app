@@ -76,7 +76,7 @@ interface MeetingState {
   meetingVideoEnabled: boolean;
 
   // ── Session info ──
-  dyteMeetingId: string | null;
+  rtkMeetingId: string | null;
   isJoined: boolean;
   startTime: number | null;
 
@@ -127,7 +127,7 @@ interface MeetingState {
 
   // ── Actions ──
   setMeeting: (meeting: any) => void;
-  setSessionInfo: (sessionId: string, dyteMeetingId: string) => void;
+  setSessionInfo: (sessionId: string, rtkMeetingId: string) => void;
   setJoined: (joined: boolean) => void;
 
   // Meeting persistence
@@ -141,7 +141,7 @@ interface MeetingState {
     userRole: 'teacher' | 'student' | 'moderator';
     audioEnabled: boolean;
     videoEnabled: boolean;
-    dyteMeetingId: string | null;
+    rtkMeetingId: string | null;
   }) => void;
   minimizeMeeting: () => void;
   maximizeMeeting: () => void;
@@ -223,7 +223,7 @@ const initialState = {
   meetingAudioEnabled: true,
   meetingVideoEnabled: true,
 
-  dyteMeetingId: null as string | null,
+  rtkMeetingId: null as string | null,
   isJoined: false,
   startTime: null as number | null,
   isMuted: true,
@@ -259,7 +259,7 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
   ...initialState,
 
   setMeeting: (meeting) => set({ meeting }),
-  setSessionInfo: (sessionId, dyteMeetingId) => set({ sessionId, dyteMeetingId }),
+  setSessionInfo: (sessionId, rtkMeetingId) => set({ sessionId, rtkMeetingId }),
   setJoined: (joined) => set({ isJoined: joined, startTime: joined ? Date.now() : null }),
 
   // ── Meeting Persistence ──
@@ -276,7 +276,7 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
     meetingAudioEnabled: params.audioEnabled,
     meetingVideoEnabled: params.videoEnabled,
     showPreJoin: false,
-    dyteMeetingId: params.dyteMeetingId,
+    rtkMeetingId: params.rtkMeetingId,
   }),
 
   minimizeMeeting: () => set({ isMinimized: true }),
@@ -344,7 +344,7 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
   },
 
   toggleRecording: async () => {
-    const { meeting, recordingState, recordingType, stopLocalRecording, recordingId, dyteMeetingId, sessionTitle } = get();
+    const { meeting, recordingState, recordingType, stopLocalRecording, recordingId, rtkMeetingId, sessionTitle } = get();
     if (recordingState === 'RECORDING') {
       if (recordingType === 'local') {
         stopLocalRecording();
@@ -381,15 +381,15 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
         return;
       }
       
-      if (!dyteMeetingId) {
-        console.error('[RTK] dyteMeetingId is required to start cloud recording');
+      if (!rtkMeetingId) {
+        console.error('[RTK] rtkMeetingId is required to start cloud recording');
         return;
       }
       
       set({ recordingState: 'STARTING', recordingType: 'cloud' });
       try {
         const { data, error } = await nexus.functions.invoke('dyte-meeting', {
-          body: { action: 'start_recording', meetingId: dyteMeetingId }
+          body: { action: 'start_recording', meetingId: rtkMeetingId }
         });
         if (error) throw error;
         console.log('[RTK] Started cloud recording successfully:', data);
@@ -408,16 +408,16 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
   },
 
   startLocalRecording: async () => {
-    const { meeting, dyteMeetingId } = get();
-    if (!dyteMeetingId) {
-      console.error('[RTK] dyteMeetingId is required to start local recording');
+    const { meeting, rtkMeetingId } = get();
+    if (!rtkMeetingId) {
+      console.error('[RTK] rtkMeetingId is required to start local recording');
       return;
     }
     
     set({ recordingState: 'STARTING', recordingType: 'local' });
     try {
       const { data, error } = await nexus.functions.invoke('dyte-meeting', {
-        body: { action: 'start_recording', meetingId: dyteMeetingId }
+        body: { action: 'start_recording', meetingId: rtkMeetingId }
       });
       if (error) throw error;
       console.log('[RTK] Started local recording bot successfully:', data);

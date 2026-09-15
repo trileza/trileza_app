@@ -40,7 +40,7 @@ const MeetingToast: React.FC = () => {
             <p className="text-xs font-bold text-white leading-tight flex-1">{toast.message}</p>
             <button
               onClick={() => removeToast(toast.id)}
-              className="p-1 rounded-lg hover:bg-white/10 text-slate-500 hover:text-white transition-all shrink-0"
+              className="p-1 rounded-lg hover:bg-slate-900/10 text-slate-400 hover:text-white transition-all shrink-0"
             >
               <X size={12} />
             </button>

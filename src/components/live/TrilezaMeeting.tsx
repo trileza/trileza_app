@@ -25,6 +25,7 @@ import NotesPanel from './NotesPanel';
 
 // Services
 import { liveService } from '../../lib/services/live';
+import { applyRtkTheme } from '../../utils/rtkTheme';
 
 // ── Custom Video Track Renderer ────────────────────────────────────
 
@@ -82,10 +83,10 @@ const FloatingReactions: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -60, scale: 0.3 }}
             transition={{ duration: 0.6, ease: 'easeOut' }}
-            className="flex items-center gap-2 bg-white/95 backdrop-blur-md rounded-full px-4 py-2 shadow-2xl border border-slate-200"
+            className="flex items-center gap-2 bg-slate-900/90 backdrop-blur-md rounded-full px-4 py-2 shadow-2xl border border-slate-700"
           >
             <span className="text-2xl">{r.emoji}</span>
-            <span className="text-[11px] font-bold text-slate-700">{r.senderName}</span>
+            <span className="text-[11px] font-bold text-slate-200">{r.senderName}</span>
           </motion.div>
         ))}
       </AnimatePresence>
@@ -138,12 +139,20 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
   } = useMeetingStore();
 
   const [rtkMeeting, initMeeting] = useRealtimeKitClient();
+  const rootRef = useRef<HTMLDivElement>(null);
   const [showEndModal, setShowEndModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
   const participantRecordRef = useRef<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const isHost = userRole === 'teacher' || userRole === 'moderator';
+
+  // ── Brand the SDK's own shadow-DOM elements ──
+  // Device pickers and permission prompts are drawn by RealtimeKit, not by us.
+  // Without this they render in Cloudflare's stock palette.
+  useEffect(() => {
+    if (rootRef.current) applyRtkTheme(rootRef.current);
+  }, []);
 
   // ── Fullscreen Handling ──
   useEffect(() => {
@@ -582,11 +591,16 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
     : participants;
 
   return (
-    <div className="relative w-full h-full bg-slate-50 overflow-hidden flex flex-col justify-between font-sans">
-      {/* Background Ambience */}
+    <div
+      ref={rootRef}
+      className="relative w-full h-full bg-slate-950 overflow-hidden flex flex-col justify-between font-sans"
+    >
+      {/* Background ambience. The surface is dark so video is the brightest
+          thing on screen — on the previous near-white ground these glows were
+          invisible and faces competed with the page for attention. */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/3 rounded-full blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/2 rounded-full blur-[120px]" />
+        <div className="absolute top-[-10%] left-[-10%] w-[45%] h-[45%] bg-brand-primary/10 rounded-full blur-[130px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[45%] h-[45%] bg-brand-secondary/[0.07] rounded-full blur-[130px]" />
       </div>
 
       {/* Header */}
@@ -605,9 +619,10 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
       {/* Main Responsive Grid Area */}
       <div className="flex-1 w-full p-4 sm:p-8 flex z-10 overflow-hidden relative gap-4">
         {loading ? (
-          <div className="flex flex-col items-center justify-center bg-white border border-slate-200 p-10 rounded-[2.5rem] shadow-xl w-full">
+          <div className="flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-sm border border-slate-800 p-10 rounded-[2.5rem] shadow-xl w-full">
             <img src="/icon-192.png" className="h-16 object-contain animate-pulse mb-6" alt="Trileza" />
-            <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            <div className="w-8 h-8 border-2 border-brand-secondary border-t-transparent rounded-full animate-spin" />
+            <p className="mt-5 text-sm font-semibold text-slate-300">Joining the room…</p>
           </div>
         ) : (
           <>
@@ -624,11 +639,11 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
                   </div>
 
                   {/* Bottom-left User Tag */}
-                  <div className="absolute bottom-4 left-4 flex items-center gap-2.5 bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-200 shadow-lg z-20">
-                    <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shrink-0">
+                  <div className="absolute bottom-4 left-4 flex items-center gap-2.5 bg-slate-900/85 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-700 shadow-lg z-20">
+                    <div className="w-6 h-6 rounded-lg bg-brand-secondary/20 text-brand-accent flex items-center justify-center border border-brand-secondary/30 shrink-0">
                       <Monitor size={12} />
                     </div>
-                    <span className="text-xs font-black text-slate-800">
+                    <span className="text-xs font-black text-white">
                       {screenSharingParticipant.displayName}'s Presentation
                     </span>
                   </div>
@@ -673,8 +688,8 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
                           : 'aspect-[4/3] sm:aspect-video'
                       } ${
                         p.isDominantSpeaker
-                          ? 'border-emerald-500 ring-4 ring-emerald-500/20 scale-[1.02]'
-                          : 'border-slate-200 hover:border-slate-350'
+                          ? 'border-brand-secondary ring-4 ring-brand-secondary/25 scale-[1.02]'
+                          : 'border-slate-800 hover:border-slate-700'
                       }`}
                     >
                       {/* Remote Audio Track */}
@@ -684,18 +699,18 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
                       {hasVideo ? (
                         <VideoTrack track={p.videoTrack!} isLocal={p.id === 'local'} />
                       ) : (
-                        <div className="flex flex-col items-center gap-4 bg-slate-100 w-full h-full justify-center">
-                          <div className={`${isInSidebar ? 'w-14 h-14' : 'w-24 h-24 sm:w-32 sm:h-32'} rounded-full bg-white border border-slate-200 flex items-center justify-center overflow-hidden shadow-sm`}>
+                        <div className="flex flex-col items-center gap-4 bg-slate-900 w-full h-full justify-center">
+                          <div className={`${isInSidebar ? 'w-14 h-14' : 'w-24 h-24 sm:w-32 sm:h-32'} rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden shadow-sm`}>
                             {p.avatarUrl ? (
                               <img src={p.avatarUrl} alt={p.displayName} className="w-full h-full object-cover" />
                             ) : (
-                              <span className={`${isInSidebar ? 'text-xl' : 'text-4xl'} font-black text-emerald-600`}>
+                              <span className={`${isInSidebar ? 'text-xl' : 'text-4xl'} font-black text-brand-accent`}>
                                 {p.displayName?.charAt(0)?.toUpperCase() || '?'}
                               </span>
                             )}
                           </div>
                           {!isInSidebar && (
-                            <p className="text-[12px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                            <p className="text-[12px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
                               <VideoOff size={14} /> Camera off
                             </p>
                           )}
@@ -715,14 +730,14 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
 
                       {/* Bottom bar overlay */}
                       <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between pointer-events-none">
-                        <div className="flex items-center gap-2 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-150 shadow-sm pointer-events-auto">
-                          <span className={`text-xs font-black text-slate-800 ${isInSidebar ? 'text-[10px]' : ''}`}>{p.displayName}</span>
+                        <div className="flex items-center gap-2 bg-slate-900/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700 shadow-sm pointer-events-auto">
+                          <span className={`text-xs font-black text-white ${isInSidebar ? 'text-[10px]' : ''}`}>{p.displayName}</span>
                           {!isInSidebar && (
                             <span
                               className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md ${
                                 p.role === 'teacher'
-                                  ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
-                                  : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                  : 'bg-slate-800 text-slate-400 border border-slate-700'
                               }`}
                             >
                               {p.role === 'teacher' ? 'Host' : 'Student'}
@@ -734,7 +749,7 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
                           {participants.length > 1 && !isInSidebar && (
                             <button
                               onClick={() => setExpandedParticipantId(expandedParticipantId === p.id ? null : p.id)}
-                              className="w-8 h-8 rounded-xl bg-white/95 backdrop-blur-md border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-white hover:text-emerald-600 transition-colors shadow-sm"
+                              className="w-8 h-8 rounded-xl bg-slate-900/85 backdrop-blur-md border border-slate-700 text-slate-300 flex items-center justify-center hover:bg-slate-800 hover:text-brand-accent transition-colors shadow-sm"
                               title={expandedParticipantId === p.id ? "Shrink" : "Expand"}
                             >
                               {expandedParticipantId === p.id ? <Minimize size={14} /> : <Maximize size={14} />}
@@ -768,7 +783,7 @@ const TrilezaMeeting: React.FC<TrilezaMeetingProps> = ({
 
       {/* Side Panels Container */}
       <div
-        className={`absolute top-0 right-0 bottom-0 w-full sm:w-[380px] z-40 flex flex-col bg-white border-l border-slate-200 shadow-2xl font-sans transition-transform duration-300 ease-out ${
+        className={`absolute top-0 right-0 bottom-0 w-full sm:w-[380px] z-40 flex flex-col bg-slate-900 border-l border-slate-800 shadow-2xl font-sans transition-transform duration-300 ease-out ${
           activePanel !== 'none' && activePanel !== 'settings' ? 'translate-x-0' : 'translate-x-full'
         }`}
       >

@@ -233,21 +233,21 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ sessionId, sessionTitle }) => {
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-white">
+    <div className="w-full h-full flex flex-col bg-slate-900">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shadow-sm">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center border border-emerald-500/25 shadow-sm">
             <FileText size={16} />
           </div>
           <div>
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">Session Notes</h3>
-            <p className="text-[10px] text-slate-400 font-medium">Auto-saves to database</p>
+            <h3 className="text-sm font-black text-white uppercase tracking-wider">Session Notes</h3>
+            <p className="text-[10px] text-slate-500 font-medium">Auto-saves to database</p>
           </div>
         </div>
         <button
           onClick={() => setActivePanel('none')}
-          className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all border-none bg-transparent cursor-pointer"
+          className="p-2 rounded-xl hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-all border-none bg-transparent cursor-pointer"
         >
           <X size={16} />
         </button>
@@ -258,7 +258,7 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ sessionId, sessionTitle }) => {
         {loading ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-3">
             <Loader2 className="animate-spin text-emerald-500" size={24} />
-            <p className="text-xs font-bold text-slate-400">Loading your notes...</p>
+            <p className="text-xs font-bold text-slate-500">Loading your notes...</p>
           </div>
         ) : (
           <>
@@ -284,7 +284,7 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ sessionId, sessionTitle }) => {
               <button
                 onClick={handleExportEmail}
                 disabled={emailSending}
-                className="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-850 disabled:opacity-70 text-white text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-2 border-none cursor-pointer shadow-md active:scale-[0.98] transition-transform"
+                className="flex-1 py-2.5 px-3 rounded-xl bg-brand-primary hover:bg-brand-primary-hover disabled:opacity-70 text-white text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-2 border-none cursor-pointer shadow-md active:scale-[0.98] transition-transform"
                 title="Send formatted notes to your registered email address"
               >
                 {emailSending ? (
@@ -304,17 +304,17 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ sessionId, sessionTitle }) => {
             </div>
 
             {/* Note Area */}
-            <div className="flex-1 relative flex flex-col bg-slate-50 border border-slate-200 rounded-2xl p-4 overflow-hidden focus-within:ring-1 focus-within:ring-emerald-500/50">
+            <div className="flex-1 relative flex flex-col bg-slate-900 border border-slate-700 rounded-2xl p-4 overflow-hidden focus-within:ring-1 focus-within:ring-emerald-500/50">
               <textarea
                 value={notes}
                 onChange={handleNotesChange}
                 placeholder="Start typing your notes here during the session... Use markdown or plain text."
-                className="flex-1 bg-transparent border-none outline-none resize-none text-xs text-slate-800 placeholder-slate-400 font-medium leading-relaxed font-sans"
+                className="flex-1 bg-transparent border-none outline-none resize-none text-xs text-white placeholder-slate-500 font-medium leading-relaxed font-sans"
               />
               {saving && (
-                <div className="absolute bottom-3 right-4 flex items-center gap-1.5 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md border border-slate-100 shadow-sm animate-pulse">
+                <div className="absolute bottom-3 right-4 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-sm px-2 py-1 rounded-md border border-slate-800 shadow-sm animate-pulse">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 font-sans">Auto-saving</span>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 font-sans">Auto-saving</span>
                 </div>
               )}
             </div>

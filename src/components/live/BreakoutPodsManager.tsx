@@ -169,27 +169,27 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
   ];
 
   return (
-    <div className="w-full h-full flex flex-col bg-white">
+    <div className="w-full h-full flex flex-col bg-slate-900">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-3">
-          <Boxes size={16} className="text-emerald-600" />
+          <Boxes size={16} className="text-emerald-400" />
           <h3 className="text-sm font-black text-slate-805 uppercase tracking-wider">Breakout Pods</h3>
-          <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-600 text-[9px] font-black tracking-widest">
+          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-[9px] font-black tracking-widest">
             {pods.length}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowCreate(!showCreate)}
-            className="p-2 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-650 hover:bg-emerald-100 transition-all cursor-pointer"
+            className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/25 text-emerald-500 hover:bg-emerald-500/25 transition-all cursor-pointer"
             title="Create Pod"
           >
             <Plus size={14} />
           </button>
           <button
             onClick={() => setActivePanel('none')}
-            className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all border-none bg-transparent cursor-pointer"
+            className="p-2 rounded-xl hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-all border-none bg-transparent cursor-pointer"
           >
             <X size={16} />
           </button>
@@ -203,7 +203,7 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="border-b border-slate-100 overflow-hidden text-left"
+            className="border-b border-slate-800 overflow-hidden text-left"
           >
             <div className="p-4 space-y-4">
               <input
@@ -211,12 +211,12 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
                 value={podName}
                 onChange={(e) => setPodName(e.target.value)}
                 placeholder="Pod name (e.g., Group A, Table 1)"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-450 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-semibold"
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-450 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-semibold"
               />
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowCreate(false)}
-                  className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:bg-slate-100 transition-all border-none bg-transparent cursor-pointer"
+                  className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-800 transition-all border-none bg-transparent cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -241,11 +241,11 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
           </div>
         ) : pods.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center gap-3 py-12">
-            <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-150 flex items-center justify-center">
-              <Boxes size={24} className="text-slate-400" />
+            <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center">
+              <Boxes size={24} className="text-slate-500" />
             </div>
-            <p className="text-xs font-bold text-slate-500">No breakout pods</p>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            <p className="text-xs font-bold text-slate-400">No breakout pods</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
               Create pods for group activities
             </p>
           </div>
@@ -253,24 +253,24 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
           <div className="space-y-4">
             {/* Parent Room / Main Room */}
             {parentMeeting && (
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                    <h4 className="text-xs font-black text-slate-800">Main Room</h4>
+                    <h4 className="text-xs font-black text-white">Main Room</h4>
                   </div>
-                  <span className="text-[10px] font-bold text-slate-400">
+                  <span className="text-[10px] font-bold text-slate-500">
                     {parentMeeting.participants?.length || 0} online
                   </span>
                 </div>
                 {/* List participants in main room */}
                 <div className="space-y-1.5 pt-1">
                   {(parentMeeting.participants || []).map((p: any) => (
-                    <div key={p.id} className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-xl border border-slate-150 text-[11px]">
-                      <span className="font-bold text-slate-700 truncate">{p.displayName}</span>
+                    <div key={p.id} className="flex items-center justify-between bg-slate-900 px-2.5 py-1.5 rounded-xl border border-slate-800 text-[11px]">
+                      <span className="font-bold text-slate-200 truncate">{p.displayName}</span>
                       <button
                         onClick={() => setMovingParticipantId(movingParticipantId === p.id ? null : p.id)}
-                        className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-emerald-600 transition-colors border-none bg-transparent cursor-pointer"
+                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-emerald-400 transition-colors border-none bg-transparent cursor-pointer"
                         title="Move to another room"
                       >
                         <ArrowRightLeft size={12} />
@@ -287,23 +287,23 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
                 key={pod.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 hover:border-emerald-500/20 transition-all"
+                className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-3 hover:border-emerald-500/20 transition-all"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center">
-                      <Boxes size={14} className="text-emerald-600" />
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                      <Boxes size={14} className="text-emerald-400" />
                     </div>
                     <div>
                       <h4 className="text-xs font-black text-slate-805">{pod.title}</h4>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
                         {pod.participants?.length || 0} participants
                       </p>
                     </div>
                   </div>
                   <button
                     onClick={() => handleClose(pod)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all border-none bg-transparent cursor-pointer"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-500 hover:bg-red-500/15 transition-all border-none bg-transparent cursor-pointer"
                     title="Close Pod"
                   >
                     <Trash2 size={12} />
@@ -313,11 +313,11 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
                 {/* List participants in this pod */}
                 <div className="space-y-1.5">
                   {(pod.participants || []).map((p: any) => (
-                    <div key={p.id} className="flex items-center justify-between bg-white px-2.5 py-1.5 rounded-xl border border-slate-150 text-[11px]">
-                      <span className="font-bold text-slate-700 truncate">{p.displayName}</span>
+                    <div key={p.id} className="flex items-center justify-between bg-slate-900 px-2.5 py-1.5 rounded-xl border border-slate-800 text-[11px]">
+                      <span className="font-bold text-slate-200 truncate">{p.displayName}</span>
                       <button
                         onClick={() => setMovingParticipantId(movingParticipantId === p.id ? null : p.id)}
-                        className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-emerald-600 transition-colors border-none bg-transparent cursor-pointer"
+                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-emerald-400 transition-colors border-none bg-transparent cursor-pointer"
                         title="Move to another room"
                       >
                         <ArrowRightLeft size={12} />
@@ -330,7 +330,7 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
                 {onNavigateToPod && (
                   <button
                     onClick={() => onNavigateToPod(pod.title)}
-                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-650 text-[10px] font-bold hover:bg-emerald-100 transition-all cursor-pointer"
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/25 text-emerald-500 text-[10px] font-bold hover:bg-emerald-500/25 transition-all cursor-pointer"
                   >
                     <ArrowRight size={12} /> Join Pod
                   </button>
@@ -348,13 +348,13 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 50 }}
-            className="absolute inset-x-0 bottom-0 bg-white border-t border-slate-200 rounded-t-3xl shadow-2xl p-5 z-50 text-left"
+            className="absolute inset-x-0 bottom-0 bg-slate-900 border-t border-slate-700 rounded-t-3xl shadow-2xl p-5 z-50 text-left"
           >
             <div className="flex items-center justify-between mb-4">
-              <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">Move Participant</h4>
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-200">Move Participant</h4>
               <button
                 onClick={() => setMovingParticipantId(null)}
-                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors border-none bg-transparent cursor-pointer"
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-colors border-none bg-transparent cursor-pointer"
               >
                 <X size={14} />
               </button>
@@ -374,14 +374,14 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
 
                 return (
                   <>
-                    <p className="text-xs font-bold text-slate-500 mb-3">
-                      Move <span className="text-slate-800 font-extrabold">{targetUser.displayName}</span> from <span className="text-slate-800 font-bold">{targetUser.meetingTitle}</span> to:
+                    <p className="text-xs font-bold text-slate-400 mb-3">
+                      Move <span className="text-white font-extrabold">{targetUser.displayName}</span> from <span className="text-white font-bold">{targetUser.meetingTitle}</span> to:
                     </p>
                     {rooms.map(room => (
                       <button
                         key={room.id}
                         onClick={() => handleMoveParticipant(targetUser.id!, room.id!, targetUser.meetingId!)}
-                        className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-250 hover:text-emerald-700 text-left text-xs font-black uppercase tracking-wider text-slate-700 transition-all cursor-pointer"
+                        className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-slate-900 hover:bg-emerald-500/15 border border-slate-700 hover:border-emerald-400 hover:text-emerald-300 text-left text-xs font-black uppercase tracking-wider text-slate-200 transition-all cursor-pointer"
                       >
                         <span>{room.title}</span>
                         <UserPlus size={14} />
@@ -397,10 +397,10 @@ const BreakoutPodsManager: React.FC<BreakoutPodsManagerProps> = ({
 
       {/* Footer Actions */}
       {pods.length > 0 && (
-        <div className="px-4 pb-4 pt-2 border-t border-slate-100 shrink-0">
+        <div className="px-4 pb-4 pt-2 border-t border-slate-800 shrink-0">
           <button
             onClick={handleCloseAll}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 border border-red-100 text-red-500 text-xs font-bold hover:bg-red-100 transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-500/15 border border-red-500/25 text-red-500 text-xs font-bold hover:bg-red-500/25 transition-all cursor-pointer"
           >
             <Megaphone size={14} /> Close All Breakouts
           </button>

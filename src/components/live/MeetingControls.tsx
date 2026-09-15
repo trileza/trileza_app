@@ -90,16 +90,16 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ userRole }) => {
       onClick={onClick}
       className={`relative px-4 py-3 rounded-2xl flex items-center justify-center gap-2.5 transition-all duration-200 text-xs font-black uppercase tracking-wider border shadow-sm cursor-pointer shrink-0 ${
         danger
-          ? 'bg-red-500 border-transparent text-white hover:bg-red-650'
+          ? 'bg-red-500 border-transparent text-white hover:bg-red-600'
           : active
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100/70'
-            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+            ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/70'
+            : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
       } ${className || ''}`}
     >
       <span className="shrink-0">{icon}</span>
       <span className="hidden lg:inline shrink-0">{label}</span>
       {badge !== undefined && badge > 0 && (
-        <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-emerald-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border border-white">
+        <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-emerald-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border border-slate-800">
           {badge > 9 ? '9+' : badge}
         </span>
       )}
@@ -120,13 +120,13 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ userRole }) => {
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute bottom-[calc(100%+12px)] bg-white border border-slate-200 rounded-3xl p-3 flex gap-2.5 shadow-2xl z-[9999] reactions-popup-container"
+              className="absolute bottom-[calc(100%+12px)] bg-slate-900 border border-slate-700 rounded-3xl p-3 flex gap-2.5 shadow-2xl z-[9999] reactions-popup-container"
             >
               {reactions.map((emoji) => (
                 <button
                   key={emoji}
                   onClick={() => handleReaction(emoji)}
-                  className="w-11 h-11 rounded-2xl hover:bg-slate-100 flex items-center justify-center text-2xl transition-all hover:scale-125 border-none cursor-pointer bg-transparent"
+                  className="w-11 h-11 rounded-2xl hover:bg-slate-800 flex items-center justify-center text-2xl transition-all hover:scale-125 border-none cursor-pointer bg-transparent"
                 >
                   {emoji}
                 </button>
@@ -135,7 +135,7 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ userRole }) => {
           )}
         </AnimatePresence>
 
-        <div className="bg-white border border-slate-200 rounded-[2.5rem] px-4 py-3 shadow-2xl flex items-center gap-2.5 sm:gap-3 flex-wrap justify-center max-w-full overflow-x-auto lg:overflow-visible no-scrollbar">
+        <div className="bg-slate-900 border border-slate-700 rounded-[2.5rem] px-4 py-3 shadow-2xl flex items-center gap-2.5 sm:gap-3 flex-wrap justify-center max-w-full overflow-x-auto lg:overflow-visible no-scrollbar">
           {/* Mic */}
           <ControlButton
             onClick={toggleMute}
@@ -161,7 +161,7 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ userRole }) => {
           />
 
           {/* Divider */}
-          <div className="w-px h-8 bg-slate-200 mx-1 hidden lg:block" />
+          <div className="w-px h-8 bg-slate-800 mx-1 hidden lg:block" />
 
           {/* Raise Hand */}
           <ControlButton
@@ -207,7 +207,7 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ userRole }) => {
           />
 
           {/* Divider */}
-          <div className="w-px h-8 bg-slate-200 mx-1 hidden lg:block" />
+          <div className="w-px h-8 bg-slate-800 mx-1 hidden lg:block" />
 
           {/* Fullscreen Toggle */}
           <ControlButton
@@ -223,7 +223,7 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ userRole }) => {
               <ControlButton
                 onClick={handleRecordClick}
                 active={isRecording}
-                icon={<Circle size={16} fill={isRecording ? '#ef4444' : 'none'} className={isRecording ? 'text-red-500 animate-pulse' : 'text-slate-500'} />}
+                icon={<Circle size={16} fill={isRecording ? '#ef4444' : 'none'} className={isRecording ? 'text-red-500 animate-pulse' : 'text-slate-400'} />}
                 label={
                   recordingState === 'STARTING' ? 'Starting...' :
                   recordingState === 'RECORDING' ? 'Stop Rec' :
@@ -261,14 +261,14 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ userRole }) => {
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute bottom-full mb-3 right-0 bg-white border border-slate-200 rounded-2xl p-2 min-w-[180px] shadow-2xl text-left z-50"
+                      className="absolute bottom-full mb-3 right-0 bg-slate-900 border border-slate-700 rounded-2xl p-2 min-w-[180px] shadow-2xl text-left z-50"
                     >
                       <button
                         onClick={() => { muteAll(); setShowMore(false); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 text-left transition-colors border-none bg-transparent cursor-pointer"
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-left transition-colors border-none bg-transparent cursor-pointer"
                       >
                         <VolumeX size={16} className="text-amber-500" />
-                        <span className="text-xs font-black uppercase tracking-wider text-slate-700">Mute All</span>
+                        <span className="text-xs font-black uppercase tracking-wider text-slate-200">Mute All</span>
                       </button>
                       <button
                         onClick={() => {
@@ -276,11 +276,11 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ userRole }) => {
                           useMeetingStore.setState({ isRoomLocked: !isRoomLocked });
                           setShowMore(false);
                         }}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 text-left transition-colors border-none bg-transparent cursor-pointer"
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-left transition-colors border-none bg-transparent cursor-pointer"
                       >
                         {isRoomLocked
-                          ? <><Unlock size={16} className="text-emerald-500" /><span className="text-xs font-black uppercase tracking-wider text-slate-700">Unlock Room</span></>
-                          : <><Lock size={16} className="text-amber-500" /><span className="text-xs font-black uppercase tracking-wider text-slate-700">Lock Room</span></>
+                          ? <><Unlock size={16} className="text-emerald-500" /><span className="text-xs font-black uppercase tracking-wider text-slate-200">Unlock Room</span></>
+                          : <><Lock size={16} className="text-amber-500" /><span className="text-xs font-black uppercase tracking-wider text-slate-200">Lock Room</span></>
                         }
                       </button>
                     </motion.div>

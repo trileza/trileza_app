@@ -69,12 +69,12 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       className="absolute top-0 left-0 right-0 z-30 p-3 sm:p-4 font-sans"
     >
-      <div className="flex items-center justify-between bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-lg">
+      <div className="flex items-center justify-between bg-slate-900/80 backdrop-blur-xl border border-slate-800 rounded-2xl px-4 py-3 shadow-lg">
         {/* Left: Back + Minimize + Logo + Title */}
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onBack}
-            className="p-2 bg-slate-50 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl transition-all active:scale-90 shrink-0"
+            className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition-all active:scale-90 shrink-0"
             title="Leave meeting"
           >
             <ChevronLeft size={16} />
@@ -82,17 +82,17 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
           {onMinimize && (
             <button
               onClick={onMinimize}
-              className="p-2 bg-slate-50 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl transition-all active:scale-90 shrink-0"
+              className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition-all active:scale-90 shrink-0"
               title="Minimize to PiP"
             >
               <Minimize2 size={16} />
             </button>
           )}
-          <img src="/icon-192.png" className="h-8 object-contain shrink-0 hidden sm:block" alt="Trileza Logo" />
+          <img src="/icon-192.png" className="h-8 object-contain shrink-0 hidden sm:block" alt="Trileza" />
           <div className="min-w-0">
-            <h2 className="text-sm font-black text-slate-800 truncate flex items-center gap-2">
+            <h2 className="text-sm font-black text-white truncate flex items-center gap-2">
               {sessionTitle || 'Live Classroom'}
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-[8px] font-black tracking-widest uppercase shrink-0">
+              <span className="px-2 py-0.5 rounded-full bg-brand-secondary/15 border border-brand-secondary/30 text-brand-accent text-[8px] font-black tracking-widest uppercase shrink-0">
                 Live
               </span>
             </h2>
@@ -103,7 +103,7 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* Screen Share Indicator */}
           {activeScreenShareParticipantId && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-500">
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-300">
               <Monitor size={12} />
               <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">
                 Sharing
@@ -117,9 +117,9 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
               animate={{ opacity: isRecording ? [1, 0.5, 1] : 1 }}
               transition={{ duration: 1.5, repeat: isRecording ? Infinity : 0 }}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border ${
-                recordingState === 'STARTING' ? 'bg-amber-50 border-amber-100 text-amber-500' :
-                recordingState === 'STOPPING' ? 'bg-slate-50 border-slate-200 text-slate-500' :
-                'bg-red-50 border-red-100 text-red-500'
+                recordingState === 'STARTING' ? 'bg-amber-500/15 border-amber-500/30 text-amber-300' :
+                recordingState === 'STOPPING' ? 'bg-slate-800/80 border-slate-700 text-slate-400' :
+                'bg-red-500/15 border-red-500/30 text-red-300'
               }`}
             >
               <Circle size={8} fill={isRecording ? '#ef4444' : recordingState === 'STARTING' ? '#f59e0b' : '#94a3b8'} className={isRecording ? 'text-red-500' : ''} />
@@ -130,24 +130,24 @@ const MeetingHeader: React.FC<MeetingHeaderProps> = ({ sessionTitle, onBack, onM
           )}
 
           {/* Lock Status */}
-          <div className={`p-2 border rounded-xl ${isRoomLocked ? 'bg-amber-50 border-amber-100 text-amber-500' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
+          <div className={`p-2 border rounded-xl ${isRoomLocked ? 'bg-amber-500/15 border-amber-500/30 text-amber-300' : 'bg-slate-800/80 border-slate-700 text-slate-500'}`}>
             {isRoomLocked ? <Lock size={12} /> : <Unlock size={12} />}
           </div>
 
           {/* Timer */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700">
-            <Clock size={12} className="text-slate-400" />
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-100">
+            <Clock size={12} className="text-slate-500" />
             <span className="text-xs font-black tabular-nums">{elapsed}</span>
           </div>
 
           {/* Participants */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700">
-            <Users size={12} className="text-emerald-600" />
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-100">
+            <Users size={12} className="text-brand-accent" />
             <span className="text-xs font-black">{participantCount}</span>
           </div>
 
           {/* Connection Quality */}
-          <div className={`p-2 border rounded-xl bg-slate-50 border-slate-200 ${qualityColor}`}>
+          <div className={`p-2 border rounded-xl bg-slate-800/80 border-slate-700 ${qualityColor}`}>
             {qualityIcon}
           </div>
 

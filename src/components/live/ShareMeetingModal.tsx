@@ -118,7 +118,8 @@ const ShareMeetingModal: React.FC<ShareMeetingModalProps> = ({
     {
       name: 'LinkedIn',
       icon: Linkedin,
-      color: 'bg-indigo-650 hover:bg-indigo-700 text-white',
+      // indigo-650 is not a Tailwind shade, so this button had no background.
+      color: 'bg-indigo-600 hover:bg-indigo-700 text-white',
       url: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`,
     },
     {

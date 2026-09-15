@@ -43,10 +43,10 @@ const ParticipantsPanel: React.FC<ParticipantsPanelProps> = ({ userRole }) => {
 
   const RoleBadge: React.FC<{ role: string }> = ({ role }) => {
     const config = {
-      teacher: { icon: Crown, color: 'text-amber-600 bg-amber-50 border-amber-100', label: 'Teacher' },
-      moderator: { icon: Shield, color: 'text-blue-600 bg-blue-50 border-blue-100', label: 'Mod' },
-      student: { icon: GraduationCap, color: 'text-slate-500 bg-slate-50 border-slate-200', label: 'Student' },
-    }[role] || { icon: GraduationCap, color: 'text-slate-500 bg-slate-50 border-slate-200', label: role };
+      teacher: { icon: Crown, color: 'text-amber-400 bg-amber-500/15 border-amber-500/25', label: 'Teacher' },
+      moderator: { icon: Shield, color: 'text-blue-400 bg-blue-500/15 border-blue-500/25', label: 'Mod' },
+      student: { icon: GraduationCap, color: 'text-slate-400 bg-slate-900 border-slate-700', label: 'Student' },
+    }[role] || { icon: GraduationCap, color: 'text-slate-400 bg-slate-900 border-slate-700', label: role };
 
     const Icon = config.icon;
     return (
@@ -59,48 +59,48 @@ const ParticipantsPanel: React.FC<ParticipantsPanelProps> = ({ userRole }) => {
 
   return (
     <div
-      className="w-full h-full flex flex-col bg-white"
+      className="w-full h-full flex flex-col bg-slate-900"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-3">
           <h3 className="text-sm font-black text-slate-805 uppercase tracking-wider">Participants</h3>
-          <span className="px-2 py-0.5 rounded-full bg-emerald-555 bg-emerald-50 border border-emerald-100 text-emerald-605 text-[9px] font-black tracking-widest">
+          <span className="px-2 py-0.5 rounded-full bg-emerald-555 bg-emerald-500/15 border border-emerald-500/25 text-emerald-605 text-[9px] font-black tracking-widest">
             {participants.length}
           </span>
         </div>
         <button
           onClick={() => setActivePanel('none')}
-          className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all border-none bg-transparent cursor-pointer"
+          className="p-2 rounded-xl hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-all border-none bg-transparent cursor-pointer"
         >
           <X size={16} />
         </button>
       </div>
 
       {/* Search */}
-      <div className="px-4 py-3 border-b border-slate-100 shrink-0">
-        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+      <div className="px-4 py-3 border-b border-slate-800 shrink-0">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2">
           <Search size={14} className="text-slate-405" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search participants..."
-            className="flex-1 bg-transparent border-none outline-none text-xs text-slate-800 placeholder-slate-455"
+            className="flex-1 bg-transparent border-none outline-none text-xs text-white placeholder-slate-455"
           />
         </div>
       </div>
 
       {/* Lobby Requests (Moderator Only) */}
       {isTeacher && lobbyRequests && lobbyRequests.length > 0 && (
-        <div className="px-4 py-3 bg-emerald-50/50 border-b border-slate-200 space-y-2 shrink-0 text-left">
-          <p className="text-[10px] font-black text-emerald-655 text-emerald-600 uppercase tracking-widest flex items-center gap-1.5 animate-pulse">
+        <div className="px-4 py-3 bg-emerald-500/50 border-b border-slate-700 space-y-2 shrink-0 text-left">
+          <p className="text-[10px] font-black text-emerald-655 text-emerald-400 uppercase tracking-widest flex items-center gap-1.5 animate-pulse">
             <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" /> Join Requests ({lobbyRequests.length})
           </p>
           <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
             {lobbyRequests.map((req) => (
-              <div key={req.id} className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-150 gap-2 shadow-sm">
-                <span className="text-xs font-bold text-slate-800 truncate">{req.displayName}</span>
+              <div key={req.id} className="flex items-center justify-between bg-slate-900 p-2.5 rounded-xl border border-slate-800 gap-2 shadow-sm">
+                <span className="text-xs font-bold text-white truncate">{req.displayName}</span>
                 <div className="flex gap-1 shrink-0">
                   <button
                     onClick={() => approveLobby(req.id)}
@@ -110,7 +110,7 @@ const ParticipantsPanel: React.FC<ParticipantsPanelProps> = ({ userRole }) => {
                   </button>
                   <button
                     onClick={() => rejectLobby(req.id)}
-                    className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-[9px] font-black uppercase tracking-wider border border-slate-200 cursor-pointer"
+                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-800 text-slate-300 text-[9px] font-black uppercase tracking-wider border border-slate-700 cursor-pointer"
                   >
                     Decline
                   </button>
@@ -138,19 +138,19 @@ const ParticipantsPanel: React.FC<ParticipantsPanelProps> = ({ userRole }) => {
               className="group"
             >
               <div className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${
-                expandedId === p.id ? 'bg-slate-50' : 'hover:bg-slate-105 hover:bg-slate-50/50'
-              } ${p.isDominantSpeaker ? 'ring-1 ring-emerald-500/30 bg-emerald-50/10' : ''}`}>
+                expandedId === p.id ? 'bg-slate-900' : 'hover:bg-slate-105 hover:bg-slate-900/50'
+              } ${p.isDominantSpeaker ? 'ring-1 ring-emerald-500/30 bg-emerald-500/10' : ''}`}>
                 {/* Avatar */}
                 <div className="relative shrink-0">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center border overflow-hidden ${
                     p.isDominantSpeaker
-                      ? 'bg-emerald-50 border-emerald-200'
-                      : 'bg-slate-50 border-slate-200'
+                      ? 'bg-emerald-500/15 border-emerald-500/30'
+                      : 'bg-slate-900 border-slate-700'
                   }`}>
                     {p.avatarUrl ? (
                       <img src={p.avatarUrl} alt={p.displayName} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-sm font-black text-emerald-600">
+                      <span className="text-sm font-black text-emerald-400">
                         {p.displayName?.charAt(0)?.toUpperCase() || '?'}
                       </span>
                     )}
@@ -169,15 +169,15 @@ const ParticipantsPanel: React.FC<ParticipantsPanelProps> = ({ userRole }) => {
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-slate-800 truncate">{p.displayName}</span>
+                    <span className="text-xs font-black text-white truncate">{p.displayName}</span>
                     <RoleBadge role={p.role} />
                   </div>
                   {/* Status indicators */}
                   <div className="flex items-center gap-2 mt-1">
-                    <span className={`${p.isMuted ? 'text-red-500' : 'text-emerald-555 text-emerald-600'}`}>
+                    <span className={`${p.isMuted ? 'text-red-500' : 'text-emerald-555 text-emerald-400'}`}>
                       {p.isMuted ? <MicOff size={10} /> : <Mic size={10} />}
                     </span>
-                    <span className={`${!p.isCameraOn ? 'text-red-555 text-red-500' : 'text-emerald-555 text-emerald-600'}`}>
+                    <span className={`${!p.isCameraOn ? 'text-red-555 text-red-500' : 'text-emerald-555 text-emerald-400'}`}>
                       {p.isCameraOn ? <Video size={10} /> : <VideoOff size={10} />}
                     </span>
                     {p.isScreenSharing && (
@@ -190,7 +190,7 @@ const ParticipantsPanel: React.FC<ParticipantsPanelProps> = ({ userRole }) => {
                 {isTeacher && (
                   <button
                     onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
-                    className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 opacity-0 group-hover:opacity-100 transition-all border-none bg-transparent cursor-pointer"
+                    className="p-2 rounded-xl hover:bg-slate-800 text-slate-500 hover:text-slate-200 opacity-0 group-hover:opacity-100 transition-all border-none bg-transparent cursor-pointer"
                   >
                     <MoreVertical size={14} />
                   </button>
@@ -207,13 +207,13 @@ const ParticipantsPanel: React.FC<ParticipantsPanelProps> = ({ userRole }) => {
                 >
                   <button
                     onClick={() => muteParticipant(p.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-100 text-amber-600 text-[10px] font-bold hover:bg-amber-100 transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/25 text-amber-400 text-[10px] font-bold hover:bg-amber-500/25 transition-all cursor-pointer"
                   >
                     <Volume2 size={12} /> Mute
                   </button>
                   <button
                     onClick={() => spotlightParticipant(p.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-600 text-[10px] font-bold hover:bg-emerald-100 transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-[10px] font-bold hover:bg-emerald-500/25 transition-all cursor-pointer"
                   >
                     <Star size={12} /> Spotlight
                   </button>
@@ -230,14 +230,14 @@ const ParticipantsPanel: React.FC<ParticipantsPanelProps> = ({ userRole }) => {
                         }
                         setParticipantHandRaise(p.id, false);
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-100 text-amber-600 text-[10px] font-bold hover:bg-amber-100 transition-all cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/25 text-amber-400 text-[10px] font-bold hover:bg-amber-500/25 transition-all cursor-pointer"
                     >
                       <HandMetal size={12} /> Lower Hand
                     </button>
                   )}
                   <button
                     onClick={() => { kickParticipant(p.id); setExpandedId(null); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 border border-red-100 text-red-500 text-[10px] font-bold hover:bg-red-100 transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/25 text-red-500 text-[10px] font-bold hover:bg-red-500/25 transition-all cursor-pointer"
                   >
                     <UserX size={12} /> Remove
                   </button>
