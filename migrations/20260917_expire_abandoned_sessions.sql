@@ -126,14 +126,29 @@ SELECT expire_abandoned_sessions(5);
 -- NOTES
 -- =============================================================================
 --
--- Clients call expire_abandoned_sessions() when they load a list of live
--- sessions, and touch_session_heartbeat() while they are in a room. That makes
--- the sweep self-healing without scheduled infrastructure: the moment anyone
--- looks at the Community hub, stale rooms are cleared.
+-- Expiry runs from two directions, so neither has to be reliable alone:
 --
--- If InsForge scheduled jobs become available, calling this every few minutes
--- would close the remaining gap — a stale session currently persists until the
--- next person loads the page, which is invisible to users but leaves the row
--- inaccurate for reporting in the meantime.
+--   1. An InsForge schedule calls this RPC every two minutes. That is the one
+--      that matters, because it runs whether or not anybody is using the app —
+--      a host whose tab crashed leaves nothing behind to trigger a sweep.
+--      Created with:
+--
+--        insforge schedules create --name expire-abandoned-live-sessions \
+--          --cron "*/2 * * * *" --method POST \
+--          --url "<project>/api/database/rpc/expire_abandoned_sessions" \
+--          --headers '{"Authorization":"Bearer <anon key>","Content-Type":"application/json"}' \
+--          --body '{"p_grace_minutes":3}'
+--
+--      The anon key is enough: the function is SECURITY DEFINER and only ever
+--      closes sessions that are already provably finished.
+--
+--   2. Clients call it when they list live sessions, and touch
+--      touch_session_heartbeat() while they are in a room. This keeps the hub
+--      accurate the instant someone looks at it, and covers any window where
+--      the schedule is paused or failing.
+--
+-- The grace period is 3 minutes on the schedule against a default of 5, since
+-- a sweep every 2 minutes can afford to be tighter than one that might not run
+-- again until somebody opens the page.
 --
 -- =============================================================================

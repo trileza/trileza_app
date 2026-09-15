@@ -270,7 +270,35 @@ who has the link, whether they paid or not.
 the `VITE_` values, so the build can embed them, plus `SITE_URL` — the public
 origin, which edge functions use to build links in outgoing email.
 
-## 5. Run it
+## 5. Scheduled jobs
+
+One schedule is required. Live sessions are closed by a server-side sweep, and
+without it a room whose host crashed or closed their tab stays listed as "Live
+Now" with nobody in it:
+
+```bash
+insforge schedules create \
+  --name "expire-abandoned-live-sessions" \
+  --cron "*/2 * * * *" \
+  --method POST \
+  --url "$INSFORGE_URL/api/database/rpc/expire_abandoned_sessions" \
+  --headers '{"Authorization":"Bearer <anon key>","Content-Type":"application/json"}' \
+  --body '{"p_grace_minutes":3}'
+```
+
+The anon key is sufficient — `expire_abandoned_sessions` is `SECURITY DEFINER`
+and only ever closes sessions that are already over their time limit or have
+had no heartbeat past the grace period, so calling it can do no harm.
+
+Clients also run the same sweep whenever they list sessions, which keeps the
+hub accurate the moment someone looks at it. The schedule is what covers the
+case where *nobody* is looking — which is exactly when an abandoned room would
+otherwise sit there.
+
+Check it with `insforge schedules list`, and `insforge schedules logs <id>` for
+execution history.
+
+## 6. Run it
 
 ```bash
 npm install
@@ -285,8 +313,9 @@ npm run build:admin    # admin console bundle
 2. Run the migrations against the new project (step 2)
 3. Create the storage buckets (step 3)
 4. Re-add every server-side secret (step 4) — these do not travel with the project
-5. Update the same values on the hosting platform
-6. Rotate the credentials of the account you left
+5. Recreate the schedules (step 5) — these do not travel either
+6. Update the same values on the hosting platform
+7. Rotate the credentials of the account you left
 
 Data does **not** move between projects automatically. If the old account holds
 real users, courses or payments, plan an export/import before cutting over —
