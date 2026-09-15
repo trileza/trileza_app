@@ -163,6 +163,35 @@ BUNNY_PULL_ZONE         BUNNY_TOKEN_KEY         CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_APP_ID       CLOUDFLARE_API_TOKEN
 ```
 
+`insforge secrets list` shows what is set. A fresh project lists only
+platform-reserved keys (`JWT_*`, `ANON_KEY`, `API_KEY`, `INSFORGE_BASE_URL`);
+every name above that is absent must be added, or the feature it serves fails
+at the moment a user reaches it:
+
+| Missing | Breaks |
+|---|---|
+| `CLOUDFLARE_*` | live sessions — "credentials are not configured" |
+| `BUNNY_*` | course video upload and playback |
+| `PAYSTACK_SECRET_KEY` | payouts, subaccounts, webhook verification |
+| `SMTP_PASSWORD` | verification email — **signup cannot complete** |
+
+Secrets do not travel between projects. Deploying the functions is separate
+again: `insforge functions list` on a new project returns "No functions found"
+until they are pushed, and an app calling a function that was never deployed
+fails with a network error rather than a 404 (see below).
+
+### Functions are served from a different host
+
+The SDK derives the functions host as `{appKey}.functions.insforge.app`, but
+this project's are served from `{appKey}.function2.insforge.app` — the value
+`GET /api/functions` returns as `deploymentUrl`. [src/lib/nexus.ts](src/lib/nexus.ts)
+overrides it for that reason.
+
+A wrong functions host does not look like a wrong host. The dead one answers
+404 with no CORS headers, so `fetch()` reports a network failure and the app
+shows *"Network request failed: Failed to fetch"* — which reads as the backend
+being down. Check `deploymentUrl` before chasing connectivity.
+
 ### Bunny Stream uses three different secrets
 
 This trips people up, because all three are called "the key" somewhere in
