@@ -49,7 +49,8 @@ const ORDER = [
   ['20260907000000', 'mentor-kyc',                 '20260907_mentor_kyc.sql'],
   ['20260908000000', 'institution-kyc',            '20260908_institution_kyc.sql'],
   ['20260913000000', 'logic-fixes',                '20260913_logic_fixes.sql'],
-  ['20260914000000', 'core-schema-and-tenancy',    '20260914_core_schema_and_tenancy.sql']
+  ['20260914000000', 'core-schema-and-tenancy',    '20260914_core_schema_and_tenancy.sql'],
+  ['20260915000000', 'storage-rls',                '20260915_storage_rls.sql']
 ];
 
 if (!BASE || !KEY) {
