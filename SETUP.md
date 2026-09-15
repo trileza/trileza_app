@@ -180,6 +180,55 @@ again: `insforge functions list` on a new project returns "No functions found"
 until they are pushed, and an app calling a function that was never deployed
 fails with a network error rather than a 404 (see below).
 
+### Cloudflare RealtimeKit
+
+Live sessions need a RealtimeKit app. **Create it in the dashboard**, not
+through the API: a dashboard-created app is provisioned with the default
+presets, and [dyte-meeting](supabase/functions/dyte-meeting/index.ts) asks for
+two of them by name — `group_call_host` and `group_call_participant`. An app
+created by API has no presets, and the failure surfaces only when somebody
+tries to join.
+
+The three values can all be read back with a Realtime-scoped token, so there is
+no need to hunt through the dashboard:
+
+```bash
+T=<api token>   # My Profile -> API Tokens -> Realtime / Realtime Admin
+A=<account id>  # right sidebar of any dashboard page, or the URL after /accounts/
+
+# CLOUDFLARE_APP_ID — the `id` of the app you want
+curl -s -H "Authorization: Bearer $T" \
+  "https://api.cloudflare.com/client/v4/accounts/$A/realtime/kit/apps"
+
+# confirm the presets the function depends on exist
+curl -s -H "Authorization: Bearer $T" \
+  "https://api.cloudflare.com/client/v4/accounts/$A/realtime/kit/<app id>/presets"
+```
+
+A Realtime-scoped token cannot list accounts (`/accounts` returns an empty
+array) — that is correct scoping, not a broken token. Verify it with
+`/user/tokens/verify`, which works regardless of scope.
+
+Worth a preflight before wiring the app up, since it isolates a Cloudflare-side
+problem from an InsForge-side one:
+
+```bash
+B="https://api.cloudflare.com/client/v4/accounts/$A/realtime/kit/<app id>"
+curl -s -X POST "$B/meetings" -H "Authorization: Bearer $T" \
+  -H "Content-Type: application/json" -d '{"title":"preflight"}'
+curl -s -X POST "$B/meetings/<meeting id>/participants" -H "Authorization: Bearer $T" \
+  -H "Content-Type: application/json" \
+  -d '{"preset_name":"group_call_host","name":"preflight"}'
+```
+
+The second call returning a `token` means the whole chain works. Deactivate the
+test meeting afterwards with `PATCH $B/meetings/<id>` and `{"status":"INACTIVE"}`.
+
+Meeting ids are stored per session in `live_sessions.dyte_meeting_id` and belong
+to the app that created them. Moving to a different Cloudflare account orphans
+every existing meeting id, so scheduled sessions from the old account stop
+resolving — check `SELECT count(*) FROM live_sessions` before switching.
+
 ### Functions are served from a different host
 
 The SDK derives the functions host as `{appKey}.functions.insforge.app`, but
