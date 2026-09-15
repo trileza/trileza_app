@@ -5,17 +5,23 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { cn, executeWithAutoRefresh } from '../../utils';
 import { Card, Button } from '../../components/ui';
-import { useAuthStore } from '../../store/authStore';
+import { useAuthStore, canHostLiveSessions } from '../../store/authStore';
 import { liveService } from '../../lib/services/live';
 import type { LiveSession } from '../../lib/services/live';
 import { Toast } from '../../components/ui/Toast';
 import { PageHeader } from '../../components/shared';
 import ShareMeetingModal from '../../components/live/ShareMeetingModal';
-import { nexus } from '../../lib/nexus';
+import { nexus, errorMessage } from '../../lib/nexus';
 
 const LiveStudio: React.FC = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+
+  // The backend refuses create_meeting for anyone who cannot teach. Without
+  // this the page offered a full broadcast console to every mentee and only
+  // revealed the problem after they had filled the form, uploaded a
+  // thumbnail and pressed Launch.
+  const canHost = canHostLiveSessions(user);
   
   const [scheduledSessions, setScheduledSessions] = useState<LiveSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,7 +199,10 @@ const LiveStudio: React.FC = () => {
       }
     } catch (err: any) {
       console.error('[LiveStudio] Scheduling failed:', err);
-      setToast({ message: `Failed to create session: ${err.message || err.toString()}`, type: 'info' });
+      setToast({
+        message: `Failed to create session: ${errorMessage(err, 'please try again')}`,
+        type: 'info'
+      });
     }
   };
 
@@ -224,9 +233,34 @@ const LiveStudio: React.FC = () => {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-         {/* Studio Broadcasting Desk Form */}
+         {!canHost ? (
+           /* Mentees can join sessions but not create them, so they get the
+              reason and a way forward instead of a form that 403s. */
+           <Card className="lg:col-span-7 bg-white p-8 lg:p-10 rounded-[3rem] border border-slate-200 text-slate-900 shadow-xl text-left space-y-5">
+             <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+               <Radio size={24} />
+             </div>
+             <div className="space-y-2">
+               <h2 className="text-xl font-black text-slate-800 tracking-tight">
+                 Hosting is for mentors
+               </h2>
+               <p className="text-slate-500 text-sm leading-relaxed">
+                 Your account is set up as a mentee, so you can join any live session
+                 you are invited to — but creating and broadcasting one needs an
+                 approved mentor profile.
+               </p>
+             </div>
+             <Button
+               onClick={() => navigate('/mentor/onboarding')}
+               className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-widest px-6 py-3 rounded-xl border-none"
+             >
+               Become a mentor
+             </Button>
+           </Card>
+         ) : (
+         /* Studio Broadcasting Desk Form */
          <Card className="lg:col-span-7 bg-white p-5 md:p-8 lg:p-10 rounded-[3rem] border border-slate-200 text-slate-900 shadow-xl relative overflow-hidden">
-            
+
             <div className="space-y-2 border-b border-slate-100 pb-6 mb-6 text-left">
               <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
                 <Video className="text-emerald-600 animate-pulse" /> Online Setup
@@ -353,6 +387,7 @@ const LiveStudio: React.FC = () => {
                 </div>
             </form>
          </Card>
+         )}
 
          {/* Scheduled Nodes Management */}
           <Card className="lg:col-span-5 p-5 md:p-8 lg:p-10 rounded-[3rem] border border-slate-200 shadow-xl space-y-6 bg-white text-slate-900">

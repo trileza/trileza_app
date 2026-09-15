@@ -88,6 +88,34 @@ export const nexus = createClient({
 });
 
 /**
+ * The most useful human-readable text an InsForge failure carries.
+ *
+ * `InsForgeError` holds four fields — message, error, statusCode, nextActions —
+ * and which one is populated depends on where the failure came from. An edge
+ * function returning `{"error": "Not permitted to create meetings"}` puts that
+ * string in `.error` and leaves `.message` empty, so the common
+ * `err.message || err.toString()` fallback renders the literal class name:
+ *
+ *     Failed to create session: InsForgeError
+ *
+ * which tells the user nothing and sends whoever debugs it looking in the wrong
+ * place. Prefer whichever field actually has content.
+ */
+export const errorMessage = (err: unknown, fallback = 'Something went wrong'): string => {
+  if (!err) return fallback;
+  if (typeof err === 'string') return err;
+
+  const e = err as Record<string, any>;
+  const text = [e.message, e.error, e.details, e.hint].find(
+    (v) => typeof v === 'string' && v.trim() && v !== 'InsForgeError'
+  );
+  if (text) return e.nextActions ? `${text} (${e.nextActions})` : text;
+
+  if (typeof e.statusCode === 'number') return `Request failed (HTTP ${e.statusCode})`;
+  return fallback;
+};
+
+/**
  * True when a failure came from the request budget being exceeded rather than
  * the server rejecting the call, so callers can say "that took too long, try
  * again" instead of showing a generic error.

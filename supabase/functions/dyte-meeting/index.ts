@@ -139,12 +139,29 @@ export default async function (req: Request): Promise<Response> {
     // a participant cannot join under someone else's name.
     const { data: profile } = await asUser.database
       .from('profiles')
-      .select('full_name, avatar_url, role')
+      .select('full_name, avatar_url, role, metadata')
       .eq('id', userId)
       .maybeSingle();
 
     const callerRole = String(profile?.role || '').toLowerCase();
     const isStaff = STAFF_ROLES.has(callerRole);
+
+    /**
+     * Whether this account may host — i.e. teach.
+     *
+     * `role` alone is not the answer: it tracks the context the user is
+     * currently in, not what they are entitled to do, so an approved or
+     * onboarded mentor can still be sitting at role 'mentee'. Checking only
+     * role refused those users, and the app's own canHostLiveSessions() in
+     * src/store/authStore.ts would have shown them the broadcast form.
+     * Keep the two in step.
+     */
+    const meta = (profile?.metadata || {}) as Record<string, unknown>;
+    const canHost =
+      isStaff ||
+      ['tutor', 'mentor', 'teacher', 'author'].includes(callerRole) ||
+      meta.mentor_onboarded === true ||
+      meta.mentor_application_status === 'approved';
 
     /** True when this user owns the session behind `meetingId`, or is staff. */
     const isHostOf = async (id: string): Promise<boolean> => {
@@ -162,9 +179,12 @@ export default async function (req: Request): Promise<Response> {
     // ─── CREATE MEETING ───
     // Only someone who can actually teach may spend account capacity.
     if (action === 'create_meeting') {
-      const canCreate =
-        isStaff || ['tutor', 'mentor', 'teacher', 'author'].includes(callerRole);
-      if (!canCreate) return json({ error: 'Not permitted to create meetings' }, 403);
+      if (!canHost) {
+        return json(
+          { error: 'Hosting a live session needs an approved mentor profile.' },
+          403
+        );
+      }
 
       const data = await rtk('/meetings', {
         method: 'POST',
