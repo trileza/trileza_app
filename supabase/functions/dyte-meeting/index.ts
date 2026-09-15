@@ -66,12 +66,22 @@ export default async function (req: Request): Promise<Response> {
     const accountId = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
     const appId = Deno.env.get('CLOUDFLARE_APP_ID');
     const apiToken = Deno.env.get('CLOUDFLARE_API_TOKEN');
+    const isConfigured = Boolean(accountId && appId && apiToken);
 
-    if (!accountId || !appId || !apiToken) {
-      throw new Error(
-        'Cloudflare RealtimeKit credentials (CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_APP_ID/CLOUDFLARE_API_TOKEN) are not configured in the backend environment.'
-      );
-    }
+    /**
+     * Raised only after the caller has been authenticated.
+     *
+     * Reporting a missing-configuration error to an anonymous caller tells
+     * anyone who probes the endpoint which integrations exist and which are
+     * half-installed. Unauthenticated callers get 401 and nothing else.
+     */
+    const requireConfig = () => {
+      if (!isConfigured) {
+        throw new Error(
+          'Cloudflare RealtimeKit credentials (CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_APP_ID/CLOUDFLARE_API_TOKEN) are not configured in the backend environment.'
+        );
+      }
+    };
 
     const authHeader = `Bearer ${apiToken}`;
     const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/realtime/kit/${appId}`;
@@ -102,6 +112,7 @@ export default async function (req: Request): Promise<Response> {
     // link is the credential — the same model as the email itself.
     if (action === 'download') {
       if (!recordingId) return new Response('Missing recordingId parameter.', { status: 400 });
+      requireConfig();
       return await handleDownload(baseUrl, authHeader, recordingId);
     }
 
@@ -113,8 +124,13 @@ export default async function (req: Request): Promise<Response> {
     if (!insforgeUrl) throw new Error('INSFORGE_BASE_URL is not configured.');
 
     const asUser = createClient({ baseUrl: insforgeUrl, edgeFunctionToken: bearer });
+    // A signed-out browser still sends the anon key as its bearer, so the
+    // presence of a token proves nothing — this call is the real gate.
     const { data: userData, error: userError } = await asUser.auth.getCurrentUser();
     if (userError || !userData?.user?.id) return json({ error: 'Unauthorized' }, 401);
+
+    // Caller is authenticated; it is safe to report configuration problems now.
+    requireConfig();
 
     const userId = userData.user.id as string;
 
