@@ -357,14 +357,12 @@ export const useMeetingStore = create<MeetingState>((set, get) => ({
         
         set({ recordingState: 'STOPPING' });
         try {
-          const user = useAuthStore.getState().user;
+          // The recording link is mailed to the session's host, whom the
+          // backend resolves from the recording itself. Passing an address
+          // from here would have let a caller redirect someone else's
+          // recording to their own inbox.
           const { data, error } = await nexus.functions.invoke('dyte-meeting', {
-            body: { 
-              action: 'stop_recording', 
-              recordingId,
-              hostEmail: user?.email || '',
-              sessionTitle: sessionTitle || 'Live Class'
-            }
+            body: { action: 'stop_recording', recordingId }
           });
           if (error) throw error;
           console.log('[RTK] Stopped cloud recording successfully:', data);

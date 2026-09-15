@@ -253,16 +253,31 @@ export const courseService = {
               })
               .eq('id', existingLive.id);
           } else {
-            let dyteMeetingId = 'meet_mock_' + Math.random().toString(36).substring(2, 10);
+            // Create the RealtimeKit meeting for this scheduled class.
+            //
+            // This previously sent no `action`, so the function rejected every
+            // call, and read the id from `meeting.id` when the response carries
+            // it at `data.id` — two independent reasons it always fell through
+            // to a mock id. A mock id looks fine until someone tries to join:
+            // the room does not exist, so the class simply fails to start.
+            let meetingId: string | null = null;
             try {
-              const { data: dyteRes } = await nexus.functions.invoke('dyte-meeting', {
-                body: { title: liveTitle }
+              const { data: res, error } = await nexus.functions.invoke('dyte-meeting', {
+                body: { action: 'create_meeting', title: liveTitle }
               });
-              if (dyteRes?.meeting?.id) {
-                dyteMeetingId = dyteRes.meeting.id;
-              }
+              if (error) throw error;
+              meetingId = res?.data?.id ?? null;
             } catch (e) {
-              console.warn('Failed to create Dyte meeting, using mock ID:', e);
+              console.error('[Courses] Failed to create RealtimeKit meeting:', e);
+            }
+
+            // Without a real meeting there is no session to schedule. Skipping
+            // the row is better than storing one that cannot be joined.
+            if (!meetingId) {
+              console.error(
+                `[Courses] Skipping live session "${liveTitle}" — no meeting could be created.`
+              );
+              continue;
             }
 
             await nexus.database
@@ -271,7 +286,7 @@ export const courseService = {
                 course_id: courseId,
                 tutor_id: tutorId,
                 title: liveTitle,
-                dyte_meeting_id: dyteMeetingId,
+                dyte_meeting_id: meetingId,
                 status: 'scheduled',
                 scheduled_at: scheduledAt
               });

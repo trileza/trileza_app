@@ -11,7 +11,14 @@ export interface LiveSession {
   course_id: string;
   tutor_id: string;
   title: string;
-  dyte_meeting_id: string; // Legacy field name — now stores Jitsi room name
+  /**
+   * The Cloudflare RealtimeKit meeting id.
+   *
+   * The column keeps its original name because renaming it would need a
+   * migration against live session data for no user-visible gain. It has held
+   * a RealtimeKit id since the move off Dyte.
+   */
+  dyte_meeting_id: string;
   status: 'scheduled' | 'live' | 'ended';
   scheduled_at: string;
   started_at?: string;
@@ -65,20 +72,21 @@ export const liveService = {
    * Create a new live session (Tutor / Teacher only).
    */
   async createSession(
-    courseId: string, 
-    tutorId: string, 
-    title: string, 
-    scheduledAt: string, 
-    recurring: string = 'none', 
+    courseId: string,
+    tutorId: string,
+    title: string,
+    scheduledAt: string,
+    recurring: string = 'none',
     imageUrl?: string,
     description?: string
   ) {
-    // 1. Create Dyte Meeting via Edge Function
-    const { data: dyteData, error: dyteError } = await nexus.functions.invoke('dyte-meeting', {
+    // 1. Create the RealtimeKit meeting. The backend checks that the caller is
+    //    actually allowed to create one before spending account capacity.
+    const { data: meetingRes, error: meetingError } = await nexus.functions.invoke('dyte-meeting', {
       body: { action: 'create_meeting', title }
     });
 
-    if (dyteError) throw dyteError;
+    if (meetingError) throw meetingError;
 
     // 2. Save to database
     const { data, error } = await nexus.database
@@ -87,7 +95,7 @@ export const liveService = {
         course_id: courseId,
         tutor_id: tutorId,
         title,
-        dyte_meeting_id: dyteData.data.id,
+        dyte_meeting_id: meetingRes.data.id,
         scheduled_at: scheduledAt,
         status: 'scheduled',
         recurring,
@@ -102,21 +110,16 @@ export const liveService = {
   },
 
   /**
-   * Join a live session.
-   * Returns the Dyte authToken.
+   * Join a live session. Returns the RealtimeKit auth token.
+   *
+   * Takes no identity argument on purpose. The backend reads the caller from
+   * their auth token and decides host-or-participant from the database — this
+   * used to send `role` from the browser, which meant any student could ask for
+   * a host token and receive one.
    */
-  async joinSession(meetingId: string, user: { id: string; full_name: string; avatar_url?: string; role: string }) {
+  async joinSession(meetingId: string) {
     const { data, error } = await nexus.functions.invoke('dyte-meeting', {
-      body: {
-        action: 'add_participant',
-        meetingId,
-        participant: {
-          id: user.id,
-          name: user.full_name,
-          picture: user.avatar_url,
-          role: user.role
-        }
-      }
+      body: { action: 'add_participant', meetingId }
     });
 
     if (error) throw error;

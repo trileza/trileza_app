@@ -93,14 +93,10 @@ const LiveClassroom: React.FC = () => {
           await liveService.updateStatus(sessionData.id, 'live');
         }
  
-        // Get the room token from the service
-        const token = await liveService.joinSession(meetingId, {
-          id: user.id,
-          full_name: user.full_name,
-          avatar_url: user.avatar_url,
-          role: user.role,
-        });
- 
+        // Get the room token. Identity and host rights are resolved backend-side
+        // from the auth token, so nothing about this user is passed here.
+        const token = await liveService.joinSession(meetingId);
+
         setAuthToken(token);
       } catch (err: any) {
         console.error('Failed to join live session:', err);
@@ -128,13 +124,8 @@ const LiveClassroom: React.FC = () => {
           setLoading(true); // show loader while connecting pipeline
  
           // Resolve and join now that meeting is live
-          const token = await liveService.joinSession(meetingId, {
-            id: user.id,
-            full_name: user.full_name,
-            avatar_url: user.avatar_url,
-            role: user.role,
-          });
- 
+          const token = await liveService.joinSession(meetingId);
+
           setAuthToken(token);
           setLoading(false);
         }
