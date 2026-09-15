@@ -12,16 +12,19 @@ import { useMeetingStore } from '../../store/meetingStore';
 const MeetingToast: React.FC = () => {
   const { toasts, removeToast } = useMeetingStore();
 
+  // Informational notices carry the brand green rather than blue, matching the
+  // app's Toast. Amber is kept for warnings — the session countdown uses it,
+  // and it must be distinguishable at a glance rather than on-brand.
   const icons = {
-    info: <Info size={16} className="text-blue-400" />,
-    success: <CheckCircle size={16} className="text-emerald-400" />,
+    info: <Info size={16} className="text-brand-accent" />,
+    success: <CheckCircle size={16} className="text-brand-accent" />,
     warning: <AlertTriangle size={16} className="text-amber-400" />,
   };
 
   const borders = {
-    info: 'border-blue-500/20',
-    success: 'border-emerald-500/20',
-    warning: 'border-amber-500/20',
+    info: 'border-brand-primary/40',
+    success: 'border-brand-secondary/40',
+    warning: 'border-amber-500/40',
   };
 
   return (
@@ -40,7 +43,7 @@ const MeetingToast: React.FC = () => {
             <p className="text-xs font-bold text-white leading-tight flex-1">{toast.message}</p>
             <button
               onClick={() => removeToast(toast.id)}
-              className="p-1 rounded-lg hover:bg-slate-900/10 text-slate-400 hover:text-white transition-all shrink-0"
+              className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-all shrink-0"
             >
               <X size={12} />
             </button>

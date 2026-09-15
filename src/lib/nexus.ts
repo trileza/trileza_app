@@ -74,10 +74,94 @@ const FUNCTIONS_URL =
     }
   })();
 
+/**
+ * Refreshes an expired session and replays the request, once.
+ *
+ * The SDK has its own auto-refresh, but it only triggers on
+ * `statusCode === 401 && error === "INVALID_TOKEN"`. This backend answers an
+ * expired token with `error: "AUTH_UNAUTHORIZED"`, so the codes never match and
+ * the built-in refresh never fires. The visible result was that leaving a tab
+ * idle past the access-token lifetime broke the next action with
+ * "Invalid token" — an upload, a save, a page of results — until a manual
+ * reload.
+ *
+ * Wrapping fetch fixes it for every call at once, rather than at each call
+ * site: database, storage, functions and auth all pass through here.
+ *
+ * Details that matter:
+ *
+ *  - One refresh at a time. A page that fires several requests on load would
+ *    otherwise start several refreshes, and each rotation invalidates the
+ *    previous refresh token, so the later ones fail and log the user out.
+ *    Concurrent callers await the same promise.
+ *
+ *  - Only one retry per request, and never for the refresh call itself, so a
+ *    genuinely dead session fails instead of looping.
+ *
+ *  - The body is replayed as given. A stream body could not be re-sent, but
+ *    the SDK only ever passes strings and FormData here.
+ */
+const createRefreshingFetch = (): typeof fetch => {
+  const baseFetch: typeof fetch = (input, init) => globalThis.fetch(input, init);
+  let refreshing: Promise<boolean> | null = null;
+
+  const refreshOnce = (): Promise<boolean> => {
+    if (!refreshing) {
+      refreshing = fetch(`${INSFORGE_URL}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }
+      })
+        .then((r) => r.ok)
+        .catch(() => false)
+        .finally(() => {
+          // Cleared on the next tick so callers that arrived during the
+          // refresh resolve against this attempt rather than starting another.
+          setTimeout(() => {
+            refreshing = null;
+          }, 0);
+        });
+    }
+    return refreshing;
+  };
+
+  return async (input, init) => {
+    const response = await baseFetch(input, init);
+    if (response.status !== 401) return response;
+
+    const url = typeof input === 'string' ? input : (input as Request).url || String(input);
+    // Never try to refresh a failed refresh, and never fight the login flow.
+    if (url.includes('/api/auth/refresh') || url.includes('/api/auth/sessions')) {
+      return response;
+    }
+
+    // Read the body from a clone so the original is still consumable if the
+    // caller ends up receiving it.
+    let isAuthFailure = false;
+    try {
+      const body = await response.clone().json();
+      isAuthFailure =
+        body?.error === 'AUTH_UNAUTHORIZED' ||
+        body?.error === 'INVALID_TOKEN' ||
+        /invalid token|jwt expired|token is expired/i.test(String(body?.message || ''));
+    } catch {
+      // A 401 with no JSON body is still worth one refresh attempt.
+      isAuthFailure = true;
+    }
+    if (!isAuthFailure) return response;
+
+    const refreshed = await refreshOnce();
+    if (!refreshed) return response;
+
+    return baseFetch(input, init);
+  };
+};
+
 export const nexus = createClient({
   baseUrl: INSFORGE_URL,
   anonKey: INSFORGE_ANON_KEY,
   ...(FUNCTIONS_URL ? { functionsUrl: FUNCTIONS_URL } : {}),
+  fetch: createRefreshingFetch(),
   timeout: REQUEST_TIMEOUT_MS,
   // Bounds the worst case. With the SDK default of 3, a genuinely unreachable
   // backend would tie a caller up for eight minutes.
