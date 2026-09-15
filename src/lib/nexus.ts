@@ -49,9 +49,35 @@ const REQUEST_TIMEOUT_MS = 120_000;
  *   nexus.storage    — File storage
  *   nexus.functions  — Serverless edge functions
  */
+/**
+ * Where edge functions are actually served from.
+ *
+ * The SDK derives this as `{appKey}.functions.insforge.app`, but this project's
+ * functions are deployed to `{appKey}.function2.insforge.app` — the value the
+ * backend reports as its `deploymentUrl`. The derived host answers with
+ * DEPLOYMENT_NOT_FOUND ("Deno Deploy Classic was sunset"), which surfaced in
+ * the app as "Network request failed: Failed to fetch" on every function call:
+ * creating a live session, uploading course video, creating a Paystack
+ * subaccount.
+ *
+ * Override it with VITE_INSFORGE_FUNCTIONS_URL if the host changes again.
+ */
+const FUNCTIONS_URL =
+  (import.meta.env.VITE_INSFORGE_FUNCTIONS_URL as string | undefined) ||
+  (() => {
+    try {
+      const { hostname } = new URL(INSFORGE_URL);
+      if (!hostname.endsWith('.insforge.app')) return undefined;
+      return `https://${hostname.split('.')[0]}.function2.insforge.app`;
+    } catch {
+      return undefined;
+    }
+  })();
+
 export const nexus = createClient({
   baseUrl: INSFORGE_URL,
   anonKey: INSFORGE_ANON_KEY,
+  ...(FUNCTIONS_URL ? { functionsUrl: FUNCTIONS_URL } : {}),
   timeout: REQUEST_TIMEOUT_MS,
   // Bounds the worst case. With the SDK default of 3, a genuinely unreachable
   // backend would tie a caller up for eight minutes.
