@@ -32,6 +32,9 @@ const json = (body: unknown, status = 200) =>
 
 const BORROW_DAYS = 14;
 
+/** The author's share. Mirrors the webhook; both must change together. */
+const AUTHOR_RATE = 0.60;
+
 export default async function (req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -211,6 +214,22 @@ export async function settlePayment(opts: {
         reference
       }
     };
+  }
+
+  // Credit the author.
+  //
+  // Not fatal if it fails: the reader has paid and has their book, and holding
+  // that hostage to a bookkeeping error would be the wrong trade. The earning
+  // is idempotent and keyed on the transaction, so it can be replayed — and
+  // the webhook will usually have recorded it already, in which case this is a
+  // no-op.
+  const { error: earnErr } = await asService.database.rpc('record_book_earning', {
+    p_transaction_id: reference,
+    p_author_rate: AUTHOR_RATE
+  });
+
+  if (earnErr) {
+    console.error(`[settlePayment] earning not recorded for ${reference} — needs replay:`, earnErr);
   }
 
   return {

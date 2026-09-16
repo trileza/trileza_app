@@ -34,6 +34,15 @@ const corsHeaders = {
 
 const BORROW_DAYS = 14;
 
+/**
+ * The author's share of a sale or borrow fee.
+ *
+ * Passed to record_book_earning rather than hardcoded in SQL, and stored on
+ * each earning row, so changing it later affects new earnings only and never
+ * rewrites what an author has already earned.
+ */
+const AUTHOR_RATE = 0.60;
+
 export default async function (req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -152,6 +161,29 @@ export default async function (req: Request): Promise<Response> {
         metadata: { ...(txn.metadata || {}), channel: paid.channel, paid_at: paid.paid_at }
       })
       .eq('reference', reference);
+
+    // Credit the author. After the ledger is completed, because
+    // record_book_earning only pays out on a confirmed payment.
+    //
+    // A failure here does not fail the webhook: the reader has paid and been
+    // granted their book, and holding that hostage to a bookkeeping error
+    // would be the wrong trade. The earning is recoverable — it is idempotent
+    // and keyed on the transaction, so a repair job can replay it — while a
+    // 500 here would make Paystack retry a delivery that has already done its
+    // real work.
+    if (txn.book_id) {
+      const { error: earnErr } = await asService.database.rpc('record_book_earning', {
+        p_transaction_id: reference,
+        p_author_rate: AUTHOR_RATE
+      });
+
+      if (earnErr) {
+        console.error(
+          `[paystack-webhook] earning not recorded for ${reference} — needs replay:`,
+          earnErr
+        );
+      }
+    }
 
     return ok({ processed: true, reference });
   } catch (err: any) {

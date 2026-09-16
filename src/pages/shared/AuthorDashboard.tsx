@@ -220,7 +220,10 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
 
   // Stateful Author Books & Simulated stats
   const [myBooks, setMyBooks] = useState<Book[]>([]);
-  const [royalties, setRoyalties] = useState(140.00);
+  // Zero until the ledger answers. A non-zero placeholder showed every author
+  // ₦140 of earnings they did not have, on a dashboard whose whole job is to
+  // tell them what they are owed.
+  const [royalties, setRoyalties] = useState(0);
   const [totalReads, setTotalReads] = useState(24);
   const [showNotification, setShowNotification] = useState<string | null>(null);
 
@@ -280,31 +283,33 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
       return;
     }
     try {
+      // Earnings come from the ledger, not from a sum computed here.
+      //
+      // This used to recalculate royalties in the browser on every page load,
+      // at 10% rather than the 60% the platform actually pays, and persisted
+      // nothing. An author's income existed only as a figure redrawn in front
+      // of them — nothing to audit, dispute, or pay out against, and it
+      // disagreed with what they were owed.
+      const { data: balance, error: balanceErr } = await nexus.database.rpc(
+        'author_earnings_balance',
+        { p_author_id: user.id }
+      );
+
+      if (balanceErr) throw balanceErr;
+
+      // The RPC returns one row; minor units to naira for display.
+      const row = Array.isArray(balance) ? balance[0] : balance;
+      setRoyalties(Number(row?.available_minor ?? 0) / 100);
+
+      // Reads are still counted from entitlements: a grant is a read, and the
+      // ledger only knows about the ones that were paid for.
       const bookIds = booksList.map(b => b.id);
-      const { data: accessRecords, error } = await nexus.database
+      const { data: accessRecords } = await nexus.database
         .from('api_user_library_access')
-        .select('*')
+        .select('id')
         .in('book_id', bookIds);
-      
-      if (!error && accessRecords) {
-        const readsCount = accessRecords.length;
-        let totalRoyalties = 0;
-        accessRecords.forEach(rec => {
-          const book = booksList.find(b => b.id === rec.book_id);
-          if (book) {
-            if (rec.access_type === 'own') {
-              totalRoyalties += Number(book.retail_price) * 0.10;
-            } else {
-              totalRoyalties += Number(rec.lifetime_rent_total || book.rental_price) * 0.10;
-            }
-          }
-        });
-        setTotalReads(readsCount);
-        setRoyalties(totalRoyalties);
-      } else {
-        setTotalReads(0);
-        setRoyalties(0);
-      }
+
+      setTotalReads(accessRecords?.length ?? 0);
     } catch (err) {
       console.error('[Error fetching author stats]:', err);
       setTotalReads(0);
