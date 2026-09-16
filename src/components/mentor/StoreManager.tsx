@@ -422,6 +422,17 @@ const StoreManager: React.FC = () => {
         }]);
         if (reviewErr) throw reviewErr;
 
+        // Screen the manuscript for plagiarism and AI-generated text.
+        //
+        // Fire-and-forget: scanning is asynchronous and takes minutes, and the
+        // result reaches the reviewer through a webhook. A scan that fails to
+        // start must not lose an upload that has already succeeded — the
+        // failure is recorded against the book, so the review queue shows that
+        // nothing was checked rather than implying a clean result.
+        nexus.functions
+          .invoke('book-scan', { body: { bookId: newItem.id } })
+          .catch(scanErr => console.error('[StoreManager] Could not start scan:', scanErr));
+
         showFeedback('Item published and submitted for review successfully!');
         setIsAdding(false);
         setFormData({
