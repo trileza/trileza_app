@@ -48,6 +48,17 @@ export default async function (req: Request): Promise<Response> {
     const authHeader = req.headers.get('Authorization');
     const userToken = req.headers.get('x-user-token') || (authHeader ? authHeader.replace('Bearer ', '') : null);
 
+    // A token was read here but never required, so an anonymous caller fell
+    // through to the service-key branch below and had their file converted and
+    // stored on the platform's account. Conversion is CPU and storage the
+    // platform pays for; it is not an open service.
+    if (!userToken) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const baseUrl = Deno.env.get('INSFORGE_BASE_URL') || Deno.env.get('INSFORGE_URL');
     const serviceKey = Deno.env.get('API_KEY') || Deno.env.get('INSFORGE_SERVICE_ROLE_KEY');
     const anonKey = Deno.env.get('ANON_KEY') || Deno.env.get('INSFORGE_ANON_KEY');

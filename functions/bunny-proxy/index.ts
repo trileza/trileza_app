@@ -1,3 +1,30 @@
+/**
+ * Proxies the Bunny Stream API so the account key never reaches a browser.
+ *
+ * ── Why this authenticates ───────────────────────────────────────────────
+ *
+ * It did not. Every action — including list-videos and delete-video — ran for
+ * any caller who could reach the URL. Verified against the live deployment:
+ *
+ *     curl -X POST .../bunny-proxy -d '{"action":"list-videos"}'
+ *     -> {"data":{"totalItems":0,...}}
+ *
+ * It returned an empty list only because the library is empty. With real
+ * course video in it, anyone could enumerate every video, mint a signed
+ * playback URL for any of them, or delete them outright — the function holds
+ * the library key, so it was doing the deleting on the caller's behalf.
+ */
+import { createClient } from 'npm:@insforge/sdk';
+
+/** Actions that change or expose the library, rather than serving playback. */
+const PRIVILEGED = new Set(['create-video', 'get-upload-signature', 'list-videos', 'delete-video']);
+
+/** Who may manage video: the people who publish courses. */
+const TEACHING_ROLES = new Set([
+  'tutor', 'mentor', 'teacher', 'author',
+  'management', 'staff', 'admin', 'super_admin'
+]);
+
 export default async function(req: Request): Promise<Response> {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -12,6 +39,46 @@ export default async function(req: Request): Promise<Response> {
   try {
     const body = await req.json();
     const { action, payload } = body;
+
+    // ── Every action needs a signed-in caller ──
+    const bearer = req.headers.get('Authorization')?.replace('Bearer ', '') || null;
+    if (!bearer) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const insforgeUrl = Deno.env.get('INSFORGE_BASE_URL');
+    if (!insforgeUrl) throw new Error('INSFORGE_BASE_URL is not configured.');
+
+    const asUser = createClient({ baseUrl: insforgeUrl, edgeFunctionToken: bearer });
+    const { data: userData, error: userError } = await asUser.auth.getCurrentUser();
+    if (userError || !userData?.user?.id) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // ── Managing the library needs a teaching role ──
+    // Playback (get-signed-url, get-video) is left to any signed-in user:
+    // entitlement to a course is enforced where the video is rendered, and a
+    // signed URL is short-lived.
+    if (PRIVILEGED.has(action)) {
+      const { data: profile } = await asUser.database
+        .from('profiles')
+        .select('role')
+        .eq('id', userData.user.id)
+        .maybeSingle();
+
+      if (!TEACHING_ROLES.has(String(profile?.role || '').toLowerCase())) {
+        return new Response(
+          JSON.stringify({ error: 'Not permitted to manage video.' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
 
     // Credentials come from the function environment only — never inline.
     // Set BUNNY_API_KEY / BUNNY_LIBRARY_ID / BUNNY_PULL_ZONE as function secrets.
