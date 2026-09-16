@@ -11,7 +11,8 @@ import { Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../utils';
 import { Card, Button } from '../ui';
-import { nexus } from '../../lib/nexus';
+import { nexus, errorMessage } from '../../lib/nexus';
+import { BOOK_FILES_BUCKET, toObjectKey } from '../../lib/bookStorage';
 import { useCartStore } from '../../store/cartStore';
 import { libraryService } from '../../lib/services/libraryService';
 
@@ -741,7 +742,7 @@ const PublicLibraryWrapper: React.FC = () => {
               if (jsonStorageKey) {
                 try {
                   const { data, error: downloadErr } = await nexus.storage
-                    .from('course-materials-trileza-784bc328')
+                    .from(BOOK_FILES_BUCKET)
                     .download(jsonStorageKey);
                     
                   if (!downloadErr && data) {
@@ -790,7 +791,7 @@ const PublicLibraryWrapper: React.FC = () => {
                 if (epubStorageKey) {
                   try {
                     const { data, error: downloadErr } = await nexus.storage
-                      .from('course-materials-trileza-784bc328')
+                      .from(BOOK_FILES_BUCKET)
                       .download(epubStorageKey);
                       
                     if (!downloadErr && data) {
@@ -859,7 +860,7 @@ const PublicLibraryWrapper: React.FC = () => {
               if (storageKey) {
                 try {
                   const { data, error: downloadErr } = await nexus.storage
-                    .from('course-materials-trileza-784bc328')
+                    .from(BOOK_FILES_BUCKET)
                     .download(storageKey);
                     
                   if (!downloadErr && data) {
@@ -918,32 +919,30 @@ const PublicLibraryWrapper: React.FC = () => {
           } else {
             // Non-EPUB, Non-DOCX file (PDF or other)
             try {
-              const storageKey = extractStorageKey(selectedBook.file_url);
+              // Manuscripts live in the private bucket, so this download
+              // succeeds only for a reader the database says is entitled —
+              // an owner, an unexpired borrower, or the author.
+              const storageKey = toObjectKey(selectedBook.file_url);
               let blob: Blob | null = null;
-              
+
               if (storageKey) {
-                try {
-                  const { data, error: downloadErr } = await nexus.storage
-                    .from('course-materials-trileza-784bc328')
-                    .download(storageKey);
-                    
-                  if (!downloadErr && data) {
-                    blob = data;
-                  } else {
-                    console.warn("Storage download failed for PDF/generic, trying fetch fallback:", downloadErr?.message);
-                  }
-                } catch (storageErr) {
-                  console.warn("Storage download threw exception for PDF/generic, trying fetch fallback:", storageErr);
+                const { data, error: downloadErr } = await nexus.storage
+                  .from(BOOK_FILES_BUCKET)
+                  .download(storageKey);
+
+                if (!downloadErr && data) {
+                  blob = data;
+                } else {
+                  // There is deliberately no public-fetch fallback here. The
+                  // old one made an unauthenticated request for the raw URL,
+                  // which meant a refused download silently succeeded anyway
+                  // and handed over the whole book.
+                  throw new Error(
+                    'You do not have access to this book, or your borrow has expired.'
+                  );
                 }
-              }
-              
-              if (!blob) {
-                console.log("Downloading PDF/generic via public fetch fallback:", selectedBook.file_url);
-                const response = await fetch(selectedBook.file_url);
-                if (!response.ok) {
-                  throw new Error(`Failed to fetch file (Status ${response.status})`);
-                }
-                blob = await response.blob();
+              } else {
+                throw new Error('This book has no readable file.');
               }
               
               clearInterval(interval);
@@ -971,11 +970,15 @@ const PublicLibraryWrapper: React.FC = () => {
             }
           }
         } catch (err: any) {
-          console.error("Secure Blob PDF/EPUB fetch failed, using fallback direct embed:", err);
+          console.error('Book load failed:', err);
           if (active) {
-            // Fallback for CORS restricted links (e.g. testing third-party URLs)
-            setPdfUrl(selectedBook.file_url || null);
-            setPdfLoadingState('success');
+            // No direct-embed fallback. selectedBook.file_url is now a private
+            // object key, not a fetchable URL — embedding it would render a
+            // broken viewer, and for legacy rows that still hold a public URL
+            // it would serve the book to someone the download just refused.
+            setPdfUrl(null);
+            setPdfErrorMsg(errorMessage(err, 'This book could not be opened.'));
+            setPdfLoadingState('error');
           }
         }
       };

@@ -28,7 +28,8 @@ import { useAuthStore } from '../../store/authStore';
 import { cn, executeWithAutoRefresh } from '../../utils';
 import { Card, Button } from '../../components/ui';
 import PageHeader from '../../components/shared/PageHeader';
-import { nexus } from '../../lib/nexus';
+import { nexus, errorMessage } from '../../lib/nexus';
+import { uploadBookFile, uploadPublicBookAsset } from '../../lib/bookStorage';
 import { libraryService } from '../../lib/services/libraryService';
 
 interface Book {
@@ -360,56 +361,29 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
     try {
       await executeWithAutoRefresh(async () => {
         // 1. Upload book file directly to storage
+        // The manuscript goes to the private bucket; what is stored is the
+        // object key, since a private object has no durable public URL.
         let fileUrl = '';
-        const cleanBookName = realBookFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-        const pathsToTry = [
-          `books/${user.id}_${Date.now()}_${cleanBookName}`,
-          `original/${user.id}_${Date.now()}_${cleanBookName}`
-        ];
-        
-        let uploadSuccess = false;
-        for (const bookPath of pathsToTry) {
-          const { error: uploadErr } = await nexus.storage
-            .from('course-materials-trileza-784bc328')
-            .upload(bookPath, realBookFile);
-
-          if (!uploadErr) {
-            fileUrl = nexus.storage
-              .from('course-materials-trileza-784bc328')
-              .getPublicUrl(bookPath);
-            uploadSuccess = true;
-            break;
-          } else {
-            console.warn(`Upload to '${bookPath}' failed:`, uploadErr.message);
-          }
-        }
-        
-        if (!uploadSuccess) {
-          alert('Failed to upload manuscript file. Please try again later.');
+        try {
+          const uploaded = await uploadBookFile(user.id, realBookFile);
+          fileUrl = uploaded.key;
+        } catch (uploadErr) {
+          console.error('[AuthorDashboard] Manuscript upload failed:', uploadErr);
+          alert(`Failed to upload manuscript: ${errorMessage(uploadErr, 'please try again')}`);
           return;
         }
 
-        // 2. Upload Sample PDF if present
+        // Samples and covers stay public — they are the storefront.
         let sampleUrl = '';
         if (realSampleFile) {
-          const cleanSampleName = realSampleFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-          const samplePath = `samples/${user.id}_${Date.now()}_${cleanSampleName}`;
-          await nexus.storage.from('course-materials-trileza-784bc328').upload(samplePath, realSampleFile);
-          sampleUrl = nexus.storage
-            .from('course-materials-trileza-784bc328')
-            .getPublicUrl(samplePath);
+          sampleUrl = await uploadPublicBookAsset('samples', user.id, realSampleFile);
         }
 
         const priceNum = parseFloat(price) || 5000;
-        
+
         let finalCover = coverUrl.trim();
         if (realCoverFile) {
-          const cleanCoverName = realCoverFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-          const coverPath = `covers/${user.id}_${Date.now()}_${cleanCoverName}`;
-          await nexus.storage.from('course-materials-trileza-784bc328').upload(coverPath, realCoverFile);
-          finalCover = nexus.storage
-            .from('course-materials-trileza-784bc328')
-            .getPublicUrl(coverPath);
+          finalCover = await uploadPublicBookAsset('covers', user.id, realCoverFile);
         }
         if (!finalCover) {
           finalCover = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400' viewBox='0 0 300 400'><rect width='300' height='400' fill='%23F1F5F9'/><g transform='translate(110, 140)' stroke='%2394A3B8' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'><rect x='0' y='0' width='80' height='100' rx='8'/><path d='M 20 30 L 60 30'/><path d='M 20 50 L 60 50'/><path d='M 20 70 L 40 70'/></g><text x='150' y='280' fill='%2394A3B8' font-family='system-ui, sans-serif' font-size='14' font-weight='800' text-anchor='middle' letter-spacing='1'>NO COVER</text></svg>";

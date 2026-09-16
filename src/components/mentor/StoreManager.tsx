@@ -22,7 +22,8 @@ import {
 } from 'lucide-react';
 import { cn, executeWithAutoRefresh } from '../../utils';
 import { Card, Button } from '../ui';
-import { nexus } from '../../lib/nexus';
+import { nexus, errorMessage } from '../../lib/nexus';
+import { uploadBookFile, uploadPublicBookAsset } from '../../lib/bookStorage';
 import { useAuthStore } from '../../store/authStore';
 import { Toast } from '../ui/Toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -274,64 +275,36 @@ const StoreManager: React.FC = () => {
         let fileUrl = '';
         let bookFileName = '';
         if (realBookFile) {
-          const cleanBookName = realBookFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-          const pathsToTry = [
-            `books/${user.id}_${Date.now()}_${cleanBookName}`,
-            `original/${user.id}_${Date.now()}_${cleanBookName}`
-          ];
-          
-          let uploadSuccess = false;
-          for (const bookPath of pathsToTry) {
-            const { error: uploadErr } = await nexus.storage
-              .from('course-materials-trileza-784bc328')
-              .upload(bookPath, realBookFile);
-
-            if (!uploadErr) {
-              fileUrl = nexus.storage
-                .from('course-materials-trileza-784bc328')
-                .getPublicUrl(bookPath);
-              uploadSuccess = true;
-              break;
-            } else {
-              console.warn(`Upload to '${bookPath}' failed:`, uploadErr.message);
-            }
-          }
-          
-          if (!uploadSuccess) {
-            showFeedback('Failed to upload manuscript file. Please try again later.', 'error');
+          // Manuscripts go to the private bucket. What is stored is the object
+          // key, not a URL: a private object has no durable public URL, only
+          // short-lived signed ones minted per entitled request.
+          try {
+            const uploaded = await uploadBookFile(user.id, realBookFile);
+            fileUrl = uploaded.key;
+            bookFileName = uploaded.fileName;
+          } catch (uploadErr: any) {
+            console.error('[StoreManager] Manuscript upload failed:', uploadErr);
+            showFeedback(
+              `Failed to upload manuscript: ${errorMessage(uploadErr, 'please try again')}`,
+              'error'
+            );
             return;
           }
-          bookFileName = realBookFile.name;
         }
 
         // 2. Upload sample file if selected
         let sampleUrl = '';
         let samplePagesName = '';
+        // Samples and covers stay public: they are the storefront, shown to
+        // signed-out visitors browsing the catalogue.
         if (realSampleFile) {
-          const cleanSampleName = realSampleFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-          const samplePath = `samples/${user.id}_${Date.now()}_${cleanSampleName}`;
-          const { error: sampleErr } = await nexus.storage
-            .from('course-materials-trileza-784bc328')
-            .upload(samplePath, realSampleFile);
-          if (sampleErr) throw sampleErr;
-
-          sampleUrl = nexus.storage
-            .from('course-materials-trileza-784bc328')
-            .getPublicUrl(samplePath);
+          sampleUrl = await uploadPublicBookAsset('samples', user.id, realSampleFile);
           samplePagesName = realSampleFile.name;
         }
 
         let finalThumbnailUrl = formData.thumbnail_url.trim();
         if (realThumbnailFile) {
-          const cleanThumbName = realThumbnailFile.name.replace(/\.\./g, '_').replace(/^\//, '');
-          const thumbPath = `covers/${user.id}_${Date.now()}_${cleanThumbName}`;
-          const { error: thumbErr } = await nexus.storage
-            .from('course-materials-trileza-784bc328')
-            .upload(thumbPath, realThumbnailFile);
-          if (thumbErr) throw thumbErr;
-          finalThumbnailUrl = nexus.storage
-            .from('course-materials-trileza-784bc328')
-            .getPublicUrl(thumbPath);
+          finalThumbnailUrl = await uploadPublicBookAsset('covers', user.id, realThumbnailFile);
         }
 
         const priceNum = parseFloat(formData.retail_price) || 5000;
