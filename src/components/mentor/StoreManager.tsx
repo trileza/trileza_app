@@ -19,12 +19,22 @@ import {
   UserPlus,
   Image,
   FileType,
+  Type,
+  Building,
+  BookMarked,
+  Shield,
 } from 'lucide-react';
 import { cn, executeWithAutoRefresh } from '../../utils';
 import { Card, Button } from '../ui';
 import { nexus, errorMessage } from '../../lib/nexus';
 import { uploadBookFile, uploadPublicBookAsset } from '../../lib/bookStorage';
-import { isValidIsbn13, normalizeIsbn, languageNameToCode } from '../../lib/metadata/bookMetadata';
+import {
+  isValidIsbn13,
+  normalizeIsbn,
+  languageNameToCode,
+  LANGUAGES,
+  BISAC_CATEGORIES
+} from '../../lib/metadata/bookMetadata';
 import { useAuthStore } from '../../store/authStore';
 import { Toast } from '../ui/Toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -159,7 +169,15 @@ const StoreManager: React.FC = () => {
     isbn: '',
     tags: '',
     co_authors: '',
-    edition: ''
+    edition: '',
+    // NISO/ONIX metadata. Collected here rather than defaulted silently —
+    // these are what a retailer or library needs before it will list a title,
+    // and the author is the only one who knows them.
+    subtitle: '',
+    publisher_name: '',
+    bisac_code: '',
+    rights_statement: 'World',
+    license_type: 'allrightsreserved'
   });
 
   const [realBookFile, setRealBookFile] = useState<File | null>(null);
@@ -170,6 +188,12 @@ const StoreManager: React.FC = () => {
   const [materialType, setMaterialType] = useState('book_text');
   const [formatWarning, setFormatWarning] = useState<string | null>(null);
   const [bypassWarning, setBypassWarning] = useState(false);
+
+  // Live ISBN feedback, so a wrong number is caught while the author is still
+  // looking at the field rather than on submit. Blank is valid — most
+  // self-published authors have no ISBN.
+  const isbnInvalid =
+    formData.isbn.trim().length > 0 && !isValidIsbn13(normalizeIsbn(formData.isbn));
 
 
 
@@ -356,13 +380,19 @@ const StoreManager: React.FC = () => {
           // `edition` and `co_authors` were collected on the form and then
           // silently dropped — neither reached the insert at all.
           edition_number: parseInt(formData.edition) || 1,
+          subtitle_text: formData.subtitle.trim() || null,
+          publisher_name: formData.publisher_name.trim() || user.full_name,
+          // An array: a book may carry several subjects, and retailers expect
+          // the full set. The form offers one to keep the choice simple.
+          bisac_codes: formData.bisac_code ? [formData.bisac_code] : null,
+          license_type: formData.license_type,
           file_format: realBookFile
             ? /\.epub$/i.test(realBookFile.name) ? 'EPUB' : 'PDF'
             : null,
           file_size_bytes: realBookFile?.size ?? null,
           copyright_year: new Date().getFullYear(),
           copyright_holder: user.full_name,
-          rights_statement: 'World',
+          rights_statement: formData.rights_statement,
           // tags and sample_pages are TEXT columns holding JSON, which is what
           // libraryService's parseJsonArraySafe expects on the way back out.
           // Sending a raw JS array here does not round-trip.
@@ -450,7 +480,12 @@ const StoreManager: React.FC = () => {
           isbn: '',
           tags: '',
           co_authors: '',
-          edition: ''
+          edition: '',
+          subtitle: '',
+          publisher_name: '',
+          bisac_code: '',
+          rights_statement: 'World',
+          license_type: 'allrightsreserved'
         });
         setRealBookFile(null);
         setRealSampleFile(null);
@@ -805,13 +840,19 @@ const StoreManager: React.FC = () => {
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 flex items-center gap-1">
                       <Globe size={11} /> Language
                     </label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. English, French"
-                      className="w-full px-5 py-3.5 rounded-xl bg-slate-50 border border-slate-200/60 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all text-xs"
+                    {/* A list, not free text. Typed input silently failed the
+                        ISO 639-1 mapping — "english" or "Eng" mapped to
+                        nothing, and the book was stored as 'en' regardless,
+                        so a French book could be filed as English. */}
+                    <select
+                      className="w-full h-11 px-5 rounded-xl bg-slate-50 border border-slate-200/60 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all appearance-none cursor-pointer text-xs"
                       value={formData.language}
                       onChange={(e) => setFormData({...formData, language: e.target.value})}
-                    />
+                    >
+                      {LANGUAGES.map(l => (
+                        <option key={l.code} value={l.name}>{l.name}</option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Publication Date */}
@@ -862,13 +903,30 @@ const StoreManager: React.FC = () => {
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 flex items-center gap-1">
                       <Hash size={11} /> ISBN
                     </label>
-                    <input 
-                      type="text" 
-                      placeholder="Auto-generated if blank"
-                      className="w-full px-5 py-3.5 rounded-xl bg-slate-50 border border-slate-200/60 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all text-xs"
+                    {/* No longer auto-generated. The old placeholder promised
+                        a number this form used to invent from random digits —
+                        which failed its checksum and could collide with a real
+                        registration. Blank is now a correct answer. */}
+                    <input
+                      type="text"
+                      placeholder="13 digits, or leave blank"
+                      className={cn(
+                        'w-full px-5 py-3.5 rounded-xl bg-slate-50 border font-bold text-slate-900 focus:ring-2 focus:bg-white focus:outline-none transition-all text-xs',
+                        isbnInvalid
+                          ? 'border-red-300 focus:ring-red-500'
+                          : 'border-slate-200/60 focus:ring-indigo-500'
+                      )}
                       value={formData.isbn}
                       onChange={(e) => setFormData({...formData, isbn: e.target.value})}
                     />
+                    <p className={cn(
+                      'text-[9px] font-bold ml-1',
+                      isbnInvalid ? 'text-red-600' : 'text-slate-400'
+                    )}>
+                      {isbnInvalid
+                        ? 'Those digits do not form a valid ISBN-13 — check them against your registration.'
+                        : 'Optional. Retailers and libraries cannot list a book without one.'}
+                    </p>
                   </div>
 
                   {/* Edition */}
@@ -883,6 +941,87 @@ const StoreManager: React.FC = () => {
                       value={formData.edition}
                       onChange={(e) => setFormData({...formData, edition: e.target.value})}
                     />
+                  </div>
+
+                  {/* Subtitle */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 flex items-center gap-1">
+                      <Type size={11} /> Subtitle
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Optional"
+                      className="w-full px-5 py-3.5 rounded-xl bg-slate-50 border border-slate-200/60 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all text-xs"
+                      value={formData.subtitle}
+                      onChange={(e) => setFormData({...formData, subtitle: e.target.value})}
+                    />
+                  </div>
+
+                  {/* Publisher */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 flex items-center gap-1">
+                      <Building size={11} /> Publisher
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Your name, if self-published"
+                      className="w-full px-5 py-3.5 rounded-xl bg-slate-50 border border-slate-200/60 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:outline-none transition-all text-xs"
+                      value={formData.publisher_name}
+                      onChange={(e) => setFormData({...formData, publisher_name: e.target.value})}
+                    />
+                  </div>
+
+                  {/* Subject category.
+                      BISAC is what retailers and libraries shelve by — without
+                      one the book is far harder to find. */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 flex items-center gap-1">
+                      <BookMarked size={11} /> Subject Category
+                    </label>
+                    <select
+                      className="w-full h-11 px-5 rounded-xl bg-slate-50 border border-slate-200/60 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all appearance-none cursor-pointer text-xs"
+                      value={formData.bisac_code}
+                      onChange={(e) => setFormData({...formData, bisac_code: e.target.value})}
+                    >
+                      <option value="">Select a subject…</option>
+                      {BISAC_CATEGORIES.map(c => (
+                        <option key={c.code} value={c.code}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Territory rights */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 flex items-center gap-1">
+                      <Globe size={11} /> Territory Rights
+                    </label>
+                    <select
+                      className="w-full h-11 px-5 rounded-xl bg-slate-50 border border-slate-200/60 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all appearance-none cursor-pointer text-xs"
+                      value={formData.rights_statement}
+                      onChange={(e) => setFormData({...formData, rights_statement: e.target.value})}
+                    >
+                      <option value="World">World — sell anywhere</option>
+                      <option value="Africa">Africa only</option>
+                      <option value="Nigeria">Nigeria only</option>
+                      <option value="Europe">Europe only</option>
+                      <option value="North America">North America only</option>
+                    </select>
+                  </div>
+
+                  {/* Licence */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 flex items-center gap-1">
+                      <Shield size={11} /> Licence
+                    </label>
+                    <select
+                      className="w-full h-11 px-5 rounded-xl bg-slate-50 border border-slate-200/60 font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all appearance-none cursor-pointer text-xs"
+                      value={formData.license_type}
+                      onChange={(e) => setFormData({...formData, license_type: e.target.value})}
+                    >
+                      <option value="allrightsreserved">All rights reserved</option>
+                      <option value="creativecommons">Creative Commons</option>
+                      <option value="publicdomain">Public domain</option>
+                    </select>
                   </div>
 
                   {/* Tags */}
@@ -1103,9 +1242,12 @@ const StoreManager: React.FC = () => {
                 >
                   Cancel
                 </Button>
-                <Button 
+                <Button
                   type="submit"
-                  disabled={isSubmitting}
+                  // A bad ISBN is refused by the database anyway; stopping it
+                  // here means the author sees which field is wrong rather
+                  // than a constraint violation after everything uploads.
+                  disabled={isSubmitting || isbnInvalid}
                   className="w-full sm:flex-1 rounded-2xl py-4 font-bold bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 text-xs tracking-wider flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
