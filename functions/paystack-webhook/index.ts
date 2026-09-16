@@ -106,16 +106,16 @@ export default async function (req: Request): Promise<Response> {
       return ok({ error: 'amount mismatch', reference });
     }
 
-    await asService.database
-      .from('payment_transactions')
-      .update({
-        status: 'completed',
-        provider_reference: String(paid.id || ''),
-        completed_at: new Date().toISOString(),
-        metadata: { ...(txn.metadata || {}), channel: paid.channel, paid_at: paid.paid_at }
-      })
-      .eq('reference', reference);
-
+    // Grant BEFORE marking the ledger completed.
+    //
+    // The other order strands the customer: if the grant fails, the row still
+    // reads 'completed', so every retry short-circuits at the idempotency gate
+    // above and reports already_processed while no entitlement exists. The
+    // money is taken and the book never arrives, and no retry can repair it.
+    //
+    // Granting first is safe because grant_book_access is itself idempotent —
+    // a retry that gets past a transient failure returns the existing row
+    // rather than issuing a second one.
     if (txn.book_id) {
       const accessType = txn.type === 'purchase' ? 'own' : 'rent';
       const expiresAt =
@@ -132,15 +132,26 @@ export default async function (req: Request): Promise<Response> {
       });
 
       if (grantErr) {
-        console.error('[paystack-webhook] grant failed:', grantErr);
-        // 500 so Paystack retries: the payment is recorded, and the grant is
-        // idempotent, so a retry can only help.
+        console.error('[paystack-webhook] grant failed, leaving ledger pending:', grantErr);
+        // 500 so Paystack retries. The ledger stays 'pending', so the next
+        // delivery runs this again rather than being swallowed as already
+        // processed.
         return new Response(JSON.stringify({ error: 'grant failed' }), {
           status: 500,
           headers: corsHeaders
         });
       }
     }
+
+    await asService.database
+      .from('payment_transactions')
+      .update({
+        status: 'completed',
+        provider_reference: String(paid.id || ''),
+        completed_at: new Date().toISOString(),
+        metadata: { ...(txn.metadata || {}), channel: paid.channel, paid_at: paid.paid_at }
+      })
+      .eq('reference', reference);
 
     return ok({ processed: true, reference });
   } catch (err: any) {
