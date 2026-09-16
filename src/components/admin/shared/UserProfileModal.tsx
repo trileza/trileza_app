@@ -71,7 +71,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ profile, onClose, o
       try {
         const [coursesRes, booksRes, enrollRes, logsRes, menteesRes] = await Promise.all([
           nexus.database.from('courses').select('id, title, status, created_at').eq('tutor_id', profile.id),
-          nexus.database.from('books').select('id, title, status, created_at').eq('author_id', profile.id),
+          nexus.database.from('api_books').select('id, title, status, created_at').eq('author_id', profile.id),
           // Keyed on user_id: enrollments has no `student_id` column, so this
           // returned nothing and the modal always showed zero enrolments.
           nexus.database.from('enrollments').select('id, item_id, course_id, item_title, created_at').eq('user_id', profile.id).limit(100),

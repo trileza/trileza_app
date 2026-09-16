@@ -307,7 +307,7 @@ export const adminService = {
 
     if (error || !reviews) return [];
 
-    const { data: books } = await nexus.database.from('books').select('id, title, cover_url, category, retail_price, file_url, description');
+    const { data: books } = await nexus.database.from('api_books').select('id, title, cover_url, category, retail_price, file_url, description');
     const { data: profiles } = await nexus.database.from('profiles').select('id, full_name');
 
     return reviews.map((r: any) => {
@@ -582,7 +582,7 @@ export const adminService = {
     
     // We mock the content titles since they can stretch across books, courses, etc.
     const { data: courses } = await nexus.database.from('courses').select('id, title');
-    const { data: books } = await nexus.database.from('books').select('id, title');
+    const { data: books } = await nexus.database.from('api_books').select('id, title');
 
     return flags.map((f: any) => {
       const reporter = profiles?.find(p => p.id === f.reporter_id);
@@ -1005,7 +1005,7 @@ export const adminService = {
     const [profileRes, coursesRes, booksRes, payoutsRes, walletRes] = await Promise.all([
       nexus.database.from('profiles').select('*').eq('id', creatorId).single(),
       nexus.database.from('courses').select('*').eq('tutor_id', creatorId),
-      nexus.database.from('books').select('*').eq('author_id', creatorId),
+      nexus.database.from('api_books').select('*').eq('author_id', creatorId),
       nexus.database.from('payout_requests').select('*').eq('user_id', creatorId).order('created_at', { ascending: false }),
       nexus.database.from('wallets').select('*').eq('user_id', creatorId).maybeSingle()
     ]);

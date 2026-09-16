@@ -228,7 +228,7 @@ const StoreManager: React.FC = () => {
     if (!user) return;
     try {
       setLoading(true);
-      const { data, error } = await nexus.database.from('books').select('*').eq('author_id', user.id);
+      const { data, error } = await nexus.database.from('api_books').select('*').eq('author_id', user.id);
       if (error) throw error;
       setItems(data || []);
     } catch (err) {
@@ -358,8 +358,11 @@ const StoreManager: React.FC = () => {
           pages: parseInt(formData.pages) || null,
           age_rating: formData.age_rating,
           isbn: generatedIsbn,
-          tags: parsedTags,
-          sample_pages: sampleUrl ? [sampleUrl] : [],
+          // tags and sample_pages are TEXT columns holding JSON, which is what
+          // libraryService's parseJsonArraySafe expects on the way back out.
+          // Sending a raw JS array here does not round-trip.
+          tags: JSON.stringify(parsedTags),
+          sample_pages: JSON.stringify(sampleUrl ? [sampleUrl] : []),
           rating: 5.0,
           section: formData.category,
           file_url: fileUrl,
@@ -369,7 +372,7 @@ const StoreManager: React.FC = () => {
           uploaded_format: realBookFile ? realBookFile.name.split('.').pop()?.toUpperCase() : 'PDF'
         };
 
-        const { error } = await nexus.database.from('books').insert([newItem]);
+        const { error } = await nexus.database.from('api_books').insert([newItem]);
         if (error) throw error;
 
         // Submit book for Content Manager review automatically to sync with database reviews
@@ -426,7 +429,7 @@ const StoreManager: React.FC = () => {
 
     try {
       const { error } = await nexus.database
-        .from('books')
+        .from('api_books')
         .delete()
         .eq('id', itemId);
 

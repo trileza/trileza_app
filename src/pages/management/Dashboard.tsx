@@ -144,7 +144,7 @@ const ManagementDashboard = () => {
         : { data: [] };
 
       const { data: books } = bookIdList.length > 0
-        ? await nexus.database.from('books').select('id, title').in('id', bookIdList)
+        ? await nexus.database.from('api_books').select('id, title').in('id', bookIdList)
         : { data: [] };
 
       const { data: profiles } = profileIdList.length > 0
