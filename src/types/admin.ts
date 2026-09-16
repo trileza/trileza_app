@@ -90,6 +90,21 @@ export interface BookReview {
   category?: string;
   retail_price?: number;
   file_url?: string;
+
+  // ── Automated screening ─────────────────────────────────────────────
+  // From the latest book_scans row. Informs the reviewer's decision; it does
+  // not make it. A high similarity score can be a correctly quoted source or
+  // public-domain text, and AI detectors are known to misjudge non-native
+  // English — which is why a breach routes to a person.
+  scan_status?: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | null;
+  scan_verdict?: 'clear' | 'review' | 'error' | null;
+  /** Percentage of the text found elsewhere. */
+  plagiarism_score?: number | null;
+  /** Likelihood the text was machine-generated, as a percentage. */
+  ai_score?: number | null;
+  /** Why a scan failed or was skipped, in words a reviewer can act on. */
+  scan_detail?: string | null;
+  matched_sources?: Array<{ url?: string; title?: string; percent?: number }>;
   description?: string;
 }
 

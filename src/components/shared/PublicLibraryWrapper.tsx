@@ -5,13 +5,13 @@ import {
   ShoppingBag, Clock, CheckCircle, Loader2, Shield, MessageSquare,
   Share2, Trash2, Sparkles, ChevronRight, ChevronLeft, 
   Volume2, Play, Pause, Square, BookOpenCheck, Settings,
-  ZoomIn, ZoomOut
+  ZoomIn, ZoomOut, Download
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../utils';
 import { Card, Button } from '../ui';
-import { nexus, errorMessage } from '../../lib/nexus';
+import { nexus, errorMessage, FUNCTIONS_URL_PUBLIC, getAccessToken } from '../../lib/nexus';
 import { BOOK_FILES_BUCKET, toObjectKey } from '../../lib/bookStorage';
 import { useCartStore } from '../../store/cartStore';
 import { libraryService } from '../../lib/services/libraryService';
@@ -31,6 +31,8 @@ interface Book {
   file_url?: string;
   pages?: number;
   material_type?: string;
+  /** Original filename, used to name a downloaded copy. */
+  book_file_name?: string;
 }
 
 interface UserLibraryAccess {
@@ -1012,6 +1014,63 @@ const PublicLibraryWrapper: React.FC = () => {
   // Premium Zoom States & Interactions
   const [zoom, setZoom] = useState(1.0);
   const touchStartRef = useRef<{ dist: number; zoom: number } | null>(null);
+
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  /**
+   * Downloads a purchased book.
+   *
+   * The file is fetched through the backend rather than from storage, because
+   * the backend is what stamps the buyer's name, email and account id into it
+   * before serving. That watermark does not prevent copying — the reader can
+   * see the content, so they can always capture it — but it makes a leaked
+   * copy traceable to the account that took it.
+   *
+   * The backend refuses anything but an outright purchase: a borrow is
+   * stream-only however long it has left.
+   */
+  const handleDownloadBook = async (book: Book) => {
+    setDownloadingId(book.id);
+    try {
+      // Fetched directly rather than through nexus.functions.invoke: the SDK
+      // reads any non-JSON response as text, which mangles the bytes of a PDF.
+      const token = getAccessToken();
+      if (!token) throw new Error('Please sign in again to download this book.');
+
+      const res = await fetch(`${FUNCTIONS_URL_PUBLIC}/book-download`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookId: book.id })
+      });
+
+      // A refusal comes back as JSON; the file itself does not.
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.error || `Download failed (HTTP ${res.status}).`);
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = book.book_file_name || `${book.title}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoked on the next tick so the download has started.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      setShowNotification({ message: 'Your watermarked copy is downloading.', type: 'success' });
+    } catch (err) {
+      console.error('[Library] Download failed:', err);
+      setShowNotification({
+        message: errorMessage(err, 'This book could not be downloaded.'),
+        type: 'info'
+      });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
@@ -2957,6 +3016,20 @@ const PublicLibraryWrapper: React.FC = () => {
                   </div>
                   <Button onClick={() => { setSelectedBook(book); setIsReading(true); }} className="w-full text-[9px] font-black uppercase bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer">
                     Read Owned Blueprint
+                  </Button>
+                  {/* Download is for purchases only — a borrow is stream-only,
+                      since a loan you can keep is a sale. The file is
+                      watermarked with the buyer's details as it is served. */}
+                  <Button
+                    onClick={() => handleDownloadBook(book)}
+                    disabled={downloadingId === book.id}
+                    className="w-full text-[9px] font-black uppercase bg-slate-900 dark:bg-slate-800 text-white hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {downloadingId === book.id ? (
+                      <><Loader2 size={12} className="animate-spin" /> Preparing…</>
+                    ) : (
+                      <><Download size={12} /> Download Copy</>
+                    )}
                   </Button>
                 </Card>
               );

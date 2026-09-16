@@ -90,12 +90,20 @@ export default async function (req: Request): Promise<Response> {
     if (!entitled) {
       // Record the refusal too: a pattern of denied downloads on one title is
       // worth being able to see.
-      await asUser.database.from('book_access_logs').insert([{
-        user_id: userId,
-        book_id: bookId,
-        access_type: 'denied',
-        user_agent: req.headers.get('user-agent') || null
-      }]).catch(() => {});
+      //
+      // Wrapped in try/catch rather than .catch(): the SDK's insert returns a
+      // builder, not a promise, until it is awaited — calling .catch() on it
+      // throws, which turned a clean 403 into a confusing 500.
+      try {
+        await asUser.database.from('book_access_logs').insert([{
+          user_id: userId,
+          book_id: bookId,
+          access_type: 'denied',
+          user_agent: req.headers.get('user-agent') || null
+        }]);
+      } catch (logErr) {
+        console.error('[book-download] could not log refusal:', logErr);
+      }
 
       return json(
         { error: 'Borrowed books cannot be downloaded. Purchase this book to keep a copy.' },
@@ -136,12 +144,19 @@ export default async function (req: Request): Promise<Response> {
         })
       : original;
 
-    await asUser.database.from('book_access_logs').insert([{
-      user_id: userId,
-      book_id: bookId,
-      access_type: 'download',
-      user_agent: req.headers.get('user-agent') || null
-    }]).catch(() => {});
+    // Same shape as above: await inside try/catch, never .catch() on the
+    // builder. A failed audit line must not fail a download the buyer is
+    // entitled to.
+    try {
+      await asUser.database.from('book_access_logs').insert([{
+        user_id: userId,
+        book_id: bookId,
+        access_type: 'download',
+        user_agent: req.headers.get('user-agent') || null
+      }]);
+    } catch (logErr) {
+      console.error('[book-download] could not log download:', logErr);
+    }
 
     return new Response(stamped, {
       status: 200,

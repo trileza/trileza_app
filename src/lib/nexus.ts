@@ -200,6 +200,29 @@ export const errorMessage = (err: unknown, fallback = 'Something went wrong'): s
 };
 
 /**
+ * Where edge functions are served from, for callers that must bypass the SDK.
+ *
+ * nexus.functions.invoke reads any non-JSON response as text, which corrupts
+ * binary — a downloaded PDF comes back mangled. Anything fetching a file calls
+ * the function directly and needs this.
+ */
+export const FUNCTIONS_URL_PUBLIC = FUNCTIONS_URL || '';
+
+/**
+ * The signed-in user's access token, or null.
+ *
+ * Only needed for the direct-fetch case above; every ordinary call gets its
+ * Authorization header from the SDK.
+ */
+export const getAccessToken = (): string | null => {
+  try {
+    return (nexus.auth as any).getAccessToken?.() ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * True when a failure came from the request budget being exceeded rather than
  * the server rejecting the call, so callers can say "that took too long, try
  * again" instead of showing a generic error.

@@ -30,7 +30,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { formatCurrency, formatDate } from '../../utils';
+import { formatCurrency, formatDate, cn } from '../../utils';
 import PageHeader from '../shared/PageHeader';
 import Pagination from './shared/Pagination';
 import ExportToolbar from './shared/ExportToolbar';
@@ -941,6 +941,80 @@ const ContentManagerDashboard: React.FC = () => {
                   </div>
 
                   <hr className="border-slate-100" />
+
+                  {/* Automated screening.
+                      Shown before the human checklist because it is evidence
+                      the reviewer should have in hand before ticking
+                      "no copyright issues" — a claim nobody can verify against
+                      the whole web unaided. */}
+                  <div className={cn(
+                    'p-4 rounded-2xl text-xs space-y-2 border',
+                    selectedBook.scan_verdict === 'review'
+                      ? 'bg-red-50 border-red-200'
+                      : selectedBook.scan_verdict === 'clear'
+                        ? 'bg-emerald-50 border-emerald-200'
+                        : 'bg-amber-50 border-amber-200'
+                  )}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-black uppercase tracking-widest text-[10px] text-slate-700">
+                        Automated screening
+                      </span>
+                      <span className="font-black text-[10px] uppercase">
+                        {selectedBook.scan_verdict === 'review' ? 'Needs attention'
+                          : selectedBook.scan_verdict === 'clear' ? 'Nothing flagged'
+                          : selectedBook.scan_status === 'running' ? 'Scanning…'
+                          : 'Not checked'}
+                      </span>
+                    </div>
+
+                    {selectedBook.scan_status === 'completed' ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="font-bold text-slate-600">Text found elsewhere:</span>
+                          <span className="font-extrabold text-slate-900">
+                            {Number(selectedBook.plagiarism_score ?? 0).toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-bold text-slate-600">Likely machine-written:</span>
+                          <span className="font-extrabold text-slate-900">
+                            {selectedBook.ai_score === null || selectedBook.ai_score === undefined
+                              ? 'Not assessed'
+                              : `${Number(selectedBook.ai_score).toFixed(1)}%`}
+                          </span>
+                        </div>
+
+                        {(selectedBook.matched_sources?.length ?? 0) > 0 && (
+                          <div className="pt-2 border-t border-slate-200/60 space-y-1">
+                            <p className="font-bold text-slate-600">Matching sources:</p>
+                            {selectedBook.matched_sources!.slice(0, 5).map((s, i) => (
+                              <a
+                                key={i}
+                                href={s.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block truncate text-[11px] text-blue-700 underline"
+                              >
+                                {s.percent ? `${s.percent}% — ` : ''}{s.title || s.url}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Scores are indicative, and saying so prevents a
+                            reviewer treating a number as a verdict. */}
+                        <p className="pt-2 text-[10px] text-slate-500 leading-relaxed border-t border-slate-200/60">
+                          Similarity counts quoted and public-domain text, and AI detection
+                          often misjudges non-native English. Read the matches before deciding.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        {selectedBook.scan_detail ||
+                          'This book has not been checked automatically. Review it manually.'}
+                      </p>
+                    )}
+                  </div>
 
                   {/* Book details */}
                   <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl text-xs space-y-2 leading-relaxed text-slate-700 shadow-inner">

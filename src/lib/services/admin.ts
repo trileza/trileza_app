@@ -310,9 +310,19 @@ export const adminService = {
     const { data: books } = await nexus.database.from('api_books').select('id, title, cover_url, category, retail_price, file_url, description');
     const { data: profiles } = await nexus.database.from('profiles').select('id, full_name');
 
+    // Automated scan results, so a reviewer decides with evidence rather than
+    // ticking "no copyright issues" on the strength of having read it — which
+    // is not a check anyone can perform against the whole web.
+    const { data: scans } = await nexus.database
+      .from('book_scans')
+      .select('book_id, plagiarism_score, ai_score, status, verdict, status_detail, matched_sources, created_at')
+      .order('created_at', { ascending: false });
+
     return reviews.map((r: any) => {
       const book = books?.find(b => b.id === r.book_id);
       const profile = profiles?.find(p => p.id === r.submitted_by);
+      // Ordered newest-first above, so the first match is the latest scan.
+      const scan = scans?.find(s => s.book_id === r.book_id);
       return {
         ...r,
         book_title: book?.title || 'Unknown Book',
@@ -321,7 +331,13 @@ export const adminService = {
         retail_price: book?.retail_price,
         file_url: book?.file_url,
         description: book?.description,
-        submitted_by_name: profile?.full_name || 'Author'
+        submitted_by_name: profile?.full_name || 'Author',
+        scan_status: scan?.status ?? null,
+        scan_verdict: scan?.verdict ?? null,
+        plagiarism_score: scan?.plagiarism_score ?? null,
+        ai_score: scan?.ai_score ?? null,
+        scan_detail: scan?.status_detail ?? null,
+        matched_sources: scan?.matched_sources ?? []
       };
     });
   },
