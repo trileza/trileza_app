@@ -30,6 +30,7 @@ import { Card, Button } from '../../components/ui';
 import PageHeader from '../../components/shared/PageHeader';
 import { nexus, errorMessage } from '../../lib/nexus';
 import { uploadBookFile, uploadPublicBookAsset } from '../../lib/bookStorage';
+import { isValidIsbn13, normalizeIsbn, languageNameToCode } from '../../lib/metadata/bookMetadata';
 import { libraryService } from '../../lib/services/libraryService';
 
 interface Book {
@@ -394,7 +395,14 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
           ? tagsInput.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
           : [];
 
-        const generatedIsbn = isbn.trim() || `978-${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+        // An ISBN is either real or absent — never invented. See the note in
+        // StoreManager: a fabricated number looks plausible, fails its
+        // checksum, and can collide with a real registration.
+        const normalizedIsbn = isbn.trim() ? normalizeIsbn(isbn) : '';
+        if (normalizedIsbn && !isValidIsbn13(normalizedIsbn)) {
+          alert('That ISBN-13 is not valid. Check the digits, or leave the field empty.');
+          return;
+        }
 
         // 3. Insert Book into database
         const bookId = `b-${Date.now()}`;
@@ -410,10 +418,17 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
           description: description.trim(),
           rating: 5.0,
           section: section,
-          isbn: generatedIsbn,
+          isbn_13: normalizedIsbn || null,
           tags: parsedTags,
           language: language.trim() || 'English',
+          language_code: languageNameToCode(language) || 'en',
           publication_date: publicationDate.trim() || new Date().toISOString().split('T')[0],
+          publication_date_iso: publicationDate.trim() || new Date().toISOString().split('T')[0],
+          file_format: /\.epub$/i.test(realBookFile.name) ? 'EPUB' : 'PDF',
+          file_size_bytes: realBookFile.size,
+          copyright_year: new Date().getFullYear(),
+          copyright_holder: authorName.trim(),
+          rights_statement: 'World',
           pages: parseInt(pages) || undefined,
           age_rating: ageRating,
           sample_pages: sampleUrl ? [sampleUrl] : [],

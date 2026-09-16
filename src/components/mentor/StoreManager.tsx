@@ -24,6 +24,7 @@ import { cn, executeWithAutoRefresh } from '../../utils';
 import { Card, Button } from '../ui';
 import { nexus, errorMessage } from '../../lib/nexus';
 import { uploadBookFile, uploadPublicBookAsset } from '../../lib/bookStorage';
+import { isValidIsbn13, normalizeIsbn, languageNameToCode } from '../../lib/metadata/bookMetadata';
 import { useAuthStore } from '../../store/authStore';
 import { Toast } from '../ui/Toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -309,7 +310,22 @@ const StoreManager: React.FC = () => {
 
         const priceNum = parseFloat(formData.retail_price) || 5000;
         const rentPriceNum = Number((priceNum * 0.1).toFixed(2));
-        const generatedIsbn = formData.isbn.trim() || `978-${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+        // An ISBN is either real or absent. This used to fabricate one from
+        // `978-` plus nine random digits when the field was blank, which
+        // produces a number that looks plausible, fails checksum validation,
+        // and could collide with a real book's registration. A missing ISBN is
+        // an honest gap; an invented one is bad data that spreads into every
+        // feed it touches. The database now rejects an invalid isbn_13
+        // outright, so a fabricated value would be refused anyway.
+        const rawIsbn = formData.isbn.trim();
+        const normalizedIsbn = rawIsbn ? normalizeIsbn(rawIsbn) : '';
+        if (normalizedIsbn && !isValidIsbn13(normalizedIsbn)) {
+          showFeedback(
+            'That ISBN-13 is not valid. Check the digits, or leave the field empty.',
+            'error'
+          );
+          return;
+        }
         const parsedTags = formData.tags.trim()
           ? formData.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
           : [];
@@ -327,10 +343,26 @@ const StoreManager: React.FC = () => {
           
           // New columns
           language: formData.language.trim() || 'English',
+          // ISO 639-1 alongside the display name, which is what retailers and
+          // library systems index on.
+          language_code: languageNameToCode(formData.language) || 'en',
           publication_date: formData.publication_date.trim() || new Date().toISOString().split('T')[0],
+          publication_date_iso:
+            formData.publication_date.trim() || new Date().toISOString().split('T')[0],
           pages: parseInt(formData.pages) || null,
           age_rating: formData.age_rating,
-          isbn: generatedIsbn,
+          // NULL when the author has none, rather than a fabricated number.
+          isbn_13: normalizedIsbn || null,
+          // `edition` and `co_authors` were collected on the form and then
+          // silently dropped — neither reached the insert at all.
+          edition_number: parseInt(formData.edition) || 1,
+          file_format: realBookFile
+            ? /\.epub$/i.test(realBookFile.name) ? 'EPUB' : 'PDF'
+            : null,
+          file_size_bytes: realBookFile?.size ?? null,
+          copyright_year: new Date().getFullYear(),
+          copyright_holder: user.full_name,
+          rights_statement: 'World',
           // tags and sample_pages are TEXT columns holding JSON, which is what
           // libraryService's parseJsonArraySafe expects on the way back out.
           // Sending a raw JS array here does not round-trip.
@@ -347,6 +379,35 @@ const StoreManager: React.FC = () => {
 
         const { error } = await nexus.database.from('api_books').insert([newItem]);
         if (error) throw error;
+
+        // Co-authors become contributor rows. The primary author is added by a
+        // database trigger, so these start at display_order 1.
+        //
+        // This is the other half of the dropped-fields problem: the form asked
+        // for co-authors and then threw the answer away.
+        const coAuthors = formData.co_authors
+          .split(',')
+          .map(name => name.trim())
+          .filter(Boolean);
+
+        if (coAuthors.length > 0) {
+          const { error: contribErr } = await nexus.database
+            .from('book_contributors')
+            .insert(
+              coAuthors.map((name, index) => ({
+                book_id: newItem.id,
+                contributor_name: name,
+                contributor_role: 'A01',
+                display_order: index + 1
+              }))
+            );
+
+          // A failed co-author write must not lose the book itself, which is
+          // already saved — report it and carry on.
+          if (contribErr) {
+            console.error('[StoreManager] Could not save co-authors:', contribErr);
+          }
+        }
 
         // Submit book for Content Manager review automatically to sync with database reviews
         const { error: reviewErr } = await nexus.database.from('book_reviews').insert([{

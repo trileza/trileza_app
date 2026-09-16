@@ -1,5 +1,6 @@
 import { nexus } from '../nexus';
 import { useAuthStore } from '../../store/authStore';
+import { toOnixMessage } from '../metadata/bookMetadata';
 
 export interface Book {
   id: string;
@@ -28,6 +29,49 @@ export interface Book {
   journal_name?: string;
   suggested_format?: string;
   uploaded_format?: string;
+
+  // ── NISO RP-29-2022 / ONIX 3.0 ──────────────────────────────────────
+  // What a retailer or library system needs before it will list a title.
+  // All optional: most are supplied at upload, and older rows predate them.
+
+  /** Checksummed ISBN-13, digits only. Null when the author has none — the
+   *  legacy `isbn` field above holds fabricated values and is not trusted. */
+  isbn_13?: string | null;
+  isbn_10?: string | null;
+  doi?: string | null;
+  subtitle_text?: string;
+  title_prefix?: string;
+  /** ISO 639-1, e.g. 'en'. `language` above is the display name. */
+  language_code?: string;
+  original_language?: string;
+  /** A real DATE column; `publication_date` above is free text. */
+  publication_date_iso?: string;
+  publisher_name?: string;
+  edition_number?: number;
+  /** BISAC subject headings, e.g. FIC009000. */
+  bisac_codes?: string[];
+  /** ONIX audience code; 01 is general trade. */
+  audience_code?: string;
+  file_format?: 'EPUB' | 'PDF' | null;
+  file_size_bytes?: number | null;
+  word_count?: number | null;
+  drm_type?: 'watermark' | 'stream_only' | 'none';
+  rights_statement?: string;
+  copyright_year?: number;
+  copyright_holder?: string;
+  license_type?: 'allrightsreserved' | 'creativecommons' | 'publicdomain';
+}
+
+/** ONIX contributor: an author, editor, translator or illustrator. */
+export interface BookContributor {
+  id?: string;
+  book_id: string;
+  contributor_name: string;
+  /** ONIX codelist 17: A01 author, B01 editor, B06 translator. */
+  contributor_role: string;
+  contributor_bio?: string;
+  contributor_orcid?: string;
+  display_order: number;
 }
 
 export interface UserLibraryAccess {
@@ -129,6 +173,59 @@ const mapDbFine = (f: any): Fine => ({
 });
 
 export const libraryService = {
+  /** Contributors for a book, in title-page order. */
+  getContributors: async (bookId: string): Promise<BookContributor[]> => {
+    const { data, error } = await nexus.database
+      .from('book_contributors')
+      .select('*')
+      .eq('book_id', bookId)
+      .order('display_order', { ascending: true });
+
+    if (error) throw error;
+    return (data ?? []) as BookContributor[];
+  },
+
+  /**
+   * An ONIX 3.0 feed of the published catalogue.
+   *
+   * This is what a retailer or library aggregator ingests — Amazon, Kobo,
+   * WorldCat all speak it. Drafts are excluded: a feed is a claim that these
+   * titles are available to buy.
+   */
+  exportOnixFeed: async (bookIds?: string[]): Promise<string> => {
+    let query = nexus.database.from('api_books').select('*').eq('status', 'published');
+    if (bookIds?.length) query = query.in('id', bookIds);
+
+    const { data: books, error } = await query;
+    if (error) throw error;
+
+    const rows = (books ?? []) as any[];
+    if (rows.length === 0) return toOnixMessage([]);
+
+    // Contributors in one query rather than per book — a catalogue export
+    // would otherwise make a round trip for every title.
+    const { data: contributors } = await nexus.database
+      .from('book_contributors')
+      .select('*')
+      .in('book_id', rows.map(b => b.id));
+
+    const byBook = new Map<string, BookContributor[]>();
+    for (const c of (contributors ?? []) as BookContributor[]) {
+      const list = byBook.get(c.book_id) ?? [];
+      list.push(c);
+      byBook.set(c.book_id, list);
+    }
+
+    return toOnixMessage(
+      rows.map(b => ({
+        ...b,
+        contributors: (byBook.get(b.id) ?? []).sort(
+          (a, z) => a.display_order - z.display_order
+        )
+      }))
+    );
+  },
+
   // Books CRUD
   listBooks: async (filters?: { search?: string; category?: string; section?: string; material_type?: string; user_id?: string }): Promise<Book[]> => {
     let query = nexus.database.from('api_books').select('*');
