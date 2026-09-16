@@ -6,8 +6,8 @@ import { useCartStore } from '../../store/cartStore';
 import type { CartItem } from '../../store/cartStore';
 import { useAuthStore } from '../../store/authStore';
 import { useCheckout } from '../../lib/services/paystack';
-import { nexus } from '../../lib/nexus';
-import { libraryService } from '../../lib/services/libraryService';
+import { nexus, errorMessage } from '../../lib/nexus';
+import { payForBook } from '../../lib/services/bookPayments';
 
 import { cn, formatCurrency } from '../../utils';
 import { Toast } from '../ui/Toast';
@@ -82,15 +82,16 @@ export const CartDrawer: React.FC = () => {
         if (error) throw error;
       }
 
-      // Upsert book access with cumulative rent triggers & borrow timers
-      const booksToUpsert = items.filter(item => item.type === 'book_buy' || item.type === 'book_rent');
-      for (const book of booksToUpsert) {
-        if (book.type === 'book_rent') {
-          await libraryService.borrowBook(user.id, book.id, book.price);
-        } else {
-          await libraryService.buyBook(user.id, book.id);
-        }
-      }
+      // Books are NOT granted here.
+      //
+      // This used to call borrowBook/buyBook straight after Paystack's popup
+      // reported success, which meant the browser decided who owned what — and
+      // the reference was never checked against Paystack at all. Access is now
+      // granted only by the backend, after it verifies the payment, so these
+      // items are settled one at a time through payForBook() below.
+      const booksToUpsert = items.filter(
+        item => item.type === 'book_buy' || item.type === 'book_rent'
+      );
 
       // 3. Create real-time notification alert rows in DB
       const notificationsToInsert = items.map(item => ({
@@ -132,9 +133,19 @@ export const CartDrawer: React.FC = () => {
   };
 
   // Paystack checkout hook
+  // Books are charged separately, each against its own verified reference, so
+  // this cart-level charge covers only courses and mentorships.
+  const nonBookSubtotal = items
+    .filter(i => i.type !== 'book_buy' && i.type !== 'book_rent')
+    .reduce((sum, i) => sum + Number(i.price || 0), 0);
+  const nonBookTotal = Math.max(
+    0,
+    nonBookSubtotal - (activeCoupon ? (nonBookSubtotal * activeCoupon.discountPercent) / 100 : 0)
+  );
+
   const { pay } = useCheckout({
     email: user?.email || 'test@trileza.com',
-    amount: finalTotal,
+    amount: nonBookTotal,
     metadata: {
       type: 'cart_checkout',
       student_id: user?.id,
@@ -149,15 +160,68 @@ export const CartDrawer: React.FC = () => {
     }
   });
 
-  const handleCheckoutClick = () => {
+  const handleCheckoutClick = async () => {
     if (items.length === 0) return;
     setIsProcessing(true);
 
-    if (finalTotal === 0) {
-      // 100% free checkout bypasses Paystack gateway
+    const books = items.filter(i => i.type === 'book_buy' || i.type === 'book_rent');
+    const others = items.filter(i => i.type !== 'book_buy' && i.type !== 'book_rent');
+
+    // Books are charged and verified one at a time, because each grant is tied
+    // to its own payment reference — that is what lets the backend prove a
+    // specific book was paid for, rather than taking the browser's word that
+    // "the cart" succeeded.
+    if (books.length > 0) {
+      try {
+        for (const book of books) {
+          const result = await payForBook(
+            book.id,
+            book.type === 'book_rent' ? 'borrow' : 'purchase',
+            user?.email || ''
+          );
+
+          if (result.status === 'cancelled') {
+            setToast({ message: 'Payment cancelled.', type: 'info' });
+            setIsProcessing(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('[Checkout] Book payment failed:', err);
+        setToast({
+          message: errorMessage(err, 'Payment could not be completed.'),
+          type: 'info'
+        });
+        setIsProcessing(false);
+        return;
+      }
+    }
+
+    // Courses and mentorships still use the existing cart flow.
+    if (others.length === 0) {
+      window.dispatchEvent(new CustomEvent('trileza-payment-success'));
+      setToast({ message: 'Purchase complete. Enjoy your books!', type: 'success' });
+      setTimeout(() => {
+        if (user?.id) clearCart(user.id);
+        setIsOpen(false);
+        setIsProcessing(false);
+        navigate('/library?tab=bought');
+      }, 1200);
+      return;
+    }
+
+    // Books have already been charged individually above, so the cart-level
+    // Paystack call must not bill for them again.
+    const remaining = others.reduce((sum, i) => sum + Number(i.price || 0), 0);
+    const remainingAfterDiscount = Math.max(
+      0,
+      remaining - (activeCoupon ? (remaining * activeCoupon.discountPercent) / 100 : 0)
+    );
+
+    if (remainingAfterDiscount === 0) {
+      // Nothing left for Paystack to collect.
       recordSuccessfulTransactions();
     } else {
-      // Open Paystack popup
       pay();
     }
   };

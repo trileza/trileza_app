@@ -330,110 +330,32 @@ export const libraryService = {
     return (data || []).map(mapDbAccess);
   },
 
-  borrowBook: async (userId: string, bookId: string, price: number): Promise<UserLibraryAccess> => {
-    const book = await libraryService.getBook(bookId);
-    
-    const { data: existingRecords, error: fetchErr } = await nexus.database
-      .from('api_user_library_access')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('book_id', bookId);
-      
-    if (fetchErr) throw fetchErr;
-    const existing = existingRecords?.[0];
-    
-    let accumulatedRent = price;
-    let isOwn = false;
-    
-    if (existing) {
-      accumulatedRent += Number(existing.lifetime_rent_total || 0);
-      if (existing.access_type === 'own') {
-        isOwn = true;
-      }
-    }
-    
-    if (accumulatedRent >= book.retail_price) {
-      isOwn = true;
-    }
-    
-    const expiresAt = isOwn ? null : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
-    
-    if (existing) {
-      const { data, error } = await nexus.database
-        .from('api_user_library_access')
-        .update({
-          access_type: isOwn ? 'own' : 'rent',
-          lifetime_rent_total: accumulatedRent,
-          expires_at: expiresAt,
-          returned_at: null
-        })
-        .eq('id', existing.id)
-        .select()
-        .single();
-        
-      if (error) throw error;
-      return mapDbAccess(data);
-    } else {
-      const { data, error } = await nexus.database
-        .from('api_user_library_access')
-        .insert([{
-          id: `a-${Date.now()}`,
-          user_id: userId,
-          book_id: bookId,
-          access_type: isOwn ? 'own' : 'rent',
-          lifetime_rent_total: accumulatedRent,
-          expires_at: expiresAt,
-          is_author_gift: false
-        }])
-        .select()
-        .single();
-        
-      if (error) throw error;
-      return mapDbAccess(data);
-    }
+  /**
+   * Removed. Access is no longer granted from the browser.
+   *
+   * These wrote directly into api_user_library_access, which meant the client
+   * decided who owned what — and the cart called them straight after Paystack
+   * fired onSuccess, without the reference ever being checked against
+   * Paystack. Calling that callback from the console was enough to take any
+   * book for nothing.
+   *
+   * Access now comes only from grant_book_access(), which the backend calls
+   * after verifying the payment with Paystack. RLS blocks a direct insert
+   * regardless, so these throw a clear message rather than failing later with
+   * an opaque policy error.
+   *
+   * Use payForBook() from lib/services/bookPayments instead.
+   */
+  borrowBook: async (): Promise<never> => {
+    throw new Error(
+      'Borrowing now requires a verified payment. Use payForBook(bookId, "borrow").'
+    );
   },
 
-  buyBook: async (userId: string, bookId: string): Promise<UserLibraryAccess> => {
-    const { data: existingRecords, error: fetchErr } = await nexus.database
-      .from('api_user_library_access')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('book_id', bookId);
-      
-    if (fetchErr) throw fetchErr;
-    const existing = existingRecords?.[0];
-    
-    if (existing) {
-      const { data, error } = await nexus.database
-        .from('api_user_library_access')
-        .update({
-          access_type: 'own',
-          expires_at: null,
-          returned_at: null
-        })
-        .eq('id', existing.id)
-        .select()
-        .single();
-        
-      if (error) throw error;
-      return mapDbAccess(data);
-    } else {
-      const { data, error } = await nexus.database
-        .from('api_user_library_access')
-        .insert([{
-          id: `a-${Date.now()}`,
-          user_id: userId,
-          book_id: bookId,
-          access_type: 'own',
-          lifetime_rent_total: 0.0,
-          is_author_gift: false
-        }])
-        .select()
-        .single();
-        
-      if (error) throw error;
-      return mapDbAccess(data);
-    }
+  buyBook: async (): Promise<never> => {
+    throw new Error(
+      'Buying now requires a verified payment. Use payForBook(bookId, "purchase").'
+    );
   },
 
   returnBook: async (userId: string, bookId: string): Promise<{ access: UserLibraryAccess, fine_generated: number }> => {
