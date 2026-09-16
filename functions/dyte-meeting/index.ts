@@ -147,21 +147,17 @@ export default async function (req: Request): Promise<Response> {
     const isStaff = STAFF_ROLES.has(callerRole);
 
     /**
-     * Whether this account may host — i.e. teach.
+     * Whether this account may host a session.
      *
-     * `role` alone is not the answer: it tracks the context the user is
-     * currently in, not what they are entitled to do, so an approved or
-     * onboarded mentor can still be sitting at role 'mentee'. Checking only
-     * role refused those users, and the app's own canHostLiveSessions() in
-     * src/store/authStore.ts would have shown them the broadcast form.
-     * Keep the two in step.
+     * Every signed-in account can: a mentee hosts a study pod, a mentor hosts a
+     * class. Tier decides how long the room stays open, not whether it opens at
+     * all. Guardians are excluded — that is a parent portal with no teaching
+     * surface.
+     *
+     * Mirrors canHostLiveSessions() in src/store/authStore.ts. The two must
+     * agree, or the app offers a button the server refuses.
      */
-    const meta = (profile?.metadata || {}) as Record<string, unknown>;
-    const canHost =
-      isStaff ||
-      ['tutor', 'mentor', 'teacher', 'author'].includes(callerRole) ||
-      meta.mentor_onboarded === true ||
-      meta.mentor_application_status === 'approved';
+    const canHost = callerRole !== 'guardian';
 
     /** True when this user owns the session behind `meetingId`, or is staff. */
     const isHostOf = async (id: string): Promise<boolean> => {

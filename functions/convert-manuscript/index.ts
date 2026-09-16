@@ -48,9 +48,9 @@ export default async function (req: Request): Promise<Response> {
     const authHeader = req.headers.get('Authorization');
     const userToken = req.headers.get('x-user-token') || (authHeader ? authHeader.replace('Bearer ', '') : null);
 
-    const baseUrl = Deno.env.get('INSFORGE_BASE_URL') || Deno.env.get('INSFORGE_URL') || Deno.env.get('SUPABASE_URL');
-    const serviceKey = Deno.env.get('API_KEY') || Deno.env.get('SERVICE_ROLE_KEY') || Deno.env.get('INSFORGE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const anonKey = Deno.env.get('ANON_KEY') || Deno.env.get('INSFORGE_ANON_KEY') || Deno.env.get('SUPABASE_ANON_KEY');
+    const baseUrl = Deno.env.get('INSFORGE_BASE_URL') || Deno.env.get('INSFORGE_URL');
+    const serviceKey = Deno.env.get('API_KEY') || Deno.env.get('INSFORGE_SERVICE_ROLE_KEY');
+    const anonKey = Deno.env.get('ANON_KEY') || Deno.env.get('INSFORGE_ANON_KEY');
 
     if (!baseUrl) {
       throw new Error(`Server misconfiguration: base URL is missing.`);

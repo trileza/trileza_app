@@ -184,7 +184,7 @@ fails with a network error rather than a 404 (see below).
 
 Live sessions need a RealtimeKit app. **Create it in the dashboard**, not
 through the API: a dashboard-created app is provisioned with the default
-presets, and [dyte-meeting](supabase/functions/dyte-meeting/index.ts) asks for
+presets, and [dyte-meeting](functions/dyte-meeting/index.ts) asks for
 two of them by name — `group_call_host` and `group_call_participant`. An app
 created by API has no presets, and the failure surfaces only when somebody
 tries to join.
