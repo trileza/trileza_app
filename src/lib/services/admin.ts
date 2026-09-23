@@ -380,6 +380,33 @@ export const adminService = {
 
     if (error) throw error;
 
+    // Approving a review is what makes a book public.
+    //
+    // This used to be implicit: books were created with the default status of
+    // 'published', so a review that approved one changed nothing, and a review
+    // that rejected one left it readable. Now that the publishing service
+    // holds books at 'draft' until they are cleared, the decision has to be
+    // carried over to the book itself or an approved book would never appear.
+    const nextBookStatus =
+      status === 'approved' ? 'published' : status === 'rejected' ? 'rejected' : null;
+
+    if (nextBookStatus) {
+      const { error: bookErr } = await nexus.database
+        .from('api_books')
+        .update({ status: nextBookStatus })
+        .eq('id', bookId);
+
+      // The review is already recorded. Surface this rather than swallowing
+      // it, because the symptom otherwise is an approved book that silently
+      // never appears — the hardest kind of bug to notice.
+      if (bookErr) {
+        console.error('[Admin] Review saved but book status not updated:', bookErr);
+        throw new Error(
+          'The review was saved, but this book could not be made visible. Please try again.'
+        );
+      }
+    }
+
     await this.logAdminAction(
       contentManagerId,
       status === 'approved' ? 'approve' : 'reject',
