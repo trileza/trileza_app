@@ -5,7 +5,7 @@ import {
   ShoppingBag, Clock, CheckCircle, Loader2, Shield, MessageSquare,
   Share2, Trash2, Sparkles, ChevronRight, ChevronLeft, 
   Volume2, Play, Pause, Square, BookOpenCheck, Settings,
-  ZoomIn, ZoomOut, Download
+  ZoomIn, ZoomOut, Download, Bookmark
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
@@ -13,6 +13,9 @@ import { cn } from '../../utils';
 import { Card, Button } from '../ui';
 import { nexus, errorMessage, FUNCTIONS_URL_PUBLIC, getAccessToken } from '../../lib/nexus';
 import { BOOK_FILES_BUCKET, toObjectKey } from '../../lib/bookStorage';
+import { readerService, type OpenBookResult } from '../../lib/services/reader';
+import ReaderGate from '../library/ReaderGate';
+import ReaderPanel, { LoanBanner } from '../library/ReaderPanel';
 import { useCartStore } from '../../store/cartStore';
 import { libraryService } from '../../lib/services/libraryService';
 
@@ -1017,6 +1020,68 @@ const PublicLibraryWrapper: React.FC = () => {
 
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
+  // The backend's verdict on opening the current book. Nothing renders until
+  // this says yes — the proposal is explicit that a borrowed book must be
+  // authorised server-side rather than by hiding a button.
+  const [access, setAccess] = useState<OpenBookResult | null>(null);
+  const [checkingAccess, setCheckingAccess] = useState(false);
+  const [fontScale, setFontScale] = useState(1);
+  const [showReaderPanel, setShowReaderPanel] = useState(false);
+
+  // Ask the backend whether this book may be opened, and where to resume.
+  // Also opens a reading session, which is what the author's read-through
+  // figures are counted from.
+  useEffect(() => {
+    if (!isReading || !selectedBook?.id || !user?.id) {
+      setAccess(null);
+      return;
+    }
+
+    let alive = true;
+    setCheckingAccess(true);
+
+    readerService.openBook(user.id, selectedBook.id)
+      .then(result => { if (alive) setAccess(result); })
+      .catch(err => {
+        console.error('[Reader] Could not check access:', err);
+        if (alive) setAccess({
+          allowed: false, reason: 'no_license', license_type: null,
+          expires_at: null, days_left: null, last_position: null,
+          percent_read: 0, session_id: null
+        });
+      })
+      .finally(() => { if (alive) setCheckingAccess(false); });
+
+    return () => { alive = false; };
+  }, [isReading, selectedBook?.id, user?.id]);
+
+  // Remember where the reader got to, so the book reopens where it was left.
+  // Debounced: page turns come in bursts, and one write per turn would be a
+  // request per keypress on a fast reader.
+  useEffect(() => {
+    if (!isReading || !selectedBook?.id || !user?.id || !access?.allowed) return;
+
+    const total = detectedPageCount || selectedBook.pages || 0;
+    const timer = setTimeout(() => {
+      readerService.saveProgress(
+        user.id,
+        selectedBook.id,
+        total > 0 ? (currentPage / total) * 100 : 0,
+        String(currentPage)
+      );
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [currentPage, isReading, selectedBook?.id, user?.id, access?.allowed, detectedPageCount]);
+
+  // Close the session when the reader closes, so the recorded duration is the
+  // time actually spent rather than running until the tab is shut.
+  useEffect(() => {
+    if (isReading || !access?.session_id) return;
+    readerService.closeSession(access.session_id);
+  }, [isReading, access?.session_id]);
+
+
   /**
    * Downloads a purchased book.
    *
@@ -1952,6 +2017,31 @@ const PublicLibraryWrapper: React.FC = () => {
 
   // Secure Study Session / Reader
   if (isReading && selectedBook) {
+    // Nothing of the book renders until the backend has said yes. Checking
+    // after rendering would mean the content was already on screen when the
+    // refusal arrived.
+    if (checkingAccess || (!access && user?.id)) {
+      return (
+        <div className="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center">
+          <div className="flex items-center gap-3 text-xs font-black uppercase tracking-widest text-slate-400">
+            <Loader2 size={16} className="animate-spin" /> Checking your access
+          </div>
+        </div>
+      );
+    }
+
+    if (access && !access.allowed) {
+      return (
+        <div className="fixed inset-0 z-50 bg-slate-950 overflow-y-auto">
+          <ReaderGate
+            reason={access.reason}
+            bookTitle={selectedBook.title}
+            onBack={() => { setIsReading(false); setSelectedBook(null); }}
+          />
+        </div>
+      );
+    }
+
     const totalPages = detectedPageCount || selectedBook.pages || 40; // Dynamic count fallback to metadata pages
     
     const getHighlightPage = (hl: any) => {
@@ -2122,6 +2212,28 @@ const PublicLibraryWrapper: React.FC = () => {
           </div>
         )}
 
+        {/* How long is left on a loan, if this is one. Above the header so a
+            reader sees it before the content, not after they have settled in. */}
+        <LoanBanner daysLeft={access?.days_left ?? null} licenseType={access?.license_type ?? null} />
+
+        {/* Bookmarks, highlights and notes, over the reader rather than beside
+            it — at phone width there is no room for a column, and the reader
+            is the same component on both. */}
+        {showReaderPanel && user?.id && selectedBook && (
+          <div className="fixed inset-y-0 right-0 z-[60] flex shadow-2xl">
+            <ReaderPanel
+              userId={user.id}
+              userName={user.full_name || 'Reader'}
+              bookId={selectedBook.id}
+              currentPage={currentPage}
+              fontScale={fontScale}
+              onFontScale={setFontScale}
+              onGoToPage={(page) => { setCurrentPage(page); setShowReaderPanel(false); }}
+              onClose={() => setShowReaderPanel(false)}
+            />
+          </div>
+        )}
+
         {/* LIGHT THEMED HEADER */}
         <header className="p-3 sm:p-4 md:p-6 border-b border-slate-200 bg-white flex items-center justify-between gap-2 sm:gap-4 relative z-10 text-slate-850">
           <div className="flex items-center gap-2 sm:gap-4 min-w-0">
@@ -2131,6 +2243,13 @@ const PublicLibraryWrapper: React.FC = () => {
               title="Close Reader"
             >
               <X size={18} className="sm:w-5 sm:h-5" />
+            </button>
+            <button
+              onClick={() => setShowReaderPanel(true)}
+              className="p-2 sm:p-2.5 hover:bg-slate-100 rounded-xl transition-all text-slate-500 hover:text-slate-900 active:scale-95 cursor-pointer flex items-center justify-center border border-slate-200 bg-slate-50 shadow-sm shrink-0"
+              title="Bookmarks, highlights and notes"
+            >
+              <Bookmark size={16} />
             </button>
             {!leftSidebarOpen && (
               <button
