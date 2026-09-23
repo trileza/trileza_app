@@ -175,3 +175,23 @@ CREATE INDEX IF NOT EXISTS notifications_user_unread_idx
 CREATE INDEX IF NOT EXISTS reading_sessions_open_idx
   ON reading_sessions (started_at)
   WHERE ended_at IS NULL;
+
+
+-- ── Applied ──────────────────────────────────────────────────────────────
+--
+-- Run against the live project on 2026-09-23, and both sweeps scheduled
+-- hourly on off-peak minutes so they do not collide with the live-session
+-- reaper that runs every two minutes:
+--
+--   expire-lapsed-book-licenses        23 * * * *
+--   close-abandoned-reading-sessions   47 * * * *
+--
+-- Verified with fixtures, since "returns 0 on an empty table" proves only
+-- that a function does not crash:
+--
+--   a loan due in 12 hours   -> status 'expiring', "due back tomorrow"
+--   a loan an hour lapsed    -> status 'expired',  "no longer readable"
+--   a second sweep           -> still 2 notifications, nobody nagged twice
+--   a 9-hour-old open session-> ended, seconds = 14400, was_abandoned = true
+--
+-- All fixtures removed afterwards; every table back to zero rows.
