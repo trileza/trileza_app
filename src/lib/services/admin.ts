@@ -1,5 +1,6 @@
 import { nexus } from '../nexus';
 import { publishAdminEvent } from './realtimeEvents';
+import { notify } from './notify';
 import { generateSecureToken, generateNumericCode } from '../../utils/secureRandom';
 import type { 
   AdminRole, 
@@ -434,6 +435,23 @@ export const adminService = {
       status,
       notes
     });
+
+    // A durable notification, so an author whose book was reviewed while they
+    // were offline still finds out. The realtime nudge above only reaches
+    // whoever has the app open at that second.
+    if (status === 'approved' || status === 'rejected') {
+      const { data: book } = await nexus.database
+        .from('api_books')
+        .select('title')
+        .eq('id', bookId)
+        .single();
+
+      await notify.send(
+        currentReview?.submitted_by,
+        status === 'approved' ? 'book_approved' : 'book_rejected',
+        { bookId, bookTitle: book?.title, notes }
+      );
+    }
 
     return data;
   },

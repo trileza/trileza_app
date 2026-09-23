@@ -154,6 +154,66 @@ export default async function (req: Request): Promise<Response> {
           .eq('id', txn.metadata.request_id);
       }
 
+      // Tell the people affected, now that the licence certainly exists.
+      //
+      // Written straight to `notifications` rather than published on a
+      // channel: this runs on a server with nobody watching, and the point is
+      // that a mentee who was offline when their mentor paid still finds the
+      // book waiting for them.
+      //
+      // Best-effort. A notification that fails must not fail the webhook and
+      // make Paystack redeliver a payment that was already granted.
+      if (!grantErr) {
+        try {
+          const { data: book } = await asService.database
+            .from('api_books')
+            .select('title, author_id')
+            .eq('id', txn.book_id)
+            .single();
+
+          const rows: Array<Record<string, unknown>> = [];
+          const now = () => `n-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const title = book?.title ? `“${book.title}”` : 'A book';
+
+          // Only when someone else paid — telling people they bought their
+          // own book is noise.
+          if (beneficiaryId !== txn.user_id) {
+            const { data: payer } = await asService.database
+              .from('profiles').select('full_name').eq('id', txn.user_id).single();
+
+            rows.push({
+              id: now(),
+              user_id: beneficiaryId,
+              title: 'A book was bought for you',
+              message: `${payer?.full_name || 'Your mentor'} got you ${title}. It is in your library now.`,
+              type: 'success',
+              link: '/library/mine',
+              is_read: false,
+              metadata: { event: 'sponsorship_granted', bookId: txn.book_id }
+            });
+          }
+
+          if (book?.author_id) {
+            rows.push({
+              id: now(),
+              user_id: book.author_id,
+              title: 'You earned from a sale',
+              message: `${title} earned you a share of ₦${(Number(txn.amount_minor || 0) / 100).toLocaleString()}.`,
+              type: 'success',
+              link: '/author',
+              is_read: false,
+              metadata: { event: 'earning_recorded', bookId: txn.book_id }
+            });
+          }
+
+          if (rows.length > 0) {
+            await asService.database.from('notifications').insert(rows);
+          }
+        } catch (notifyErr) {
+          console.error('[paystack-webhook] could not write notifications:', notifyErr);
+        }
+      }
+
       if (grantErr) {
         console.error('[paystack-webhook] grant failed, leaving ledger pending:', grantErr);
         // 500 so Paystack retries. The ledger stays 'pending', so the next

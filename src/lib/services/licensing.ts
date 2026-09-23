@@ -16,6 +16,7 @@
  */
 
 import { nexus, errorMessage } from '../nexus';
+import { notify } from './notify';
 
 /** What the current user may do with a given book. */
 export interface BookActions {
@@ -192,6 +193,20 @@ export const licensingService = {
       .single();
 
     if (error) throw new Error(errorMessage(error, 'Could not send your request.'));
+
+    // Tell the mentor. Without this the request sits in a list they have no
+    // reason to open, which is the same as not having asked.
+    const [{ data: book }, { data: mentee }] = await Promise.all([
+      nexus.database.from('api_books').select('title').eq('id', bookId).single(),
+      nexus.database.from('profiles').select('full_name').eq('id', menteeId).single()
+    ]);
+
+    await notify.send(mentorId, 'sponsorship_requested', {
+      bookId,
+      bookTitle: book?.title,
+      menteeName: mentee?.full_name
+    });
+
     return data;
   },
 
