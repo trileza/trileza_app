@@ -661,15 +661,26 @@ export const feedService = {
   }): Promise<FeedNotification | null> {
     try {
       const notifId = 'notif_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+
+      // `sender_id` and `target_id` are not columns on this table — they live
+      // in `metadata`, as the library's notifications already do.
+      //
+      // Writing them as columns made every insert here fail with PGRST204,
+      // and the `if (error) return null` below swallowed it, so no social
+      // notification has ever been stored: no follow, like, comment or
+      // mention. The realtime broadcast still fired, which is why anyone
+      // watching at that instant saw one and nobody else ever did.
       const notifObj = {
         id: notifId,
         user_id: params.user_id,
-        sender_id: params.sender_id || null,
         type: params.type,
-        target_id: params.target_id || null,
         title: params.title || 'Notification',
         message: params.message,
         is_read: false,
+        metadata: {
+          sender_id: params.sender_id || null,
+          target_id: params.target_id || null
+        },
         created_at: new Date().toISOString()
       };
 
@@ -679,15 +690,20 @@ export const feedService = {
         .select()
         .single();
 
-      if (error) return null;
+      // Logged rather than swallowed. A silent `return null` here is what hid
+      // the broken insert above for as long as it existed.
+      if (error) {
+        console.error('[Feeds] Could not store notification:', error);
+        return null;
+      }
 
       const senderProfile = params.sender_id ? await fetchAuthorProfile(params.sender_id) : undefined;
       const notification: FeedNotification = {
         id: data.id,
         user_id: data.user_id,
-        sender_id: data.sender_id,
+        sender_id: data.metadata?.sender_id ?? undefined,
         type: data.type,
-        target_id: data.target_id,
+        target_id: data.metadata?.target_id ?? undefined,
         title: data.title,
         message: data.message,
         is_read: false,
@@ -719,21 +735,29 @@ export const feedService = {
 
       if (error || !data) return [];
 
-      const senderIds = data.map((n: any) => n.sender_id).filter(Boolean);
+      // Read from metadata, where these are actually stored. Rows written
+      // before this fix do not exist — every earlier insert failed — so there
+      // is no older shape to fall back to.
+      const senderIds = data
+        .map((n: any) => n.metadata?.sender_id)
+        .filter(Boolean);
       const senders = await fetchAuthorProfilesBatch(senderIds);
 
-      return data.map((n: any) => ({
-        id: n.id,
-        user_id: n.user_id,
-        sender_id: n.sender_id,
-        type: n.type || 'like',
-        target_id: n.target_id,
-        title: n.title || 'Notification',
-        message: n.message,
-        is_read: !!(n.is_read || n.read),
-        created_at: n.created_at,
-        sender: n.sender_id ? senders[n.sender_id] : undefined
-      }));
+      return data.map((n: any) => {
+        const senderId = n.metadata?.sender_id ?? undefined;
+        return {
+          id: n.id,
+          user_id: n.user_id,
+          sender_id: senderId,
+          type: n.type || 'like',
+          target_id: n.metadata?.target_id ?? undefined,
+          title: n.title || 'Notification',
+          message: n.message,
+          is_read: !!n.is_read,
+          created_at: n.created_at,
+          sender: senderId ? senders[senderId] : undefined
+        };
+      });
     } catch (err) {
       console.error('[Feeds] getUserNotifications error:', err);
       return [];
@@ -745,12 +769,20 @@ export const feedService = {
    */
   async markNotificationRead(notifId: string): Promise<boolean> {
     try {
-      await nexus.database
+      // `read` is not a column; writing it failed the whole update, so
+      // marking a notification read never worked either.
+      const { error } = await nexus.database
         .from('notifications')
-        .update({ is_read: true, read: true })
+        .update({ is_read: true })
         .eq('id', notifId);
+
+      if (error) {
+        console.error('[Feeds] Could not mark notification read:', error);
+        return false;
+      }
       return true;
     } catch (err) {
+      console.error('[Feeds] Could not mark notification read:', err);
       return false;
     }
   },
