@@ -28,8 +28,9 @@ const json = (body: unknown, status = 200) =>
 /** What a borrow costs, as a fraction of the book's retail price. */
 const BORROW_RATE = 0.10;
 
-/** How long a borrow lasts. */
-const BORROW_DAYS = 14;
+// The borrow term is no longer a constant. It lives on the book as
+// borrow_days (default 5, per the proposal), so an author-approved different
+// term needs no code change.
 
 export default async function (req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
@@ -60,6 +61,10 @@ export default async function (req: Request): Promise<Response> {
     const body = await req.json().catch(() => ({}));
     const bookId: string | undefined = body.bookId;
     const type: string = body.type;
+    // Who the licence is for. Absent means the buyer themselves; present means
+    // a mentor sponsoring a mentee, which is the product's core transaction.
+    const beneficiaryId: string = body.beneficiaryId || userId;
+    const requestId: string | undefined = body.requestId;
 
     if (!bookId) return json({ error: 'bookId is required' }, 400);
     if (!['purchase', 'borrow'].includes(type)) {
@@ -69,7 +74,7 @@ export default async function (req: Request): Promise<Response> {
     // ── Price comes from the database, never the request ────────────────
     const { data: book } = await asUser.database
       .from('api_books')
-      .select('id, title, author_id, retail_price, rental_price, status')
+      .select('id, title, author_id, retail_price, rental_price, status, allow_purchase, allow_borrow, allow_mentor_gift, allow_borrow_to_own, borrow_days')
       .eq('id', bookId)
       .maybeSingle();
 
@@ -97,26 +102,89 @@ export default async function (req: Request): Promise<Response> {
       );
     }
 
-    // Already entitled? Charging again would be theft in the other direction.
+    // ── Role rules (proposal section 2) ─────────────────────────────────
+    // Enforced here, not only in the UI: a mentee cannot borrow at all, and
+    // only a mentor may pay on someone else's behalf.
+    const sponsoring = beneficiaryId !== userId;
+
+    // The author decides which routes their book is available through
+    // (proposal section 12). Selecting the flags without checking them would
+    // let a disabled route be used anyway.
+    if (type === 'purchase' && !sponsoring && book.allow_purchase === false) {
+      return json({ error: 'This book is not available for purchase.' }, 403);
+    }
+    if (type === 'purchase' && sponsoring && book.allow_mentor_gift === false) {
+      return json({ error: 'The author has not enabled buying this book for someone else.' }, 403);
+    }
+    if (type === 'borrow' && book.allow_borrow === false) {
+      return json({ error: 'This book is not available to borrow.' }, 403);
+    }
+
+    const { data: actions } = await asUser.database.rpc('book_actions_for_user', {
+      p_user_id: userId,
+      p_book_id: bookId
+    });
+    const act = Array.isArray(actions) ? actions[0] : actions;
+
+    if (type === 'borrow' && !sponsoring) {
+      // The rule the whole model rests on. A mentee who wants a book buys it,
+      // or asks a mentor to borrow it for them.
+      return json({
+        error: 'Borrowing is arranged by a mentor for a mentee. Buy this book, or ask your mentor.'
+      }, 403);
+    }
+
+    if (sponsoring) {
+      if (!act?.is_mentor) {
+        return json({ error: 'Only a mentor can pay for someone else.' }, 403);
+      }
+      // And only for their own mentee — otherwise a mentor could issue
+      // licences to any account on the platform.
+      const { data: pair } = await asUser.database
+        .from('mentor_mentees')
+        .select('id')
+        .eq('mentor_id', userId)
+        .eq('mentee_id', beneficiaryId)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (!pair) {
+        return json({ error: 'That person is not one of your mentees.' }, 403);
+      }
+    }
+
+    // ── Is the BENEFICIARY already entitled? ────────────────────────────
+    // Checked against whoever receives the licence, not whoever pays — a
+    // mentor may well already own a book they are buying for a mentee.
     const { data: existing } = await asUser.database
-      .from('api_user_library_access')
-      .select('access_type, expires_at, returned_at')
-      .eq('user_id', userId)
+      .from('book_licenses')
+      .select('license_type, status, expires_at')
+      .eq('beneficiary_id', beneficiaryId)
       .eq('book_id', bookId);
 
     const owns = (existing || []).some(
-      (a: any) => (a.access_type === 'own' || a.access_type === 'gift') && !a.returned_at
+      (l: any) => ['owned', 'granted'].includes(l.license_type) && ['active', 'owned'].includes(l.status)
     );
-    if (owns) return json({ error: 'You already own this book.' }, 400);
+    if (owns) {
+      return json({
+        error: sponsoring ? 'Your mentee already owns this book.' : 'You already own this book.'
+      }, 400);
+    }
 
     if (type === 'borrow') {
-      const activeBorrow = (existing || []).some(
-        (a: any) =>
-          ['rent', 'borrow'].includes(a.access_type) &&
-          !a.returned_at &&
-          (!a.expires_at || new Date(a.expires_at) > new Date())
+      const onLoan = (existing || []).some(
+        (l: any) =>
+          l.license_type === 'borrowed' &&
+          ['active', 'expiring'].includes(l.status) &&
+          (!l.expires_at || new Date(l.expires_at) > new Date())
       );
-      if (activeBorrow) return json({ error: 'You already have this book on loan.' }, 400);
+      // Not blocked for borrow-to-own: repeat borrowing is how credit
+      // accumulates, and the licence is extended rather than duplicated.
+      if (onLoan && !book.allow_borrow_to_own) {
+        return json({
+          error: sponsoring ? 'Your mentee already has this on loan.' : 'You already have this on loan.'
+        }, 400);
+      }
     }
 
     // Minor units. Paystack bills in kobo, and integers avoid the rounding
@@ -149,7 +217,12 @@ export default async function (req: Request): Promise<Response> {
         metadata: {
           book_title: book.title,
           author_id: book.author_id,
-          borrow_days: type === 'borrow' ? BORROW_DAYS : undefined
+          // Recorded on the payment so the licence can be issued to the right
+          // person when the webhook arrives, long after this request is gone.
+          beneficiary_id: beneficiaryId,
+          sponsored: sponsoring,
+          request_id: requestId || undefined,
+          borrow_days: type === 'borrow' ? Number(book.borrow_days || 5) : undefined
         }
       }]);
 
@@ -172,7 +245,7 @@ export default async function (req: Request): Promise<Response> {
         reference,
         currency: 'NGN',
         callback_url: siteUrl ? `${siteUrl}/payment/callback` : undefined,
-        metadata: { book_id: bookId, user_id: userId, type }
+        metadata: { book_id: bookId, user_id: userId, beneficiary_id: beneficiaryId, type }
       })
     });
 

@@ -32,7 +32,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, x-paystack-signature'
 };
 
-const BORROW_DAYS = 14;
+// The borrow term lives on the book (borrow_days, default 5) and is applied
+// by issue_book_license, so there is no constant to drift out of step.
 
 /**
  * The author's share of a sale or borrow fee.
@@ -126,19 +127,32 @@ export default async function (req: Request): Promise<Response> {
     // a retry that gets past a transient failure returns the existing row
     // rather than issuing a second one.
     if (txn.book_id) {
-      const accessType = txn.type === 'purchase' ? 'own' : 'rent';
-      const expiresAt =
-        txn.type === 'purchase'
-          ? null
-          : new Date(Date.now() + BORROW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      // The licence goes to the beneficiary recorded when the charge opened,
+      // which is the mentee for a sponsorship and the payer otherwise. Reading
+      // it from the payment rather than assuming the payer is what makes
+      // "Mary paid, John reads" work.
+      const beneficiaryId = txn.metadata?.beneficiary_id || txn.user_id;
 
-      const { error: grantErr } = await asService.database.rpc('grant_book_access', {
-        p_user_id: txn.user_id,
+      const { error: grantErr } = await asService.database.rpc('issue_book_license', {
         p_book_id: txn.book_id,
-        p_access_type: accessType,
-        p_reference: reference,
-        p_expires_at: expiresAt
+        p_beneficiary_id: beneficiaryId,
+        p_payer_id: txn.user_id,
+        p_license_type: txn.type === 'purchase' ? 'owned' : 'borrowed',
+        p_transaction_id: reference,
+        p_amount_minor: Number(txn.amount_minor || 0)
       });
+
+      // Close the request that prompted this, if there was one.
+      if (!grantErr && txn.metadata?.request_id) {
+        await asService.database
+          .from('book_requests')
+          .update({
+            status: 'fulfilled',
+            fulfilled_as: txn.type === 'purchase' ? 'purchase' : 'borrow',
+            resolved_at: new Date().toISOString()
+          })
+          .eq('id', txn.metadata.request_id);
+      }
 
       if (grantErr) {
         console.error('[paystack-webhook] grant failed, leaving ledger pending:', grantErr);

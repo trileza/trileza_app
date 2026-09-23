@@ -30,7 +30,7 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
 
-const BORROW_DAYS = 14;
+// The borrow term lives on the book and is applied by issue_book_license.
 
 /** The author's share. Mirrors the webhook; both must change together. */
 const AUTHOR_RATE = 0.60;
@@ -188,18 +188,18 @@ export async function settlePayment(opts: {
     return { status: 200, body: { success: true, type: txn.type } };
   }
 
-  const accessType = txn.type === 'purchase' ? 'own' : 'rent';
-  const expiresAt =
-    txn.type === 'purchase'
-      ? null
-      : new Date(Date.now() + BORROW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  // The licence goes to whoever the charge named as beneficiary — the mentee
+  // for a sponsorship, the payer otherwise. Mirrors the webhook exactly; the
+  // two paths must not grant on different terms.
+  const beneficiaryId = txn.metadata?.beneficiary_id || txn.user_id;
 
-  const { error: grantErr } = await asService.database.rpc('grant_book_access', {
-    p_user_id: txn.user_id,
+  const { error: grantErr } = await asService.database.rpc('issue_book_license', {
     p_book_id: txn.book_id,
-    p_access_type: accessType,
-    p_reference: reference,
-    p_expires_at: expiresAt
+    p_beneficiary_id: beneficiaryId,
+    p_payer_id: txn.user_id,
+    p_license_type: txn.type === 'purchase' ? 'owned' : 'borrowed',
+    p_transaction_id: reference,
+    p_amount_minor: Number(txn.amount_minor || 0)
   });
 
   if (grantErr) {
