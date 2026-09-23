@@ -203,6 +203,26 @@ export const publishingService = {
       }
     }
 
+    // Screen the manuscript for plagiarism and AI-generated text.
+    //
+    // Fire-and-forget: scanning takes minutes and its result reaches the
+    // reviewer through a webhook. A scan that fails to start must not lose an
+    // upload that already succeeded — the failure is recorded against the
+    // book, so the queue shows that nothing was checked rather than implying
+    // a clean result.
+    //
+    // This used to run only in StoreManager, so books published from the
+    // author dashboard reached a reviewer with no scan evidence at all.
+    try {
+      nexus.functions
+        .invoke('book-scan', { body: { bookId } })
+        .catch((scanErr: unknown) =>
+          console.error('[Publishing] Could not start scan:', scanErr)
+        );
+    } catch (scanErr) {
+      console.error('[Publishing] Could not start scan:', scanErr);
+    }
+
     return {
       bookId,
       status: goLive ? 'published' : 'pending_review',
