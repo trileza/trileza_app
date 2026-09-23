@@ -9,6 +9,8 @@ import { formatCurrency, cn } from '../../utils';
 import { motion } from 'framer-motion';
 import { LoadingOverlay } from '../../components/shared';
 import { libraryService } from '../../lib/services/libraryService';
+import BookActionPanel from '../../components/library/BookActions';
+import { Toast } from '../../components/ui/Toast';
 
 
 interface BookDetailData {
@@ -35,6 +37,7 @@ interface BookDetailData {
 const BookDetail: React.FC = () => {
   const { bookId } = useParams<{ bookId: string }>();
   const navigate = useNavigate();
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
   const { user } = useAuthStore();
   const { addItem, setIsOpen: setCartOpen } = useCartStore();
 
@@ -70,42 +73,10 @@ const BookDetail: React.FC = () => {
     );
   }
 
-  const calculatedBorrowFee = book.retail_price * 0.10;
-
-  const handleBorrow = () => {
-    if (!user?.id) return;
-    addItem({
-      id: book.id,
-      type: 'book_rent',
-      title: `${book.title} (2-Week Rental)`,
-      thumbnail: book.cover_url,
-      price: calculatedBorrowFee
-    }, user.id);
-    setCartOpen(true);
-  };
-
-  const handleBuy = () => {
-    if (!user?.id) return;
-    addItem({
-      id: book.id,
-      type: 'book_buy',
-      title: book.title,
-      thumbnail: book.cover_url,
-      price: Number(book.retail_price)
-    }, user.id);
-    setCartOpen(true);
-  };
-
-  const handleReserve = async () => {
-    if (!user?.id) return;
-    try {
-      await libraryService.reserveBook(user.id, book.id);
-      alert('Book reserved successfully!');
-    } catch (err) {
-      console.error(err);
-      alert('Failed to reserve book.');
-    }
-  };
+  // The buy/borrow/reserve handlers that lived here are gone. They pushed a
+  // book into the cart at a client-chosen price, offered a two-week borrow to
+  // anyone including mentees, and reserved without a licence. All three are
+  // now decided by the backend and rendered by BookActionPanel.
 
   return (
     <div className="w-full pb-20 animate-in fade-in duration-500 space-y-8 relative">
@@ -129,34 +100,24 @@ const BookDetail: React.FC = () => {
             <img src={book.cover_url} alt={book.title} className="w-full h-full object-cover" />
           </motion.div>
 
+          {/* What this user may actually do with this book.
+              The panel asks the backend rather than deciding from a role here:
+              the proposal requires that the library not display actions a role
+              cannot initiate, and a rule written twice drifts. */}
           <Card className="p-6 rounded-3xl border-slate-100 dark:border-slate-800 space-y-4 shadow-xl max-sm:hidden">
-            <h3 className="font-black text-sm uppercase tracking-widest text-slate-500 text-center mb-4">Acquisition Options</h3>
-            
-            <button 
-              onClick={handleBorrow}
-              className="w-full h-14 rounded-2xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black uppercase tracking-widest text-xs flex items-center justify-between px-6 transition-transform active:scale-95 shadow-lg shadow-amber-500/20 cursor-pointer border-none"
-            >
-              <span className="flex items-center gap-2"><Clock size={16} /> Borrow (2 Weeks)</span>
-              <span>{formatCurrency(calculatedBorrowFee)}</span>
-            </button>
-            <p className="text-center text-[10px] text-slate-500 font-bold mb-2">
-              Borrow fee is precisely 10% of retail price. No downloads allowed.
-            </p>
-
-            <button 
-              onClick={handleBuy}
-              className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs flex items-center justify-between px-6 transition-transform active:scale-95 shadow-lg shadow-emerald-500/20 cursor-pointer border-none mb-2"
-            >
-              <span className="flex items-center gap-2"><ShoppingBag size={16} /> Buy Outright</span>
-              <span>{formatCurrency(book.retail_price)}</span>
-            </button>
-
-            <button 
-              onClick={handleReserve}
-              className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 px-6 transition-transform active:scale-95 shadow-lg shadow-indigo-500/20 cursor-pointer border-none"
-            >
-              <BookMarked size={16} /> Reserve Blueprint
-            </button>
+            {user?.id ? (
+              <BookActionPanel
+                book={book as any}
+                userId={user.id}
+                userEmail={user.email || ''}
+                onRead={() => navigate(`/library?read=${book.id}`)}
+                notify={(message, type) => setToast({ message, type })}
+              />
+            ) : (
+              <p className="text-xs font-bold text-slate-500 text-center py-6 leading-relaxed">
+                Sign in to buy this book or ask your mentor for it.
+              </p>
+            )}
           </Card>
         </div>
 
@@ -267,21 +228,25 @@ const BookDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Sticky Mobile Actions Footer */}
-      <div className="sm:hidden fixed bottom-16 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200 dark:border-slate-800 p-3 flex gap-3 shadow-[0_-8px_30px_rgb(0,0,0,0.15)] backdrop-blur-md animate-in slide-in-from-bottom duration-300">
-        <button 
-          onClick={handleBorrow}
-          className="flex-1 h-12 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-1.5 shadow-md"
-        >
-          <Clock size={14} /> Borrow ({formatCurrency(calculatedBorrowFee)})
-        </button>
-        <button 
-          onClick={handleBuy}
-          className="flex-1 h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-1.5 shadow-md"
-        >
-          <ShoppingBag size={14} /> Buy ({formatCurrency(book.retail_price)})
-        </button>
-      </div>
+      {/* Mobile actions.
+          The same panel as the desktop card, not a second set of buttons —
+          the previous footer offered Borrow to everyone, including mentees,
+          which is the one thing the model forbids. */}
+      {user?.id && (
+        <div className="sm:hidden fixed bottom-16 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200 dark:border-slate-800 p-3 shadow-[0_-8px_30px_rgb(0,0,0,0.15)] backdrop-blur-md animate-in slide-in-from-bottom duration-300 max-h-[55vh] overflow-y-auto">
+          <BookActionPanel
+            book={book as any}
+            userId={user.id}
+            userEmail={user.email || ''}
+            onRead={() => navigate(`/library?read=${book.id}`)}
+            notify={(message, type) => setToast({ message, type })}
+          />
+        </div>
+      )}
+
+      {toast && (
+        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+      )}
     </div>
   );
 };

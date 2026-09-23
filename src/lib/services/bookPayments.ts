@@ -41,10 +41,19 @@ export interface InitializedPayment {
  */
 export const initializeBookPayment = async (
   bookId: string,
-  type: BookPurchaseType
+  type: BookPurchaseType,
+  /**
+   * Who the licence is for. Omitted means the buyer themselves; supplied means
+   * a mentor sponsoring a mentee. The backend refuses a beneficiary who is not
+   * actually the caller's mentee, so this cannot be used to issue licences to
+   * arbitrary accounts.
+   */
+  beneficiaryId?: string,
+  /** The request this fulfils, so it can be closed once paid. */
+  requestId?: string
 ): Promise<InitializedPayment> => {
   const { data, error } = await nexus.functions.invoke('payments-initialize', {
-    body: { bookId, type }
+    body: { bookId, type, beneficiaryId, requestId }
   });
 
   if (error) throw new Error(errorMessage(error, 'Could not start this payment.'));
@@ -118,9 +127,12 @@ export interface PayForBookResult {
 export const payForBook = async (
   bookId: string,
   type: BookPurchaseType,
-  email: string
+  email: string,
+  /** A mentee's id, when a mentor is paying on their behalf. */
+  beneficiaryId?: string,
+  requestId?: string
 ): Promise<PayForBookResult> => {
-  const init = await initializeBookPayment(bookId, type);
+  const init = await initializeBookPayment(bookId, type, beneficiaryId, requestId);
 
   const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
   if (!publicKey) {
