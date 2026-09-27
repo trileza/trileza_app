@@ -165,6 +165,37 @@ export const canHostLiveSessions = (user: UserProfile | null): boolean => {
   return String(user.role || '').toLowerCase() !== 'guardian';
 };
 
+/**
+ * Whether a mentor has got far enough to use the mentor dashboard.
+ *
+ * One definition, because there were four and they disagreed. App.tsx checked
+ * the onboarding flag, three tier values and an approved application;
+ * DashboardLayout checked the flag alone. A mentor with a tier but no flag
+ * therefore passed the route guard and was shown the dashboard with no
+ * sidebar — reachable, unnavigable.
+ *
+ * Whatever this answers, it must answer the same way everywhere: a layout that
+ * hides navigation the router allows leaves the user somewhere they cannot get
+ * out of.
+ */
+export const isMentorOnboarded = (user: UserProfile | null): boolean => {
+  if (!user) return false;
+  const metadata = user.metadata || {};
+
+  return (
+    metadata.mentor_onboarded === true ||
+    metadata.mentor_application_status === 'approved' ||
+    // Holding any tier means they finished signing up as a mentor at some
+    // point; the specific tier does not matter here.
+    Boolean(user.mentor_tier) ||
+    Boolean(metadata.mentor_tier) ||
+    // Having left the application deliberately is an answer too. They declined
+    // to apply — that is not a reason to take the dashboard away from an
+    // account whose role is already mentor.
+    Boolean(metadata.mentor_onboarding_exited_at)
+  );
+};
+
 export const resolveActiveRole = (user: UserProfile | null, overrideRole?: UserRole | null): UserRole | null => {
   if (!user) return null;
   const metadata = user.metadata || {};

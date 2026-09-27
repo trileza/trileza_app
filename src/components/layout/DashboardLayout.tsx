@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuthStore, resolveActiveRole } from '../../store/authStore';
+import { useAuthStore, resolveActiveRole, isMentorOnboarded as isMentorOnboardedFn } from '../../store/authStore';
 import { useMessageStore } from '../../store/messageStore';
 import { cn } from '../../utils';
 import { CartButton, CartDrawer } from '../shared';
@@ -36,7 +36,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const isMentee = derivedRole === 'mentee';
   const isMenteeOnboarded = user?.metadata?.mentee_onboarded === true;
   const isMentor = derivedRole === 'mentor' || derivedRole === 'tutor';
-  const isMentorOnboarded = user?.metadata?.mentor_onboarded === true;
+  // Shared with the route guard in App.tsx. These two used to disagree: the
+  // guard let a mentor through and this hid the navigation, so the dashboard
+  // rendered with no sidebar and no way out of it.
+  const isMentorOnboarded = isMentorOnboardedFn(user);
   const isChatActive = location.pathname === '/messages' && new URLSearchParams(location.search).has('chat');
 
   const hasAccess = 

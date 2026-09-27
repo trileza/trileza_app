@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { useAuthStore, resolveActiveRole } from './store/authStore';
+import { useAuthStore, resolveActiveRole, isMentorOnboarded as isMentorOnboardedFn } from './store/authStore';
 import { nexus } from './lib/nexus';
 import { useMeetingStore } from './store/meetingStore';
 import { liveService } from './lib/services/live';
@@ -314,12 +314,8 @@ const App: React.FC = () => {
   const isMentee = derivedRole === 'mentee' && !isGuardian;
   const isMenteeOnboarded = user?.metadata?.mentee_onboarded === true;
   const isMentor = derivedRole === 'mentor' || derivedRole === 'tutor';
-  const isMentorOnboarded = user?.metadata?.mentor_onboarded === true || 
-    user?.mentor_tier === 'free' || 
-    user?.mentor_tier === 'pro' || 
-    user?.mentor_tier === 'institutional' || 
-    user?.metadata?.mentor_application_status === 'approved' ||
-    Boolean(user?.metadata?.mentor_tier);
+  // Shared with DashboardLayout, which hides the sidebar on the same question.
+  const isMentorOnboarded = isMentorOnboardedFn(user);
 
   // Onboarding Gates
   if (user) {
