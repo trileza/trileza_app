@@ -336,7 +336,27 @@ const App: React.FC = () => {
     // explicit dismissal held for the session.
     const applicationState = user?.metadata?.mentor_application_status;
     const hasApplied = applicationState === 'pending' || applicationState === 'rejected';
-    const dismissed = sessionStorage.getItem('trileza_mentor_onboarding_dismissed') === '1';
+
+    // Dismissal has to outlive the tab.
+    //
+    // The exit handler writes two things: this sessionStorage flag, and
+    // `mentor_onboarding_exited_at` on the profile. The gate only read the
+    // first, which is cleared whenever the tab closes — so a mentor who had
+    // declined the application weeks ago was sent back to the pitch page on
+    // every new session, from wherever they were in the dashboard. The
+    // decision was already recorded; nothing was reading it.
+    const dismissedThisSession = (() => {
+      try {
+        return sessionStorage.getItem('trileza_mentor_onboarding_dismissed') === '1';
+      } catch {
+        // Private mode or blocked storage. The profile flag below still covers
+        // anyone who has exited before.
+        return false;
+      }
+    })();
+
+    const dismissed =
+      dismissedThisSession || Boolean(user?.metadata?.mentor_onboarding_exited_at);
 
     if (
       isMentor &&
