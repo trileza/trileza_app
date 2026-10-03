@@ -8,6 +8,7 @@ import { hasAdminRole, isAdminRecordActive, getDefaultAdminRole } from './utils/
 // Pages
 const GateLogin = React.lazy(() => import('./pages/admin/GateLogin'));
 const GateVerify2FA = React.lazy(() => import('./pages/admin/GateVerify2FA'));
+const GateAcceptInvite = React.lazy(() => import('./pages/admin/GateAcceptInvite'));
 const GateRegister = React.lazy(() => import('./pages/admin/GateRegister'));
 const GateOnboarding = React.lazy(() => import('./pages/admin/GateOnboarding'));
 const AdminManagement = React.lazy(() => import('./pages/admin/AdminManagement'));
@@ -179,6 +180,17 @@ const AdminApp: React.FC = () => {
 
   const renderContent = () => {
     const p = location.pathname.toLowerCase();
+
+    // Accepting an invitation, before any guard.
+    //
+    // This page existed and was routed nowhere, so every invitation link led
+    // to a 404 — which, together with admin_invites not existing at all, is
+    // why no administrator could ever be appointed. It must stay public: an
+    // invitee is by definition not yet an admin, and requiring the role they
+    // are being granted would be circular.
+    if (p.includes('/accept-invite')) {
+      return <GateAcceptInvite />;
+    }
 
     if (p.endsWith('/signin')) {
       return <GateLogin />;

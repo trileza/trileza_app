@@ -1,3 +1,4 @@
+import { AdminErrorBoundary } from './AdminErrorBoundary';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
@@ -339,7 +340,15 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ currentRole, onRoleChange, ch
         <div className="absolute top-10 right-10 w-96 h-96 bg-emerald-500/2 rounded-full blur-[120px] pointer-events-none z-0" />
         
         <div className="relative z-10 p-6 sm:p-8 md:p-10 max-w-[92%] 2xl:max-w-[1550px] mx-auto space-y-8">
-          {children}
+          {/* Inside the layout rather than around it, so a section that throws
+              leaves the sidebar and role switcher standing. An admin who
+              cannot load payouts can still work on support tickets.
+
+              Keyed by role: switching section after a crash should show the
+              new section, not the error the previous one left behind. */}
+          <AdminErrorBoundary key={currentRole} section={roleMeta[currentRole]?.label}>
+            {children}
+          </AdminErrorBoundary>
         </div>
       </main>
 

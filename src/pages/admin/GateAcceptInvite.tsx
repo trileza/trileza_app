@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Mail, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { nexus, errorMessage } from '../../lib/nexus';
 
 export default function GateAcceptInvite() {
   const [searchParams] = useSearchParams();
@@ -29,15 +30,18 @@ export default function GateAcceptInvite() {
 
   const validateToken = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_INSFORGE_URL}/functions/v1/admin-invites`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'accept', token })
+      // Through the SDK, which knows where functions actually live.
+      //
+      // This used to build a Supabase-shaped URL by hand —
+      // `{VITE_INSFORGE_URL}/functions/v1/admin-invites` — but this project's
+      // functions are served from a different host entirely, so the request
+      // 404'd. Every invitation failed here even once the route existed.
+      const { data, error: fnError } = await nexus.functions.invoke('admin-invites', {
+        body: { action: 'accept', token }
       });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        setError(data.error || 'Invalid or expired token.');
+
+      if (fnError || data?.error) {
+        setError(data?.error || errorMessage(fnError, 'Invalid or expired token.'));
       } else {
         setInviteData(data);
         // If user is already logged in with the same email, auto-accept
@@ -58,20 +62,20 @@ export default function GateAcceptInvite() {
   const processAcceptance = async (userId: string) => {
     setSubmitting(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_INSFORGE_URL}/functions/v1/admin-invites`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'accept', token, userId })
+      const { data, error: fnError } = await nexus.functions.invoke('admin-invites', {
+        body: { action: 'accept', token, userId }
       });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        setError(data.error || 'Failed to accept invitation.');
+
+      if (fnError || data?.error) {
+        setError(data?.error || errorMessage(fnError, 'Failed to accept invitation.'));
         setSubmitting(false);
       } else {
         // Success! Reload auth state to get new admin roles
         await initialize();
-        navigate('/gate/login', { replace: true, state: { message: 'Invitation accepted! Please login.' } });
+        // /signin, not /gate/login: that path matches no route in AdminApp, so
+        // a newly minted admin landed on a blank screen immediately after
+        // accepting — the worst possible moment for one.
+        navigate('/signin', { replace: true, state: { message: 'Invitation accepted. Please sign in.' } });
       }
     } catch (err: any) {
       setError(err.message);
