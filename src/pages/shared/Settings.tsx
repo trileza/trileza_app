@@ -482,7 +482,7 @@ const Settings = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {[
                     { id: 'light', name: 'Light Mode', desc: 'Crisp bright view for daylight reading', icon: Sun },
-                    { id: 'dark', name: 'Dark Mode (High Contrast)', desc: 'High contrast deep theme for low light', icon: Moon },
+                    { id: 'dark', name: 'Dark Mode', desc: 'Deep theme for low light. High contrast is a separate setting below.', icon: Moon },
                     { id: 'system', name: 'System Default', desc: 'Syncs with your device theme', icon: Monitor }
                   ].map((themeOpt) => {
                     const isSelected = settings.theme === themeOpt.id;

@@ -216,8 +216,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       document.documentElement.classList.remove('dark');
     }
 
-    // 2. Apply Accessibility Contrast (High Contrast default for dark mode)
-    if (accessibility.contrast === 'high' || isDark) {
+    // 2. Apply Accessibility Contrast
+    //
+    // High contrast is what the user asked for, not something dark mode
+    // implies. It used to be forced on for every dark session, which replaced
+    // the designed palette — a near-black #080C0A ground with #1E293B inputs
+    // and the brand green — with pure black, pure white and #00FF00, and made
+    // container backgrounds disagree with each other across the app.
+    //
+    // Dark mode and high contrast are different requests: one is a preference
+    // about light, the other an accessibility need. Someone who wants both can
+    // still have both.
+    if (accessibility.contrast === 'high') {
       document.documentElement.classList.add('high-contrast');
     } else {
       document.documentElement.classList.remove('high-contrast');

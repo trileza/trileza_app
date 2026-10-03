@@ -514,8 +514,15 @@ select:-webkit-autofill:active {
 .dark select:-webkit-autofill:hover,
 .dark select:-webkit-autofill:focus,
 .dark select:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 1000px #27272a inset !important;
+  /* Matched to the dark input surface rather than a generic grey.
+   *
+   * #27272a is a neutral zinc and the fields around it are #122019, a green
+   * cast — so an autofilled field read as a different colour from an empty
+   * one sitting directly above it. The box-shadow trick is still needed:
+   * Chrome ignores background-color on an autofilled control. */
+  -webkit-box-shadow: 0 0 0 1000px #122019 inset !important;
   -webkit-text-fill-color: #f8fafc !important;
+  caret-color: #f8fafc !important;
 }
 
 /* Override all micro-text classes to readable minimums using rem */
