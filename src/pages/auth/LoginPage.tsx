@@ -5,6 +5,7 @@ import 'react-phone-number-input/style.css';
 import { Button, Card } from '../../components/ui';
 import { LoadingOverlay } from '../../components/shared';
 import { useAuthStore } from '../../store/authStore';
+import { PasswordStrength, passwordMeetsPolicy } from '../../components/auth/PasswordStrength';
 import { useSettingsStore } from '../../store/settingsStore';
 import { nexus } from '../../lib/nexus';
 import type { UserRole } from '../../store/authStore';
@@ -22,6 +23,7 @@ import {
   AlertCircle,
   Sun,
   Moon,
+  Check,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '../../utils';
@@ -59,6 +61,9 @@ const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  // Sign-up only. The reset flow has its own confirmPassword above, and
+  // sharing one would carry a value between two unrelated forms.
+  const [signupConfirm, setSignupConfirm] = useState('');
   // Individuals always register as a mentee; mentor status is an upgrade
   // that goes through application and admin review. Held as a constant so no
   // code path can submit a different role at sign-up.
@@ -140,6 +145,19 @@ const LoginPage = () => {
 
     if (!phoneNumber) {
       setError('Phone number with country code is required.');
+      return;
+    }
+
+    // Checked here as well as on the server, so the answer arrives before the
+    // round trip rather than as a rejected submission. The meter above shows
+    // which rule is outstanding; this stops someone pressing through it.
+    if (!passwordMeetsPolicy(password)) {
+      setError('Your password does not yet meet all the requirements listed above.');
+      return;
+    }
+
+    if (password !== signupConfirm) {
+      setError('The two passwords do not match.');
       return;
     }
 
@@ -573,6 +591,10 @@ const LoginPage = () => {
                       {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                     </button>
                   </div>
+                  {/* The rules, while they are being met rather than after
+                      the form is rejected. */}
+                  {view === 'signup' && <PasswordStrength password={password} />}
+
                   {view === 'login' && (
                     <div className="flex justify-end pt-1">
                       <button
@@ -585,6 +607,43 @@ const LoginPage = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Confirm, so a typo in a masked field is caught here rather
+                    than at the first failed sign-in — when the person has no
+                    way of knowing what they actually typed. */}
+                {view === 'signup' && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.15em]">
+                      Confirm Security Key
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={signupConfirm}
+                        onChange={(e) => setSignupConfirm(e.target.value)}
+                        placeholder="Repeat your password"
+                        required
+                        className={cn(
+                          'w-full px-4 py-3.5 pl-11 pr-11 bg-slate-50 dark:bg-[#122019] border rounded-xl text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:ring-2 transition-all',
+                          signupConfirm && signupConfirm !== password
+                            ? 'border-rose-400 focus:ring-rose-500/30 focus:border-rose-500'
+                            : 'border-slate-200 dark:border-emerald-900/50 focus:ring-emerald-500/30 focus:border-emerald-500'
+                        )}
+                      />
+                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={17} />
+                      {signupConfirm && signupConfirm === password && (
+                        <Check className="absolute right-3.5 top-1/2 -translate-y-1/2 text-emerald-500" size={17} strokeWidth={3} />
+                      )}
+                    </div>
+                    {/* Only once they have typed enough to mean it — flagging a
+                        mismatch on the first character is just noise. */}
+                    {signupConfirm.length >= 3 && signupConfirm !== password && (
+                      <p className="text-[11px] font-bold text-rose-500">
+                        These do not match yet.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* No role selection at sign-up.
