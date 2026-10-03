@@ -24,7 +24,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   BookOpen, Users, UploadCloud, Tags, CheckCircle2, AlertTriangle,
-  ChevronLeft, ChevronRight, Plus, Trash2, Loader2, Info
+  ChevronLeft, ChevronRight, Plus, Trash2, Loader2, Info, Scale, Coins
 } from 'lucide-react';
 import { cn } from '../../utils';
 import {
@@ -58,7 +58,32 @@ export interface WizardDraft {
   tags: string;
   retail_price: string;
   publish_immediately: boolean;
+
+  /** What the author offers (§12). */
+  allow_purchase: boolean;
+  allow_mentor_gift: boolean;
+  allow_borrow: boolean;
+  allow_borrow_to_own: boolean;
+  borrow_price: string;
+  borrow_credit_pct: string;
+
+  /** The rights declaration (§11). */
+  owns_rights: boolean;
+  grants_hosting: boolean;
+  grants_display: boolean;
+  grants_sale: boolean;
+  grants_lending: boolean;
+  grants_borrow_to_own: boolean;
+  territory: string;
 }
+
+/**
+ * The version of the terms an author is agreeing to.
+ *
+ * Stored with every declaration, because terms change and a record that does
+ * not say which version was accepted proves nothing later.
+ */
+export const RIGHTS_AGREEMENT_VERSION = '2026-10-01';
 
 const emptyDraft = (authorName: string): WizardDraft => ({
   title: '',
@@ -81,7 +106,28 @@ const emptyDraft = (authorName: string): WizardDraft => ({
   section: '',
   tags: '',
   retail_price: '5000',
-  publish_immediately: false
+  publish_immediately: false,
+
+  // §12's defaults: a book is normally buyable, giftable and borrowable.
+  // Borrow-to-own is opt-in, because it commits the author to converting a
+  // sequence of loans into ownership.
+  allow_purchase: true,
+  allow_mentor_gift: true,
+  allow_borrow: true,
+  allow_borrow_to_own: false,
+  // §14's worked example is a ₦10,000 book borrowed at ₦2,000 — a fifth.
+  borrow_price: '1000',
+  borrow_credit_pct: '100',
+
+  // Nothing is pre-ticked. A declaration the author did not actively make is
+  // not a declaration.
+  owns_rights: false,
+  grants_hosting: false,
+  grants_display: false,
+  grants_sale: false,
+  grants_lending: false,
+  grants_borrow_to_own: false,
+  territory: 'World'
 });
 
 interface Props {
@@ -101,6 +147,8 @@ const STEPS = [
   { key: 'people',  label: 'People',     icon: Users },
   { key: 'files',   label: 'Files',      icon: UploadCloud },
   { key: 'catalog', label: 'Cataloguing', icon: Tags },
+  { key: 'rights',  label: 'Rights',     icon: Scale },
+  { key: 'terms',   label: 'Terms',      icon: Coins },
   { key: 'review',  label: 'Review',     icon: CheckCircle2 }
 ] as const;
 
@@ -156,7 +204,25 @@ export const PublishWizard: React.FC<Props> = ({
     file_format: bookFile ? (/\.epub$/i.test(bookFile.name) ? 'EPUB' : 'PDF') : undefined,
     file_size_bytes: bookFile?.size,
     book_file_name: bookFile?.name,
-    publish_immediately: canSkipReview ? draft.publish_immediately : false
+    publish_immediately: canSkipReview ? draft.publish_immediately : false,
+
+    allow_purchase: draft.allow_purchase,
+    allow_mentor_gift: draft.allow_mentor_gift,
+    allow_borrow: draft.allow_borrow,
+    allow_borrow_to_own: draft.allow_borrow_to_own,
+    borrow_days: 5,
+    borrow_credit_rate: (Number(draft.borrow_credit_pct) || 0) / 100,
+
+    rights: {
+      owns_rights: draft.owns_rights,
+      grants_hosting: draft.grants_hosting,
+      grants_display: draft.grants_display,
+      grants_sale: draft.grants_sale,
+      grants_lending: draft.grants_lending,
+      grants_borrow_to_own: draft.grants_borrow_to_own,
+      territory: draft.territory,
+      agreement_version: RIGHTS_AGREEMENT_VERSION
+    }
   }), [draft, bookFile, userId, authorName, sections, canSkipReview]);
 
   const issues = useMemo(() => publishingService.checkBeforePublish(asInput), [asInput]);
@@ -223,7 +289,9 @@ export const PublishWizard: React.FC<Props> = ({
         file_url: fileUrl,
         cover_url: coverUrl,
         sample_pages: sampleUrl ? [sampleUrl] : [],
-        rental_price: Number((Number(draft.retail_price) * 0.1).toFixed(2))
+        // The author sets this on the Terms step now, rather than it being a
+        // tenth of the price that nobody chose.
+        rental_price: Number(draft.borrow_price) || 0
       });
 
       onPublished(result.bookId, result.status);
@@ -241,6 +309,11 @@ export const PublishWizard: React.FC<Props> = ({
     if (step === 0) return draft.title.trim().length > 0;
     if (step === 1) return draft.contributors.some(c => c.contributor_name.trim());
     if (step === 2) return !missingFile && !oversized;
+    // Rights: the three that make a book readable and legal at all. The rest
+    // are checked against what the author offers, on the review step.
+    if (step === 4) return draft.owns_rights && draft.grants_hosting && draft.grants_display;
+    // Terms: a book nobody can acquire is not publishable.
+    if (step === 5) return draft.allow_purchase || draft.allow_mentor_gift || draft.allow_borrow;
     return true;
   };
 
@@ -563,8 +636,152 @@ export const PublishWizard: React.FC<Props> = ({
           </>
         )}
 
-        {/* ── 5. Review ───────────────────────────────────────────────── */}
+        {/* ── 5. Rights ───────────────────────────────────────────────── */}
         {step === 4 && (
+          <>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              The platform needs your permission to do each of these. Nothing is
+              ticked for you: a declaration you did not actively make is not a
+              declaration, and this record is kept against the book.
+            </p>
+
+            <Check
+              checked={draft.owns_rights}
+              onChange={v => set('owns_rights', v)}
+              title="I hold the rights to publish this work"
+              hint="You are the author, or you have written permission from whoever is."
+            />
+
+            <div className="pt-1 space-y-2">
+              <p className={label}>I grant Trileza permission to</p>
+
+              <Check
+                checked={draft.grants_hosting}
+                onChange={v => set('grants_hosting', v)}
+                title="Store the file"
+                hint="Required. Without it there is nothing to open."
+              />
+              <Check
+                checked={draft.grants_display}
+                onChange={v => set('grants_display', v)}
+                title="Show it in the reader"
+                hint="Required. This is how readers read it."
+              />
+              <Check
+                checked={draft.grants_sale}
+                onChange={v => set('grants_sale', v)}
+                title="Sell it"
+                hint="Needed if you offer the book for purchase."
+              />
+              <Check
+                checked={draft.grants_lending}
+                onChange={v => set('grants_lending', v)}
+                title="Lend it for a fixed period"
+                hint="Needed if a mentor may borrow it for a mentee."
+              />
+              <Check
+                checked={draft.grants_borrow_to_own}
+                onChange={v => set('grants_borrow_to_own', v)}
+                title="Let borrowing payments build toward ownership"
+                hint="Only needed if you enable borrow-to-own on the next step."
+              />
+            </div>
+
+            <div>
+              <label className={label}>Territory</label>
+              <select
+                className={field}
+                value={draft.territory}
+                onChange={e => set('territory', e.target.value)}
+              >
+                <option value="World">World</option>
+                <option value="Africa">Africa</option>
+                <option value="Nigeria">Nigeria only</option>
+                <option value="World excluding US">World excluding US</option>
+              </select>
+              <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                Where you hold the rights to publish. Recorded with your
+                declaration, version {RIGHTS_AGREEMENT_VERSION}.
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* ── 6. Terms ────────────────────────────────────────────────── */}
+        {step === 5 && (
+          <>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              How people may get this book. A reader is never shown an option
+              you turn off here, and never shown one their role cannot use.
+            </p>
+
+            <Check
+              checked={draft.allow_purchase}
+              onChange={v => set('allow_purchase', v)}
+              title="Anyone can buy it"
+              hint="A mentee or a mentor buys it outright and keeps it."
+            />
+            <Check
+              checked={draft.allow_mentor_gift}
+              onChange={v => set('allow_mentor_gift', v)}
+              title="A mentor can buy it for a mentee"
+              hint="The mentor pays; the mentee owns it."
+            />
+            <Check
+              checked={draft.allow_borrow}
+              onChange={v => set('allow_borrow', v)}
+              title="A mentor can borrow it for a mentee"
+              hint="Five days of reading, then access ends. A mentee cannot borrow for themselves."
+            />
+
+            {draft.allow_borrow && (
+              <div className="pl-4 border-l-2 border-slate-800 space-y-4 py-1">
+                <div>
+                  <label className={label}>Borrow price (₦)</label>
+                  <input
+                    className={field}
+                    type="number"
+                    min={0}
+                    value={draft.borrow_price}
+                    onChange={e => set('borrow_price', e.target.value)}
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Paid once per five-day loan.
+                  </p>
+                </div>
+
+                <Check
+                  checked={draft.allow_borrow_to_own}
+                  onChange={v => set('allow_borrow_to_own', v)}
+                  title="Borrowing builds toward owning it"
+                  hint="Each loan payment counts toward the purchase price. Once it is covered, the mentee keeps the book."
+                />
+
+                {draft.allow_borrow_to_own && (
+                  <div>
+                    <label className={label}>Credit per loan (%)</label>
+                    <input
+                      className={field}
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={draft.borrow_credit_pct}
+                      onChange={e => set('borrow_credit_pct', e.target.value)}
+                    />
+                    <BorrowToOwnExplainer
+                      price={Number(draft.retail_price) || 0}
+                      borrow={Number(draft.borrow_price) || 0}
+                      pct={Number(draft.borrow_credit_pct) || 0}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── 7. Review ───────────────────────────────────────────────── */}
+        {step === 6 && (
           <>
             {errors.length > 0 && (
               <IssueList
@@ -682,6 +899,75 @@ export const PublishWizard: React.FC<Props> = ({
           </button>
         )}
       </div>
+    </div>
+  );
+};
+
+/** A labelled checkbox with an explanation, used by the rights and terms steps. */
+const Check: React.FC<{
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  title: string;
+  hint: string;
+}> = ({ checked, onChange, title, hint }) => (
+  <label
+    className={cn(
+      'flex items-start gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors',
+      checked
+        ? 'bg-brand-primary/10 border-brand-primary/40'
+        : 'bg-slate-800/50 border-slate-800 hover:border-slate-700'
+    )}
+  >
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={e => onChange(e.target.checked)}
+      className="mt-0.5 accent-brand-primary shrink-0"
+    />
+    <span>
+      <span className="block text-[11px] font-black text-white">{title}</span>
+      <span className="block text-[10px] text-slate-400 leading-relaxed mt-0.5">{hint}</span>
+    </span>
+  </label>
+);
+
+/**
+ * What borrow-to-own actually costs, in numbers.
+ *
+ * The proposal works it through as a table for a reason: "five loans of ₦2,000
+ * reach a ₦10,000 book" is a commitment an author should see before agreeing
+ * to it, not discover from a ledger afterwards.
+ */
+const BorrowToOwnExplainer: React.FC<{ price: number; borrow: number; pct: number }> = ({
+  price, borrow, pct
+}) => {
+  const credit = borrow * (pct / 100);
+
+  if (!price || !borrow || credit <= 0) {
+    return (
+      <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+        Set a price and a borrow price to see how many loans lead to ownership.
+      </p>
+    );
+  }
+
+  const loans = Math.ceil(price / credit);
+
+  return (
+    <div className="mt-2.5 px-3.5 py-3 rounded-xl bg-slate-800/60 border border-slate-800">
+      <p className="text-[10px] text-slate-300 leading-relaxed">
+        Each ₦{borrow.toLocaleString()} loan credits{' '}
+        <span className="font-black text-brand-accent">₦{credit.toLocaleString()}</span>{' '}
+        toward the ₦{price.toLocaleString()} price.
+      </p>
+      <p className="text-[10px] font-black text-white mt-1.5">
+        {loans} loan{loans === 1 ? '' : 's'} and the mentee keeps the book.
+      </p>
+      {credit > 0 && loans > 20 && (
+        <p className="text-[10px] text-amber-300 mt-1.5 leading-relaxed">
+          That is a long way to ownership. A mentee may never get there.
+        </p>
+      )}
     </div>
   );
 };

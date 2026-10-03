@@ -29,6 +29,7 @@ interface BookLike {
   rental_price?: number;
   allow_borrow_to_own?: boolean;
   borrow_days?: number;
+  borrow_credit_rate?: number;
 }
 
 interface Props {
@@ -206,8 +207,13 @@ export const BookActionPanel: React.FC<Props> = ({
             {borrowDays} days of reading access for your mentee. Not a download.
             {book.allow_borrow_to_own && (
               <> Every borrow counts toward the {formatCurrency(book.retail_price)} price —
-                {' '}{Math.ceil(Number(book.retail_price) / Math.max(1, borrowPrice))} borrows
-                and they own it.</>
+                {' '}{Math.ceil(
+                  Number(book.retail_price) /
+                  // The author may credit less than the full payment, so the
+                  // rate decides how many loans this takes. Assuming 100% here
+                  // promised ownership sooner than the ledger would grant it.
+                  Math.max(1, borrowPrice * (book.borrow_credit_rate ?? 1))
+                )} borrows and they own it.</>
             )}
           </p>
         </div>

@@ -52,6 +52,34 @@ export interface PublishInput extends BookMetadataInput {
   material_type?: string;
   book_file_name?: string;
   copyright_holder?: string;
+
+  /**
+   * What the author offers (§12). The database already carried these and
+   * book_actions_for_user already honoured them; nothing set them, so every
+   * book silently took the defaults and §3.1's "chooses whether purchase,
+   * mentor-sponsored purchase, borrowing and borrow-to-own are available" was
+   * not something an author could do.
+   */
+  allow_purchase?: boolean;
+  allow_mentor_gift?: boolean;
+  allow_borrow?: boolean;
+  allow_borrow_to_own?: boolean;
+  /** §13 fixes this at five for now; stored explicitly so it can change. */
+  borrow_days?: number;
+  /** Fraction of a borrow payment that becomes ownership credit (§14). */
+  borrow_credit_rate?: number;
+
+  /** The rights declaration (§11), stored against the publication (§45). */
+  rights?: {
+    owns_rights: boolean;
+    grants_hosting: boolean;
+    grants_display: boolean;
+    grants_sale: boolean;
+    grants_lending: boolean;
+    grants_borrow_to_own: boolean;
+    territory: string;
+    agreement_version: string;
+  };
   /**
    * Whether this goes live now or waits for a moderator.
    *
@@ -75,8 +103,76 @@ export interface PublishResult {
  * while the author can still go back and fix them, rather than after the
  * button is pressed.
  */
-export const checkBeforePublish = (input: PublishInput): ValidationIssue[] =>
-  validateBookMetadata(input);
+export const checkBeforePublish = (input: PublishInput): ValidationIssue[] => {
+  const issues = validateBookMetadata(input);
+
+  // §11 and §45: the platform must hold a rights declaration before a book is
+  // published. The metadata validator knows nothing about rights, so this is
+  // checked here rather than bolted into it.
+  if (!input.rights?.owns_rights) {
+    issues.push({
+      field: 'rights',
+      message: 'You must confirm you hold the rights to publish this book.',
+      severity: 'error'
+    });
+  } else if (!input.rights.grants_hosting || !input.rights.grants_display) {
+    issues.push({
+      field: 'rights',
+      message: 'Hosting and display permission are needed for the book to be readable at all.',
+      severity: 'error'
+    });
+  }
+
+  // Selling a book nobody granted the right to sell, or lending one with no
+  // lending grant, is the specific mismatch §11 asks the agreement to cover.
+  if (input.allow_purchase !== false && input.rights && !input.rights.grants_sale) {
+    issues.push({
+      field: 'rights',
+      message: 'This book is offered for sale, but the rights declaration does not grant sale.',
+      severity: 'error'
+    });
+  }
+
+  if (input.allow_borrow !== false && input.rights && !input.rights.grants_lending) {
+    issues.push({
+      field: 'rights',
+      message: 'This book is offered for borrowing, but the rights declaration does not grant lending.',
+      severity: 'error'
+    });
+  }
+
+  if (input.allow_borrow_to_own && input.rights && !input.rights.grants_borrow_to_own) {
+    issues.push({
+      field: 'rights',
+      message: 'Borrow-to-own is enabled, but the rights declaration does not grant it.',
+      severity: 'error'
+    });
+  }
+
+  // Mirrors the database trigger, so the author sees the problem on the review
+  // step rather than as a constraint violation after pressing publish.
+  if (
+    input.allow_purchase === false &&
+    input.allow_mentor_gift === false &&
+    input.allow_borrow === false
+  ) {
+    issues.push({
+      field: 'commercial',
+      message: 'This book offers no way to acquire it. Enable purchase, mentor gift or borrowing.',
+      severity: 'error'
+    });
+  }
+
+  if (input.allow_borrow_to_own && input.allow_borrow === false) {
+    issues.push({
+      field: 'commercial',
+      message: 'Borrow-to-own needs borrowing enabled: the credit comes from borrow payments.',
+      severity: 'error'
+    });
+  }
+
+  return issues;
+};
 
 export const publishingService = {
   checkBeforePublish,
@@ -136,7 +232,16 @@ export const publishingService = {
       pages: input.pages ?? null,
       age_rating: input.age_rating || null,
       material_type: input.material_type || null,
-      rights_statement: input.rights_statement || 'World',
+      // What the author offers. A database trigger refuses a combination that
+      // cannot be honoured — borrow-to-own with no borrowing, or a published
+      // book offering nothing at all.
+      allow_purchase: input.allow_purchase ?? true,
+      allow_mentor_gift: input.allow_mentor_gift ?? true,
+      allow_borrow: input.allow_borrow ?? true,
+      allow_borrow_to_own: input.allow_borrow_to_own ?? false,
+      borrow_days: input.borrow_days ?? 5,
+      borrow_credit_rate: input.borrow_credit_rate ?? 1.0,
+      rights_statement: input.rights?.territory || input.rights_statement || 'World',
       copyright_year: input.copyright_year ?? new Date().getFullYear(),
       copyright_holder: input.copyright_holder?.trim() || input.author_name.trim(),
       rating: 0.0,
@@ -147,6 +252,36 @@ export const publishingService = {
     }]);
 
     if (bookErr) throw new Error(errorMessage(bookErr, 'Could not save this book.'));
+
+    // The rights declaration, stored against the publication (§11, §45).
+    //
+    // Written immediately after the book and before anything else, because a
+    // published book with no record of what its author agreed to is exactly
+    // what the launch criterion exists to prevent. A failure here is raised,
+    // not logged: unlike a missing contributor row, this one matters legally.
+    if (input.rights) {
+      const { error: rightsErr } = await nexus.database.from('rights_agreements').insert([{
+        book_id: bookId,
+        accepted_by: input.author_id,
+        agreement_version: input.rights.agreement_version,
+        owns_rights: input.rights.owns_rights,
+        grants_hosting: input.rights.grants_hosting,
+        grants_display: input.rights.grants_display,
+        grants_sale: input.rights.grants_sale,
+        grants_lending: input.rights.grants_lending,
+        grants_borrow_to_own: input.rights.grants_borrow_to_own,
+        territory: input.rights.territory,
+        copyright_holder: input.copyright_holder?.trim() || input.author_name.trim(),
+        copyright_year: input.copyright_year ?? new Date().getFullYear()
+      }]);
+
+      if (rightsErr) {
+        console.error('[Publishing] Could not store the rights declaration:', rightsErr);
+        throw new Error(
+          'This book was saved but its rights declaration could not be recorded. Please contact support before it is reviewed.'
+        );
+      }
+    }
 
     // The primary author is added by a database trigger, so anyone the author
     // named beyond themselves starts at display_order 1.
