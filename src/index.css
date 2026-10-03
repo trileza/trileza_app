@@ -380,6 +380,23 @@ html, body, #root {
   width: 100% !important;
 }
 
+/* Tell the browser which scheme its own widgets should use.
+ *
+ * This was missing entirely, so the browser assumed light and painted the
+ * parts it controls — autofill backgrounds, scrollbars, date and select
+ * popups, spin buttons — in light colours, regardless of what the page looked
+ * like. That is why an autofilled email stayed white while the password field
+ * beside it was correctly dark: the field was ours, the autofill highlight was
+ * the browser's.
+ *
+ * No author stylesheet can fix that on its own. In recent Chrome the autofill
+ * background is applied in a layer above author styles, which is why the
+ * -webkit-box-shadow override below is still needed as well — the two work
+ * together, and neither is sufficient alone.
+ */
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+
 /* Remove tap highlight on mobile */
 * {
   -webkit-tap-highlight-color: transparent;
