@@ -12,8 +12,7 @@ import {
   ChevronRight, 
   Camera,
   Info,
-  AlertCircle,
-  ArrowLeft
+  AlertCircle
 } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
 import { PageHeader, Logo } from '../../components/shared';
@@ -23,7 +22,6 @@ import { signupDraft } from '../../lib/signupDraft';
 import { motion, AnimatePresence } from 'framer-motion';
 
 type OnboardingStep = 
-  | 'welcome' 
   | 'profile' 
   | 'background' 
   | 'certificate' 
@@ -142,7 +140,10 @@ const MenteeOnboarding = () => {
   const isFastTrack = user?.metadata?.mentor_onboarded === true;
   
   // Step Management
-  const [step, setStep] = useState<OnboardingStep>('welcome');
+  // Starts on the first real question. The welcome screen was a title, three
+  // claims and a button — nothing to answer — so it stood between a new
+  // learner and the form they came to fill in.
+  const [step, setStep] = useState<OnboardingStep>(isFastTrack ? 'background' : 'profile');
   const [direction, setDirection] = useState(1);
   const [showDoBTooltip, setShowDoBTooltip] = useState(false);
   const [socialConnected, setSocialConnected] = useState<string | null>(null);
@@ -551,85 +552,6 @@ const MenteeOnboarding = () => {
 
         <AnimatePresence custom={direction} mode="wait">
           
-          {/* ── WELCOME STEP ── */}
-          {step === 'welcome' && (
-            <motion.div 
-              key="welcome" custom={direction} variants={variants} initial="enter" animate="center" exit="exit"
-              className="text-center space-y-12"
-            >
-              <div className="space-y-6">
-                <h1 className="text-4xl md:text-6xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">
-                  {isFastTrack ? (
-                    <>Fast-Track to Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-400">Academy Path</span></>
-                  ) : (
-                    <>Welcome to Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-400">Academy Path</span>.</>
-                  )}
-                </h1>
-                <p className="text-lg md:text-xl text-slate-500 dark:text-slate-400 font-medium max-w-xl mx-auto leading-relaxed">
-                  {isFastTrack 
-                    ? "As an approved Trileza Mentor, your account is already fully verified! We've skipped the profile setup—just answer a few quick questions about your learning goals to unlock your Mentee Dashboard."
-                    : "Let's personalize your learning dashboard. In just a few steps, you'll secure your account, customize your learning tracks, and launch your first course."
-                  }
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-2xl mx-auto">
-                <div className="p-8 bg-white/60 dark:bg-slate-900/50 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800 rounded-[2rem] text-center space-y-4 hover:border-emerald-500/30 transition-all hover:scale-[1.02]">
-                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto">
-                    <BookOpen size={24} />
-                  </div>
-                  <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Flexible Audits</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal">Access comprehensive lectures completely free of charge.</p>
-                </div>
-                <div className="p-8 bg-white/60 dark:bg-slate-900/50 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800 rounded-[2rem] text-center space-y-4 hover:border-emerald-500/30 transition-all hover:scale-[1.02]">
-                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto">
-                    <Award size={24} />
-                  </div>
-                  <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Verified Credentials</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal">Unlock industry-grade certificates when you finish.</p>
-                </div>
-                <div className="p-8 bg-white/60 dark:bg-slate-900/50 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800 rounded-[2rem] text-center space-y-4 hover:border-emerald-500/30 transition-all hover:scale-[1.02]">
-                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mx-auto">
-                    <Shield size={24} />
-                  </div>
-                  <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Secured Profile</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal">Control your privacy and share options with total clarity.</p>
-                </div>
-              </div>
-
-              {/* A way out of the first screen.
-                  Every later step carries "Exit to Portal" in its header, but
-                  the welcome step is a bare hero with no header — so the one
-                  screen a new mentee meets first was the only one they could
-                  not leave. The route guard sends them back here from
-                  anywhere, so browser Back did not help either: it was a
-                  genuine dead end, not merely a missing button. */}
-              <div className="flex flex-col items-center gap-3">
-                <Button
-                  onClick={() => handleNext(isFastTrack ? 'background' : 'profile')}
-                  className="h-16 px-16 bg-slate-900 hover:bg-black dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.2em] rounded-[1.5rem] shadow-2xl hover:shadow-emerald-500/10 group transition-all"
-                >
-                  Let's Get Started
-                  <ChevronRight className="ml-2 group-hover:translate-x-1.5 transition-transform" size={16} />
-                </Button>
-
-                {/* Says where it goes. "Back" alone implied the previous page
-                    in the app, which is not where an unregistered account can
-                    be sent — so the label names the destination instead of
-                    letting the user infer the wrong one. */}
-                <button
-                  type="button"
-                  onClick={handleExitToPortal}
-                  disabled={leaving}
-                  className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-4 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent flex items-center gap-1.5 group disabled:opacity-50 disabled:cursor-default"
-                >
-                  <ArrowLeft size={14} className="group-hover:-translate-x-0.5 transition-transform" />
-                  {leaving ? 'Signing out…' : 'Back to sign in'}
-                </button>
-              </div>
-            </motion.div>
-          )}
-
           {/* ── SECTION 1: PERSONAL PROFILE & OPTIONAL CV/LINKEDIN ── */}
           {step === 'profile' && (
             <motion.div 
@@ -811,7 +733,13 @@ const MenteeOnboarding = () => {
 
                 {/* Navigation Buttons */}
                 <div className="flex gap-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-                  <Button variant="outline" onClick={() => handleBack('welcome')} className="flex-1 h-16 rounded-2xl border-2 border-slate-350 dark:border-slate-800 font-extrabold text-sm text-slate-900 dark:text-white hover:bg-slate-50">Back</Button>
+                  {/* First step now, so Back leaves registration rather than
+                      returning to a screen that no longer exists. Signing out
+                      keeps the account and the draft; signing back in returns
+                      here. */}
+                  <Button variant="outline" disabled={leaving} onClick={handleExitToPortal} className="flex-1 h-16 rounded-2xl border-2 border-slate-350 dark:border-slate-800 font-extrabold text-sm text-slate-900 dark:text-white hover:bg-slate-50 disabled:opacity-50">
+                    {leaving ? 'Signing out…' : 'Back to sign in'}
+                  </Button>
                   <Button 
                     disabled={!canContinue}
                     onClick={() => handleNext('background')} 
@@ -1021,7 +949,15 @@ const MenteeOnboarding = () => {
 
                 {/* Navigation Buttons */}
                 <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <Button variant="outline" onClick={() => handleBack(isFastTrack ? 'welcome' : 'profile')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
+                  {/* A fast-track mentor starts on this step, so for them
+                      Back leaves; everyone else goes to their profile. */}
+                  {isFastTrack ? (
+                    <Button variant="outline" disabled={leaving} onClick={handleExitToPortal} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold disabled:opacity-50">
+                      {leaving ? 'Signing out…' : 'Back to sign in'}
+                    </Button>
+                  ) : (
+                    <Button variant="outline" onClick={() => handleBack('profile')} className="flex-1 h-16 rounded-2xl border-slate-200 dark:border-slate-800 font-bold">Back</Button>
+                  )}
                   <Button 
                     disabled={!canContinue}
                     onClick={() => handleNext('certificate')} 
