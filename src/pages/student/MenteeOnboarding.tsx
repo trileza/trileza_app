@@ -63,7 +63,6 @@ const TIMEZONES = [
   { name: 'GMT/UTC+2 (South African Standard Time)', value: 'Africa/Johannesburg' }
 ];
 
-const LANGUAGES = ['English', 'French', 'Spanish', 'German', 'Yoruba', 'Igbo', 'Hausa', 'Arabic'];
 
 const EDUCATION_LEVELS = [
   'High School or Equivalent',
@@ -157,11 +156,9 @@ const MenteeOnboarding = () => {
   // CV / LinkedIn States
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [cvFileName, setCvFileName] = useState<string | null>(null);
-  const [idFileUploaded, setIdFileUploaded] = useState<string | null>(null);
   // The files themselves. Only their names were kept before, so the CV and ID
   // the learner chose were discarded on submit.
   const [cvFile, setCvFile] = useState<File | null>(null);
-  const [idFile, setIdFile] = useState<File | null>(null);
   const [linkedinError, setLinkedinError] = useState(false);
 
   // State for forms
@@ -233,7 +230,6 @@ const MenteeOnboarding = () => {
       if (!dobDay || !dobMonth || !dobYear) missing.push('Date of birth');
       if (blank(form.country)) missing.push('Country');
       if (blank(form.timezone)) missing.push('Time zone');
-      if (blank(form.language)) missing.push('Language');
     }
 
     if (s === 'background') {
@@ -414,9 +410,8 @@ const MenteeOnboarding = () => {
         }
       };
 
-      const [cvUrl, idUrl] = await Promise.all([
+      const [cvUrl] = await Promise.all([
         uploadDoc(cvFile, 'cv'),
-        uploadDoc(idFile, 'id'),
       ]);
 
       const result = await updateProfile({
@@ -446,9 +441,6 @@ const MenteeOnboarding = () => {
               // The stored file, not just the name it happened to have.
               cv_file_name: cvFileName,
               cv_url: cvUrl,
-              id_document_name: idFileUploaded,
-              id_document_url: idUrl,
-              id_verification_status: idUrl ? 'submitted' : 'not_provided'
             },
             learning_background: {
               education_level: form.education,
@@ -809,17 +801,6 @@ const MenteeOnboarding = () => {
                     </select>
                   </div>
 
-                  {/* Language Selector */}
-                  <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100 ml-2">Preferred Language</label>
-                    <select 
-                      value={form.language}
-                      onChange={e => setForm({...form, language: e.target.value})}
-                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-6 text-sm font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
-                    >
-                      {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                  </div>
                 </div>
 
                 {/* OPTIONAL PROFESSIONAL LINKS: CV OR LINKEDIN LINK WITH REAL LINKEDIN VALIDATION */}
@@ -887,35 +868,6 @@ const MenteeOnboarding = () => {
                         )}
                       </div>
                     </div>
-                  </div>
-                </div>
-
-                {/* National or Institutional ID Upload */}
-                <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-slate-800">
-                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">National or Institutional ID (Optional — needed later for verified certificates)</label>
-                  <div className="p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 rounded-[2rem] flex flex-col items-center justify-center text-center space-y-4">
-                    <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-800 shadow-md flex items-center justify-center text-slate-400">
-                      <UploadCloud size={28} />
-                    </div>
-                    <div className="space-y-1">
-                      <h5 className="font-extrabold text-slate-800 dark:text-white text-sm">Upload Student Card, National ID or Institutional Badge</h5>
-                      <p className="text-xs text-slate-400 max-w-sm">Requires clear photo showing full legal name matching your certificates.</p>
-                    </div>
-                    <label className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer shadow-lg shadow-emerald-500/10">
-                      {idFileUploaded ? 'Change Document' : 'Upload ID File'}
-                      <input 
-                        type="file" 
-                        accept=".pdf,image/*" 
-                        className="hidden" 
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) { setIdFileUploaded(f.name); setIdFile(f); }
-                        }}
-                      />
-                    </label>
-                    {idFileUploaded && (
-                      <p className="text-xs text-emerald-500 font-bold flex items-center gap-1.5"><CheckCircle2 size={12} /> {idFileUploaded} attached</p>
-                    )}
                   </div>
                 </div>
 
@@ -1344,7 +1296,7 @@ const MenteeOnboarding = () => {
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-slate-900 dark:text-white">Active Student: {form.displayName}</h3>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Country: {form.country} • Lang: {form.language}</p>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Country: {form.country}</p>
                   </div>
                 </div>
 
