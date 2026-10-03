@@ -161,14 +161,13 @@ const LoginPage = () => {
       return;
     }
 
-    // A picture is invited, not demanded.
-    //
-    // This used to refuse the registration outright: "Profile picture upload
-    // is mandatory to build an identity on Trileza." It was the first thing a
-    // new mentee met, before they had seen anything the platform does, and it
-    // turned away anyone not holding a photo they were happy to use. An
-    // identity is built by what someone does here; a missing avatar is a gap
-    // they can fill in Settings the moment they want to.
+    // A picture is required. The empty slot says so — dashed, amber, "Tap to
+    // add — required" — so this check confirms what the form already showed
+    // rather than springing a refusal at the end.
+    if (!avatarFile) {
+      setError('Please add a profile picture before continuing.');
+      return;
+    }
 
     // Check username uniqueness in profiles table
     try {
@@ -463,8 +462,13 @@ const LoginPage = () => {
                         alt="Avatar Preview"
                       />
                     ) : (
-                      <div className="w-24 h-24 rounded-full bg-slate-100 dark:bg-[#122019] border-2 border-slate-300 dark:border-emerald-900/50 shadow-2xl transition-all group-hover:scale-105 flex items-center justify-center text-slate-400">
-                        <User size={44} className="text-slate-400" />
+                      /* An empty slot that reads as unfinished rather than as
+                         a neutral default. A solid ring and a grey silhouette
+                         look like a placeholder someone chose; dashed amber
+                         looks like something still to do, which is what it
+                         is. */
+                      <div className="w-24 h-24 rounded-full bg-amber-50 dark:bg-amber-950/20 border-2 border-dashed border-amber-400 dark:border-amber-500/60 shadow-2xl transition-all group-hover:scale-105 flex items-center justify-center">
+                        <User size={44} className="text-amber-500/70 dark:text-amber-400/60" />
                       </div>
                     )}
                     <div className="absolute bottom-0 right-0 p-2 rounded-full bg-emerald-500 text-white dark:text-slate-950 shadow-lg group-hover:bg-emerald-400 transition-colors z-0 font-bold">
@@ -472,11 +476,17 @@ const LoginPage = () => {
                     </div>
                   </div>
                   <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
-                    Profile Picture
+                    Profile Picture <span className="text-rose-500">*</span>
                   </p>
-                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 -mt-1">
-                    Optional — you can add one later
-                  </p>
+                  {avatarFile ? (
+                    <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 -mt-1 flex items-center justify-center gap-1">
+                      <Check size={11} strokeWidth={3} /> Added
+                    </p>
+                  ) : (
+                    <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 -mt-1">
+                      Tap to add — required
+                    </p>
+                  )}
                 </div>
               )}
 
