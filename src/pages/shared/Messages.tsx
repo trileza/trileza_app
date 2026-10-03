@@ -44,7 +44,7 @@ const Messages = () => {
   const {
     conversations, conversationsLoading, activePartnerId, activePartner,
     activeGroupId, activeGroup, groupMembers, rtkGroups, groupsLoading,
-    messages, messagesLoading, searchResults, searchLoading, typingPartners,
+    messages, messagesLoading, searchResults, searchLoading, typingPartners, onlinePartners,
     initialize, openConversation, openGroup, closeConversation, sendMessage,
     sendAttachmentMessage, pinMessage, unpinMessage, editMessage, deleteMessage,
     createGroup, addGroupMember, removeGroupMember, searchUsers, clearSearch,
@@ -347,7 +347,21 @@ const Messages = () => {
                               {c.full_name.slice(0, 2).toUpperCase()}
                             </div>
                           )}
-                          <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-[#1B2620]" />
+                          {/* Real presence.
+                              This dot was hardcoded green, so everyone
+                              appeared online at all times — which is worse
+                              than showing nothing, because people believed
+                              it. Grey now means we have not heard a heartbeat
+                              from them in fifteen seconds. */}
+                          <span
+                            title={onlinePartners.has(c.id) ? 'Online' : 'Offline'}
+                            className={cn(
+                              'absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-[#1B2620] transition-colors',
+                              onlinePartners.has(c.id)
+                                ? 'bg-green-500'
+                                : 'bg-slate-300 dark:bg-slate-600'
+                            )}
+                          />
                         </div>
 
                         <div className="flex-1 min-w-0">
@@ -472,14 +486,20 @@ const Messages = () => {
                     </h3>
 
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                      {/* Whether they are here, not which vendor carries the
+                          message. "Cloudflare RealtimeKit DM" told the reader
+                          nothing they wanted to know; this is the line people
+                          actually look at before deciding to write. */}
                       {activePartner ? (
                         typingPartners.get(activePartner.id) ? (
                           <span className="text-green-500 font-bold animate-pulse">typing...</span>
+                        ) : onlinePartners.has(activePartner.id) ? (
+                          <span className="text-green-500 font-bold">Online</span>
                         ) : (
-                          "Cloudflare RealtimeKit DM"
+                          <span className="text-slate-400">Offline</span>
                         )
                       ) : (
-                        `${groupMembers.length} Members • Cloudflare Group Room`
+                        `${groupMembers.length} member${groupMembers.length === 1 ? '' : 's'}`
                       )}
                     </p>
                   </div>

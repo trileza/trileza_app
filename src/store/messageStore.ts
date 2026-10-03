@@ -59,6 +59,8 @@ interface MessageStore {
   
   // Typing & Unread
   typingPartners: Map<string, boolean>;
+  /** Who is online, by user id, with the time we last heard from them. */
+  onlinePartners: Map<string, number>;
   totalUnreadCount: number;
   
   // Realtime
@@ -132,6 +134,17 @@ let ringingTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useMessageStore = create<MessageStore>((set, get) => {
   let typingTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+
+  // Presence timing.
+  //
+  // Six seconds between beats, with fifteen before someone is considered gone:
+  // wide enough that one dropped packet does not blink a contact offline, tight
+  // enough that a closed tab clears within a sensible time.
+  const PRESENCE_BEAT_MS = 6000;
+  const PRESENCE_STALE_MS = 15000;
+  const PRESENCE_SWEEP_MS = 5000;
+  let presenceTimer: ReturnType<typeof setInterval> | null = null;
+  let presenceSweeper: ReturnType<typeof setInterval> | null = null;
   let localTypingTimer: ReturnType<typeof setTimeout> | null = null;
 
   return {
@@ -151,6 +164,7 @@ export const useMessageStore = create<MessageStore>((set, get) => {
     searchResults: [],
     searchLoading: false,
     typingPartners: new Map(),
+    onlinePartners: new Map(),
     totalUnreadCount: 0,
     realtimeConnected: false,
 
@@ -179,7 +193,67 @@ export const useMessageStore = create<MessageStore>((set, get) => {
           nexus.realtime.subscribe(`dm:${userId}`).catch(() => {});
           nexus.realtime.subscribe(`typing:${userId}`).catch(() => {});
           nexus.realtime.subscribe(`user_call:${userId}`).catch(() => {});
+
+          // One shared channel rather than a channel per pair: a heartbeat is
+          // the same fact for everyone who cares, and subscribing per
+          // conversation would mean re-subscribing every time a chat opens.
+          nexus.realtime.subscribe('presence').catch(() => {});
+
+          // Announce immediately, then keep saying so. A heartbeat is the only
+          // honest way to know someone is still there — a "went offline"
+          // message never arrives when a laptop lid closes or a tunnel eats
+          // the connection, which is exactly when it would matter.
+          const beat = () => {
+            nexus.realtime.publish('presence', 'presence_ping', {
+              userId,
+              at: Date.now()
+            }).catch(() => {});
+          };
+
+          beat();
+          presenceTimer = setInterval(beat, PRESENCE_BEAT_MS);
+
+          // Sweep anyone we have stopped hearing from. Done on a timer rather
+          // than on read so the list changes on its own, without needing a
+          // render to notice.
+          presenceSweeper = setInterval(() => {
+            const cutoff = Date.now() - PRESENCE_STALE_MS;
+            set(st => {
+              let changed = false;
+              const next = new Map(st.onlinePartners);
+              next.forEach((seen, id) => {
+                if (seen < cutoff) {
+                  next.delete(id);
+                  changed = true;
+                }
+              });
+              return changed ? { onlinePartners: next } : {};
+            });
+          }, PRESENCE_SWEEP_MS);
         }).catch(() => {});
+
+        // Someone said they are here.
+        nexus.realtime.on('presence_ping', (payload: any) => {
+          const id = payload?.userId;
+          if (!id || id === userId) return;
+
+          set(st => {
+            const next = new Map(st.onlinePartners);
+            next.set(id, Date.now());
+            return { onlinePartners: next };
+          });
+
+          // Answer a newcomer directly so they see us without waiting for our
+          // next beat. Only to a ping that is not itself an answer, or two
+          // clients would volley forever.
+          if (!payload.reply) {
+            nexus.realtime.publish('presence', 'presence_ping', {
+              userId,
+              at: Date.now(),
+              reply: true
+            }).catch(() => {});
+          }
+        });
 
         // Request Browser Push Notification Permission
         if ('Notification' in window && Notification.permission === 'default') {
@@ -190,9 +264,30 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         nexus.realtime.on('new_message', (payload: any) => {
           const { activePartnerId } = get();
           if (payload.sender_id === activePartnerId) {
-            set(s => ({
-              messages: [...s.messages, payload],
-            }));
+            set(s => {
+              // The sender publishes twice: once optimistically with a
+              // temporary id so this arrives at network speed, and again with
+              // the saved row. Without this the recipient sees the same
+              // message twice.
+              //
+              // Matched on sender and content rather than id, because the two
+              // publishes carry different ids by design. The second one
+              // replaces the first, so the recipient ends up holding the
+              // stored row.
+              const existing = s.messages.findIndex(
+                (m: any) =>
+                  m.sender_id === payload.sender_id &&
+                  m.content === payload.content &&
+                  (m.id === payload.id || String(m.id).startsWith('tmp-'))
+              );
+
+              if (existing !== -1) {
+                const next = [...s.messages];
+                next[existing] = payload;
+                return { messages: next };
+              }
+              return { messages: [...s.messages, payload] };
+            });
             messageService.markAsRead(userId, payload.sender_id).catch(() => {});
           } else {
             set(s => ({ totalUnreadCount: s.totalUnreadCount + 1 }));
@@ -456,14 +551,63 @@ export const useMessageStore = create<MessageStore>((set, get) => {
       const isGroup = !!activeGroupId;
 
       const highlightData = isGroup ? { sender_name: senderName, sender_avatar: senderAvatar } : undefined;
-      const realMsg = await messageService.sendMessage(userId, targetId, content.trim(), highlightData, senderName);
+      const body = content.trim();
 
-      set(s => ({
-        messages: [...s.messages, realMsg],
-      }));
+      // Show it immediately, and tell the recipient immediately.
+      //
+      // Both of these used to wait on the database round trip: the sender
+      // watched an empty thread until the insert returned, and the recipient
+      // waited for that same trip before the realtime event was even sent. On
+      // a slow connection a message took a visible second to appear for the
+      // person who had just typed it.
+      //
+      // The optimistic row carries a temporary id and `pending`, so the bubble
+      // can show it is still in flight and the reconciliation below knows
+      // which row to replace.
+      const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const optimistic: any = {
+        id: tempId,
+        sender_id: userId,
+        receiver_id: targetId,
+        content: body,
+        highlight_data: highlightData,
+        created_at: new Date().toISOString(),
+        read_at: null,
+        pending: true
+      };
 
-      nexus.realtime.publish(`dm:${targetId}`, 'new_message', realMsg).catch(() => {});
-      get().loadConversations(userId);
+      set(s => ({ messages: [...s.messages, optimistic] }));
+
+      // Published before the insert, so the other side renders at network
+      // speed rather than at database speed.
+      nexus.realtime.publish(`dm:${targetId}`, 'new_message', optimistic).catch(() => {});
+
+      try {
+        const realMsg = await messageService.sendMessage(userId, targetId, body, highlightData, senderName);
+
+        // Swap the placeholder for the saved row, keeping its position rather
+        // than appending — otherwise a message jumps to the bottom when it
+        // settles, which reads as a second message.
+        set(s => ({
+          messages: s.messages.map(m => (m.id === tempId ? realMsg : m))
+        }));
+
+        // Re-publish with the real id so the recipient's copy matches what is
+        // stored; their handler de-duplicates on content and sender.
+        nexus.realtime.publish(`dm:${targetId}`, 'new_message', realMsg).catch(() => {});
+        get().loadConversations(userId);
+      } catch (err) {
+        console.error('[Messages] Send failed:', err);
+
+        // Mark it failed rather than removing it. A message that vanishes
+        // leaves the sender unsure whether it went; one marked failed can be
+        // retried, and the text is still on screen to copy.
+        set(s => ({
+          messages: s.messages.map(m =>
+            m.id === tempId ? { ...m, pending: false, failed: true } : m
+          )
+        }));
+      }
     },
 
     sendAttachmentMessage: async (userId, userName, userAvatar, file) => {
@@ -731,7 +875,20 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         clearTimeout(localTypingTimer);
         localTypingTimer = null;
       }
-      set({ realtimeConnected: false });
+
+      // Stop the heartbeat, or a signed-out session keeps announcing itself as
+      // online — and the interval survives the next sign-in, so beats double
+      // with every cycle.
+      if (presenceTimer) {
+        clearInterval(presenceTimer);
+        presenceTimer = null;
+      }
+      if (presenceSweeper) {
+        clearInterval(presenceSweeper);
+        presenceSweeper = null;
+      }
+
+      set({ realtimeConnected: false, onlinePartners: new Map() });
     },
   };
 });
