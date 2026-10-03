@@ -456,7 +456,7 @@ export const useMessageStore = create<MessageStore>((set, get) => {
       const isGroup = !!activeGroupId;
 
       const highlightData = isGroup ? { sender_name: senderName, sender_avatar: senderAvatar } : undefined;
-      const realMsg = await messageService.sendMessage(userId, targetId, content.trim(), highlightData);
+      const realMsg = await messageService.sendMessage(userId, targetId, content.trim(), highlightData, senderName);
 
       set(s => ({
         messages: [...s.messages, realMsg],

@@ -31,7 +31,8 @@ export type LibraryEvent =
   | 'license_expired'
   | 'sponsorship_requested'
   | 'sponsorship_granted'
-  | 'earning_recorded';
+  | 'earning_recorded'
+  | 'message_received';
 
 /** `type` drives the colour of the row, so it follows the app's palette. */
 type Tone = 'success' | 'warning' | 'error' | 'info';
@@ -115,6 +116,18 @@ const compose = (event: LibraryEvent, ctx: Record<string, any>): Notice => {
         message: `${ctx.mentorName || 'Your mentor'} got you ${title}. It is in your library now.`,
         tone: 'success',
         link: '/library?tab=mine'
+      };
+
+    case 'message_received':
+      // The sender's name, not the message. A notification row is readable by
+      // its owner alone, but it also surfaces in a bell panel that may be open
+      // on a shared screen — and the point is to say someone is waiting, not
+      // to repeat what they said.
+      return {
+        title: ctx.senderName ? `${ctx.senderName} messaged you` : 'New message',
+        message: 'Open your chats to reply.',
+        tone: 'info',
+        link: ctx.senderId ? `/messages?chat=${ctx.senderId}` : '/messages'
       };
 
     case 'earning_recorded':

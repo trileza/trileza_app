@@ -4,6 +4,7 @@
  * Handles: conversations, messages, read receipts, user search, usernames.
  * All queries are properly filtered with sender_id/receiver_id conditions.
  */
+import { notify } from './notify';
 import { nexus } from '../nexus';
 
 export interface ConversationPartner {
@@ -151,7 +152,9 @@ export const messageService = {
     senderId: string,
     receiverId: string,
     content: string,
-    highlightData?: any
+    highlightData?: any,
+    /** Used only to name the sender in the recipient's notification. */
+    senderName?: string
   ): Promise<Message> {
     const payload: any = {
       sender_id: senderId,
@@ -169,6 +172,24 @@ export const messageService = {
       .single();
 
     if (error) throw error;
+
+    // Tell the recipient, durably.
+    //
+    // Delivery was realtime only: if they were not connected at that instant
+    // the event was simply gone. They would see an unread badge on their next
+    // visit, but nothing recorded it, so there was nothing to show in the bell
+    // and nothing to email later.
+    //
+    // Best-effort — a message that was saved must not appear to have failed
+    // because telling someone about it did. Group sends skip this: the
+    // receiver there is a group id, not a person, and notifications are keyed
+    // to a user.
+    if (!highlightData) {
+      void notify
+        .send(receiverId, 'message_received', { senderId, senderName })
+        .catch(err => console.warn('[Messages] Could not notify recipient:', err));
+    }
+
     return data;
   },
 

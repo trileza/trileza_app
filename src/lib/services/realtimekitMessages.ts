@@ -5,7 +5,7 @@
  * group rooms, pinned messages, read receipts, message editing, deletion,
  * and 1-on-1 / group audio and video calls.
  */
-import { nexus } from '../nexus';
+import { nexus, errorMessage } from '../nexus';
 import { executeWithAutoRefresh } from '../../utils/authHelper';
 
 export interface RealtimeKitMessage {
@@ -68,6 +68,28 @@ function setStoredArray<T>(key: string, items: T[]): void {
   } catch (err) {
     console.warn('[RealtimeKit] Storage write error:', err);
   }
+}
+
+/**
+ * One rtk_groups row as the UI's GroupChat shape.
+ *
+ * description and is_private live in metadata because the table has no column
+ * for either; keeping the mapping in one place stops the two drifting.
+ */
+function rowToGroup(row: any): GroupChat {
+  const raw = row.members;
+  const members: string[] = Array.isArray(raw) ? raw : raw ? Object.keys(raw) : [];
+  const meta = row.metadata || {};
+
+  return {
+    id: row.id,
+    name: row.name,
+    description: meta.description ?? null,
+    is_private: Boolean(meta.is_private),
+    created_by: row.created_by,
+    created_at: row.created_at,
+    members_count: members.length
+  } as GroupChat;
 }
 
 export const realtimekitMessagingService = {
@@ -362,130 +384,106 @@ export const realtimekitMessagingService = {
     isPrivate: boolean,
     initialMemberIds: string[]
   ): Promise<GroupChat> {
-    const groupId = `group-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-    const newGroup: GroupChat = {
-      id: groupId,
-      name: name.trim(),
-      description: description.trim() || null,
-      is_private: isPrivate,
-      created_by: createdByUserId,
-      created_at: new Date().toISOString(),
-      members_count: initialMemberIds.length + 1,
-      lastMessage: {
-        id: `init-${groupId}`,
-        sender_id: createdByUserId,
-        sender_name: createdByName,
-        content: `Created group "${name.trim()}"`,
-        type: 'text',
-        created_at: new Date().toISOString(),
-      },
-    };
+    const groupId = `group-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-    // Save Group to Storage
-    const existingGroups = getStoredArray<GroupChat>(GROUPS_STORAGE_KEY);
-    setStoredArray(GROUPS_STORAGE_KEY, [newGroup, ...existingGroups]);
+    // The creator is always a member. Without this they would create a group
+    // and immediately fail the RLS read policy on it.
+    const members = Array.from(new Set([createdByUserId, ...initialMemberIds]));
 
-    // Save initial members
-    const membersKey = `trileza_rtk_members_${groupId}`;
-    const initialMembers: GroupMember[] = [
-      {
-        id: `gm-owner-${Date.now()}`,
-        group_id: groupId,
-        user_id: createdByUserId,
-        full_name: createdByName,
-        avatar_url: createdByAvatar,
-        role: 'owner',
-        joined_at: new Date().toISOString(),
-      },
-    ];
-
-    // Add other members
-    for (const memId of initialMemberIds) {
-      if (memId !== createdByUserId) {
-        initialMembers.push({
-          id: `gm-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          group_id: groupId,
-          user_id: memId,
-          full_name: `Member (${memId.slice(0, 6)})`,
-          role: 'member',
-          joined_at: new Date().toISOString(),
-        });
-      }
-    }
-
-    setStoredArray(membersKey, initialMembers);
-
-    // Try DB Sync
-    try {
-      await nexus.database.from('rtk_groups').insert([{
+    // description and is_private are not columns on rtk_groups; they live in
+    // metadata. The previous version passed them as columns inside a bare
+    // try/catch, so every insert failed and was swallowed.
+    const { data, error } = await nexus.database
+      .from('rtk_groups')
+      .insert([{
         id: groupId,
-        name: newGroup.name,
-        description: newGroup.description,
-        is_private: isPrivate,
+        name: name.trim(),
         created_by: createdByUserId,
-      }]);
-    } catch {}
+        members,
+        metadata: {
+          description: description.trim() || null,
+          is_private: isPrivate,
+          created_by_name: createdByName,
+          created_by_avatar: createdByAvatar
+        }
+      }])
+      .select()
+      .single();
 
-    return newGroup;
+    if (error) throw new Error(errorMessage(error, 'Could not create that group.'));
+
+    return rowToGroup(data);
   },
 
   /**
    * Fetch all Group Chats for user
    */
   async getGroupChats(userId: string): Promise<GroupChat[]> {
-    const stored = getStoredArray<GroupChat>(GROUPS_STORAGE_KEY);
-    
-    // Provide default initial sample groups if empty so users have immediate access to groups!
-    if (stored.length === 0) {
-      const defaultGroups: GroupChat[] = [
-        {
-          id: 'group-frontend-devs',
-          name: 'Front-End Mastery Cohort',
-          description: 'Study group for React, Tailwind, and Web Architecture',
-          is_private: false,
-          created_by: 'system',
-          created_at: new Date().toISOString(),
-          members_count: 14,
-          lastMessage: {
-            id: 'm1',
-            sender_id: 'system',
-            sender_name: 'Alex Mentor',
-            content: 'Welcome everyone! Post your questions here.',
-            type: 'text',
-            created_at: new Date().toISOString(),
-          },
-        },
-        {
-          id: 'group-ui-ux-design',
-          name: 'UI/UX Design Mentorship',
-          description: 'Figma workflows, user feedback, and design review sessions',
-          is_private: false,
-          created_by: 'system',
-          created_at: new Date().toISOString(),
-          members_count: 8,
-          lastMessage: {
-            id: 'm2',
-            sender_id: 'system',
-            sender_name: 'Sarah Designer',
-            content: 'Check out the new design system guidelines!',
-            type: 'text',
-            created_at: new Date().toISOString(),
-          },
-        },
-      ];
-      setStoredArray(GROUPS_STORAGE_KEY, defaultGroups);
-      return defaultGroups;
+    // From the database, not localStorage.
+    //
+    // This used to read a browser key and, when it was empty, invent sample
+    // groups — "Front-End Mastery Cohort" and friends — and hand them back as
+    // though they were real. Every user saw groups nobody had created,
+    // messages sent to them reached no one, and clearing site data destroyed
+    // the lot. rtk_groups existed the whole time.
+    const { data, error } = await nexus.database
+      .from('rtk_groups')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Groups] Could not load groups:', error);
+      return [];
     }
 
-    return stored;
+    // RLS already limits this to groups the caller created or belongs to; the
+    // filter is belt and braces for an admin session, which sees everything.
+    return (data ?? [])
+      .filter((g: any) => {
+        const m = g.members;
+        const list = Array.isArray(m) ? m : m ? Object.keys(m) : [];
+        return list.includes(userId) || g.created_by === userId;
+      })
+      .map(rowToGroup);
   },
 
   /**
    * Get Group Members
    */
   async getGroupMembers(groupId: string): Promise<GroupMember[]> {
-    const membersKey = `trileza_rtk_members_${groupId}`;
-    return getStoredArray<GroupMember>(membersKey);
+    const { data, error } = await nexus.database
+      .from('rtk_groups')
+      .select('id, created_by, members, created_at')
+      .eq('id', groupId)
+      .maybeSingle();
+
+    if (error || !data) return [];
+
+    const raw = (data as any).members;
+    const ids: string[] = Array.isArray(raw) ? raw : raw ? Object.keys(raw) : [];
+    if (ids.length === 0) return [];
+
+    // Real names, rather than the "Member (abc123)" placeholder the previous
+    // version stored — it never had anything but an id to work from.
+    const { data: profiles } = await nexus.database
+      .from('public_profiles')
+      .select('id, full_name, avatar_url')
+      .in('id', ids);
+
+    const byId = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+
+    return ids.map(id => {
+      const profile = byId.get(id);
+      return {
+        id: `gm-${groupId}-${id}`,
+        group_id: groupId,
+        user_id: id,
+        full_name: profile?.full_name || 'Member',
+        avatar_url: profile?.avatar_url ?? null,
+        role: id === (data as any).created_by ? 'owner' : 'member',
+        joined_at: (data as any).created_at
+      } as GroupMember;
+    });
   },
 
   /**
