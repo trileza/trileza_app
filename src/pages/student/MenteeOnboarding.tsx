@@ -125,6 +125,9 @@ const FREE_COURSES = [
 const MenteeOnboarding = () => {
   const navigate = useNavigate();
   const { user, updateProfile, logout } = useAuthStore();
+  // Disables the exit control the moment it is pressed, so a second click
+  // cannot fire a second sign-out while the first is in flight.
+  const [leaving, setLeaving] = useState(false);
   
   // Check for pre-selected course from query params (e.g. from Mentor-to-Mentee enrollment intercept)
   useEffect(() => {
@@ -489,55 +492,32 @@ const MenteeOnboarding = () => {
     </div>
   );
 
+  /**
+   * Leaves onboarding by signing out.
+   *
+   * Back from the first screen means "I do not want to do this now", and the
+   * only honest place that leads is where they came from: signed out, at the
+   * sign-in page. Their account and everything typed so far is kept — signing
+   * back in returns them to this step.
+   *
+   * An earlier version set mentee_onboarded and navigated back, which let an
+   * account that had completed nothing into the dashboard. That is exactly
+   * what the guard exists to prevent: registration is not finished, so the
+   * app must not behave as though it were. Making the button work by lying to
+   * the guard was the wrong trade.
+   */
   const handleExitToPortal = () => {
-    // Navigate first, always.
-    //
-    // This used to await updateProfile() before navigating, so a slow or
-    // failed request held the button doing nothing visible. Requests do time
-    // out now, but a timeout is still seconds of a dead control. Leaving a
-    // form should not depend on a network round trip at all.
-    //
-    // navigate(-1) rather than a fixed route, so Back means the page they came
-    // from. It cannot be used alone: the guard in App.tsx returns an
-    // un-onboarded mentee to this screen from anywhere, so without the flag
-    // below the browser would go back and be sent straight here again, which
-    // reads as a button that flashes and does nothing. The flag is set first,
-    // in memory, so the guard sees it on the very next render.
-    if (user) {
-      useAuthStore.setState(s => ({
-        user: s.user
-          ? { ...s.user, metadata: { ...s.user.metadata, mentee_onboarded: true } }
-          : s.user
-      }));
-    }
+    setLeaving(true);
 
-    // history.length > 1 means there is somewhere to go back to. Landing here
-    // directly — a fresh tab, a bookmark — leaves nothing behind us, so the
-    // dashboard is the sensible destination instead of a no-op.
-    if (window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate('/', { replace: true });
-    }
+    // Not awaited. Signing out should feel immediate, and a slow request must
+    // not leave the button looking dead; the store clears its own state and
+    // the guard sends an unauthenticated user to sign-in regardless.
+    logout().catch(e => console.warn('[Onboarding] Sign-out notice:', e));
 
-    // Written in the background and allowed to fail quietly.
-    //
-    // mentee_onboarded is set because the route guard in App.tsx sends an
-    // un-onboarded mentee straight back here from anywhere; without it, "skip"
-    // would bounce the user to this same screen and read as a broken button.
-    // The profile keeps its defaults and everything here can still be filled
-    // in from Settings.
-    if (user) {
-      updateProfile({
-        metadata: {
-          ...user.metadata,
-          mentee_onboarded: true,
-          // Recorded so a later prompt can tell someone who skipped from
-          // someone who actually completed the form.
-          mentee_onboarding_skipped_at: new Date().toISOString()
-        }
-      }).catch(e => console.warn('[Onboarding] Could not record exit:', e));
-    }
+    // Nothing is written to the profile here. mentee_onboarded stays false,
+    // because it is false: leaving the form is not completing it, and the next
+    // sign-in should land back on this step rather than on a dashboard built
+    // for someone who finished.
   };
 
   /* Exit lives inside the header now, so nothing renders above it. */
@@ -630,13 +610,18 @@ const MenteeOnboarding = () => {
                   <ChevronRight className="ml-2 group-hover:translate-x-1.5 transition-transform" size={16} />
                 </Button>
 
+                {/* Says where it goes. "Back" alone implied the previous page
+                    in the app, which is not where an unregistered account can
+                    be sent — so the label names the destination instead of
+                    letting the user infer the wrong one. */}
                 <button
                   type="button"
                   onClick={handleExitToPortal}
-                  className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-4 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent flex items-center gap-1.5 group"
+                  disabled={leaving}
+                  className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-4 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent flex items-center gap-1.5 group disabled:opacity-50 disabled:cursor-default"
                 >
                   <ArrowLeft size={14} className="group-hover:-translate-x-0.5 transition-transform" />
-                  Back
+                  {leaving ? 'Signing out…' : 'Back to sign in'}
                 </button>
               </div>
             </motion.div>
