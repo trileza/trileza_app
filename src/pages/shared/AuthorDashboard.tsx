@@ -31,6 +31,7 @@ import PageHeader from '../../components/shared/PageHeader';
 import { nexus, errorMessage } from '../../lib/nexus';
 import { uploadBookFile, uploadPublicBookAsset } from '../../lib/bookStorage';
 import { PublishWizard } from '../../components/library/PublishWizard';
+import { AuthorStudio } from '../../components/library/AuthorStudio';
 import { libraryService } from '../../lib/services/libraryService';
 
 interface Book {
@@ -204,67 +205,24 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
 
   // Dashboard view states (Go straight to publishing form when opened inline)
   const [showUploadForm, setShowUploadForm] = useState(inline);
+  // Bumped after a publish so the studio refetches its figures.
+  const [studioKey, setStudioKey] = useState(0);
 
   // Stateful Author Books & Simulated stats
-  const [myBooks, setMyBooks] = useState<Book[]>([]);
   // Zero until the ledger answers. A non-zero placeholder showed every author
   // ₦140 of earnings they did not have, on a dashboard whose whole job is to
   // tell them what they are owed.
-  const [royalties, setRoyalties] = useState(0);
-  const [totalReads, setTotalReads] = useState(24);
   const [showNotification, setShowNotification] = useState<string | null>(null);
 
-  const fetchAuthorStats = async (booksList: Book[]) => {
-    if (!user?.id || booksList.length === 0) {
-      setTotalReads(0);
-      setRoyalties(0);
-      return;
-    }
-    try {
-      // Earnings come from the ledger, not from a sum computed here.
-      //
-      // This used to recalculate royalties in the browser on every page load,
-      // at 10% rather than the 60% the platform actually pays, and persisted
-      // nothing. An author's income existed only as a figure redrawn in front
-      // of them — nothing to audit, dispute, or pay out against, and it
-      // disagreed with what they were owed.
-      const { data: balance, error: balanceErr } = await nexus.database.rpc(
-        'author_earnings_balance',
-        { p_author_id: user.id }
-      );
-
-      if (balanceErr) throw balanceErr;
-
-      // The RPC returns one row; minor units to naira for display.
-      const row = Array.isArray(balance) ? balance[0] : balance;
-      setRoyalties(Number(row?.available_minor ?? 0) / 100);
-
-      // Reads are still counted from entitlements: a grant is a read, and the
-      // ledger only knows about the ones that were paid for.
-      const bookIds = booksList.map(b => b.id);
-      const { data: accessRecords } = await nexus.database
-        .from('api_user_library_access')
-        .select('id')
-        .in('book_id', bookIds);
-
-      setTotalReads(accessRecords?.length ?? 0);
-    } catch (err) {
-      console.error('[Error fetching author stats]:', err);
-      setTotalReads(0);
-      setRoyalties(0);
-    }
-  };
-
+  /**
+   * Refreshes the studio after a publish.
+   *
+   * It used to fetch every book to the browser so the component could count
+   * them. author_dashboard_summary counts them in one query instead, so this
+   * only needs to tell the studio to reload.
+   */
   const fetchAuthorBooks = async () => {
-    if (!user?.id) return;
-    try {
-      const allBooks = await libraryService.listBooks();
-      const dbBooks = allBooks.filter(b => b.author_id === user.id);
-      setMyBooks(dbBooks as any);
-      await fetchAuthorStats(dbBooks);
-    } catch (e) {
-      console.error('[Error fetching author books]:', e);
-    }
+    setStudioKey(k => k + 1);
   };
 
   // Initialize and load author's books
@@ -280,6 +238,15 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
   }, [user, isAuthor]);
 
 
+  /**
+   * Retracting a book.
+   *
+   * Currently unreachable: the old book list carried the control and the
+   * Author Studio does not have one yet. Kept rather than deleted because
+   * removing a published title is a real author need and the logic — including
+   * the storage cleanup — is correct; it needs a home in the studio, with a
+   * confirmation that explains what happens to people who already own it.
+   */
   const handleDeleteBook = async (bookId: string) => {
     if (!confirm('Are you sure you want to retract this book? It will be removed from the library.')) return;
 
@@ -360,53 +327,20 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
         </div>
       )}
 
-      {/* DASHBOARD ANALYTICS WIDGETS - HIDDEN IN INLINE MODE */}
-      {!inline && !showUploadForm && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Metric 1 */}
-          <Card className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl hover:ring-brand-primary/20 hover:translate-y-[-4px] transition-all duration-500 rounded-[2.5rem] bg-surface flex justify-between items-center group">
-            <div className="space-y-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Published Books</p>
-              <p className="text-4xl font-black text-foreground group-hover:text-brand-primary transition-colors tabular-nums">{myBooks.length}</p>
-              <p className="text-xs text-slate-450 font-bold flex items-center gap-1">
-                <TrendingUp size={12} className="text-emerald-500" /> 100% active DRM coverage
-              </p>
-            </div>
-            <div className="p-5 rounded-2xl bg-emerald-50 text-emerald-500 shadow-inner group-hover:scale-115 group-hover:rotate-6 transition-all duration-500">
-              <BookOpen size={24} />
-            </div>
-          </Card>
+      {/* The Author Studio (§22, §30.1).
 
-          {/* Metric 2 */}
-          <Card className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl hover:ring-brand-primary/20 hover:translate-y-[-4px] transition-all duration-500 rounded-[2.5rem] bg-surface flex justify-between items-center group">
-            <div className="space-y-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Total Reads & Borrows</p>
-              <p className="text-4xl font-black text-foreground group-hover:text-brand-primary transition-colors tabular-nums">{totalReads}</p>
-              <p className="text-xs text-slate-450 font-bold flex items-center gap-1">
-                <TrendingUp size={12} className="text-emerald-500" /> Simulated user engagements
-              </p>
-            </div>
-            <div className="p-5 rounded-2xl bg-emerald-50 text-emerald-500 shadow-inner group-hover:scale-115 group-hover:rotate-6 transition-all duration-500">
-              <Eye size={24} />
-            </div>
-          </Card>
-
-          {/* Metric 3 */}
-          <Card className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl hover:ring-brand-primary/20 hover:translate-y-[-4px] transition-all duration-500 rounded-[2.5rem] bg-surface flex justify-between items-center group">
-            <div className="space-y-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Accrued Royalties</p>
-              <p className="text-4xl font-black text-foreground group-hover:text-brand-primary transition-colors tabular-nums">₦{royalties.toFixed(2)}</p>
-              <p className="text-xs text-slate-450 font-bold flex items-center gap-1">
-                <Award size={12} className="text-amber-555" /> Outright sales & rentals (10%)
-              </p>
-            </div>
-            <div className="p-5 rounded-2xl bg-amber-50 text-amber-550 shadow-inner group-hover:scale-115 group-hover:rotate-6 transition-all duration-500">
-              <Coins size={24} />
-            </div>
-          </Card>
-        </div>
+          This replaces three hand-counted cards and a book list. The figures
+          now come from author_dashboard_summary and author_book_analytics, so
+          the headline and the per-book rows cannot disagree — and so revenue
+          is never recomputed in the browser from the current price, which
+          would change historical earnings every time an author edited it. */}
+      {!inline && !showUploadForm && user?.id && (
+        <AuthorStudio
+          key={studioKey}
+          authorId={user.id}
+          onPublishNew={() => setShowUploadForm(true)}
+        />
       )}
-
       {/* The publishing wizard replaces the old single-page form.
 
           That form asked for co-authors and discarded them, never wrote a
@@ -456,114 +390,6 @@ const AuthorDashboard: React.FC<AuthorDashboardProps> = ({ inline = false, onClo
         </Card>
       )}
 
-      {/* MANAGE PUBLISHED BOOKS SECTION - HIDDEN IN INLINE MODE */}
-      {!inline && !showUploadForm && (
-        <div className="space-y-6">
-          <div className="flex justify-between items-center px-2">
-            <h3 className="text-2xl font-black text-foreground tracking-tight">Your Published Assets ({myBooks.length})</h3>
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-              DRM Secure Protected
-            </span>
-          </div>
-
-        {myBooks.length === 0 ? (
-          <Card className="p-12 border-none shadow-[0_12px_24px_-8px_rgba(0,0,0,0.02)] rounded-[2.5rem] bg-white text-center space-y-4">
-            <div className="mx-auto w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 shadow-inner">
-              <LayoutGrid size={28} />
-            </div>
-            <div className="space-y-1">
-              <h4 className="font-bold text-lg text-slate-800">No Books Published Yet</h4>
-              <p className="text-sm font-medium text-slate-400 max-w-sm mx-auto">
-                Establish your publisher shelf! Click "Publish New Asset" at the top to upload your first e-book.
-              </p>
-            </div>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {myBooks.map((book) => {
-              // Calculate dynamic simulated stats per book
-              const bookSales = 1;
-              const bookBorrows = 3;
-              const bookRevenue = bookSales * book.retail_price + bookBorrows * book.rental_price;
-              
-              return (
-                <Card 
-                  key={book.id} 
-                  className="p-8 border-none ring-1 ring-slate-100 shadow-sm hover:shadow-2xl transition-all duration-500 rounded-[2.5rem] bg-white flex gap-6 group relative overflow-hidden"
-                >
-                  {/* Book Cover */}
-                  <div className="w-24 h-36 shrink-0 rounded-2xl overflow-hidden border border-slate-200 shadow-md group-hover:scale-102 transition-transform duration-500">
-                    <img src={book.cover_url} className="w-full h-full object-cover" alt={book.title} />
-                  </div>
-
-                  {/* Details */}
-                  <div className="flex-1 min-w-0 flex flex-col justify-between space-y-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-brand-primary px-2.5 py-1.5 rounded-lg bg-emerald-50 inline-block mb-1">
-                          {book.section}
-                        </span>
-                        {book.age_rating && (
-                          <span className="text-[8px] font-black text-slate-400 uppercase">
-                            {book.age_rating}
-                          </span>
-                        )}
-                      </div>
-                      <h4 className="font-black text-lg text-slate-800 truncate leading-snug group-hover:text-brand-primary transition-colors">{book.title}</h4>
-                      <p className="text-xs text-slate-450 font-bold truncate">by {book.author_name}{book.co_authors ? ` & ${book.co_authors}` : ''}</p>
-                      
-                      {book.edition && (
-                        <p className="text-[9px] text-brand-primary font-black uppercase tracking-wider">{book.edition}</p>
-                      )}
-                      
-                      {book.isbn && (
-                        <p className="text-[9px] text-slate-400 font-bold">ISBN: {book.isbn}</p>
-                      )}
-
-                      {/* Display Tags */}
-                      {book.tags && book.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {book.tags.map(t => (
-                            <span key={t} className="text-[8px] font-bold px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded">
-                              #{t}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Sim Performance Metrics */}
-                    <div className="grid grid-cols-3 gap-2 border-t border-slate-50 pt-4 text-center">
-                      <div>
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Sales</span>
-                        <span className="font-bold text-slate-700 text-sm">{bookSales}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Rentals</span>
-                        <span className="font-bold text-slate-700 text-sm">{bookBorrows}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Revenue</span>
-                        <span className="font-bold text-emerald-600 text-sm">₦{bookRevenue.toFixed(2)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions (Retract) */}
-                  <button 
-                    onClick={() => handleDeleteBook(book.id)}
-                    className="absolute top-4 right-4 p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                    title="Retract Book"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      )}
 
 
     </div>
