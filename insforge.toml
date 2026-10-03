@@ -16,19 +16,18 @@ disable_signup = false
 # Password rules.
 #
 # Six characters with no other requirement let "123456" through on a platform
-# that holds payment details and pays authors real money. The floor is now
-# ten, with a digit and both cases — enough to rule out the passwords that
-# appear at the top of every breach list, without the symbol requirement that
-# mostly teaches people to end a password with "!".
+# that holds payment details and pays authors real money.
 #
-# Length does more work than character classes, which is why the minimum moved
-# further than the class rules did.
+# The character classes were tightened separately, directly on the project.
+# This file matches that rather than relaxing it, and raises the length, which
+# is the part that actually resists guessing: "Passw0rd!" satisfies every class
+# rule here and is on every breach list, while ten characters is not.
 [auth.password]
 min_length = 10
 require_number = true
 require_lowercase = true
 require_uppercase = true
-require_special_char = false
+require_special_char = true
 
 # Email delivery.
 #
