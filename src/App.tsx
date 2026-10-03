@@ -293,8 +293,13 @@ const App: React.FC = () => {
 
   // Subdomain / query parameter detection for Admin Portal
   // Subdomain / query parameter / path detection for Admin Portal
-  const isAdminSubdomain = 
-    window.location.hostname.startsWith('admin') || 
+  const isAdminSubdomain =
+    window.location.hostname.startsWith('admin') ||
+    // A short entry point that does not announce itself. It is convenience,
+    // not secrecy: everything behind it is still gated by a session, an
+    // admin_users record and the role that section demands, so knowing the
+    // path gets nobody past the sign-in screen.
+    window.location.pathname.startsWith('/addy') ||
     window.location.pathname.startsWith('/gate') ||
     window.location.pathname.startsWith('/signin') ||
     window.location.pathname.startsWith('/signup') ||
