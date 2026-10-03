@@ -143,10 +143,14 @@ const LoginPage = () => {
       return;
     }
 
-    if (!avatarFile) {
-      setError('Profile picture upload is mandatory to build an identity on Trileza.');
-      return;
-    }
+    // A picture is invited, not demanded.
+    //
+    // This used to refuse the registration outright: "Profile picture upload
+    // is mandatory to build an identity on Trileza." It was the first thing a
+    // new mentee met, before they had seen anything the platform does, and it
+    // turned away anyone not holding a photo they were happy to use. An
+    // identity is built by what someone does here; a missing avatar is a gap
+    // they can fill in Settings the moment they want to.
 
     // Check username uniqueness in profiles table
     try {
@@ -450,7 +454,10 @@ const LoginPage = () => {
                     </div>
                   </div>
                   <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
-                    Upload Profile Picture <span className="text-rose-500 font-bold">*</span>
+                    Profile Picture
+                  </p>
+                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 -mt-1">
+                    Optional — you can add one later
                   </p>
                 </div>
               )}

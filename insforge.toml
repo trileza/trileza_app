@@ -1,3 +1,11 @@
+# Trileza — declarative backend configuration.
+#
+# Applied with:  npx @insforge/cli config apply
+# Compare first: npx @insforge/cli config plan
+#
+# This file holds settings, never secrets. The SMTP password is set separately
+# with `insforge secrets`, so it is not committed here.
+
 [auth]
 allowed_redirect_urls = []
 require_email_verification = true
@@ -5,29 +13,44 @@ verify_email_method = "code"
 reset_password_method = "code"
 disable_signup = false
 
+# Password rules.
+#
+# Six characters with no other requirement let "123456" through on a platform
+# that holds payment details and pays authors real money. The floor is now
+# ten, with a digit and both cases — enough to rule out the passwords that
+# appear at the top of every breach list, without the symbol requirement that
+# mostly teaches people to end a password with "!".
+#
+# Length does more work than character classes, which is why the minimum moved
+# further than the class rules did.
 [auth.password]
-min_length = 6
-require_number = false
-require_lowercase = false
-require_uppercase = false
+min_length = 10
+require_number = true
+require_lowercase = true
+require_uppercase = true
 require_special_char = false
 
+# Email delivery.
+#
+# While `enabled = false`, verification codes cannot be sent — and because
+# `require_email_verification` is true, every new signup stalls at the code
+# screen with no way forward. The two settings have to move together.
+#
+# Fill in host, username and sender_email, set enabled = true, then store the
+# password separately:
+#
+#     npx @insforge/cli secrets add SMTP_PASSWORD
+#
+# Gmail needs an app password, not the account password, and port 465 with
+# implicit TLS (587 is STARTTLS, which this expects to be 465).
 [auth.smtp]
-enabled = true
-host = "smtp.gmail.com"
-port = 587
-username = "dalestic12@gmail.com"
-# password is managed via secrets — run `insforge secrets add SMTP_PASSWORD "<value>"`
-password = "env(SMTP_PASSWORD)"
-sender_email = "dalestic12@gmail.com"
+enabled = false
+host = ""
+port = 465
+username = ""
+sender_email = ""
 sender_name = "Trileza"
 min_interval_seconds = 60
 
 [storage]
 max_file_size_mb = 50
-
-[realtime]
-retention_days = 0
-
-[schedules]
-retention_days = 7
