@@ -13,8 +13,6 @@ import {
   Camera,
   Info,
   AlertCircle,
-  UploadCloud,
-  Link2,
   ArrowLeft
 } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
@@ -155,12 +153,8 @@ const MenteeOnboarding = () => {
   const [dobYear, setDobYear] = useState('');
 
   // CV / LinkedIn States
-  const [linkedinUrl, setLinkedinUrl] = useState('');
-  const [cvFileName, setCvFileName] = useState<string | null>(null);
   // The files themselves. Only their names were kept before, so the CV and ID
   // the learner chose were discarded on submit.
-  const [cvFile, setCvFile] = useState<File | null>(null);
-  const [linkedinError, setLinkedinError] = useState(false);
 
   // State for forms
   const [form, setForm] = useState({
@@ -295,10 +289,6 @@ const MenteeOnboarding = () => {
         displayName: mentorData.identity?.public_name || user.full_name.split(' ')[0] || prev.displayName,
         country: mentorData.identity?.address?.country || prev.country
       }));
-      // Auto-set shared contact details
-      if (mentorData.identity?.socials?.linkedin) {
-        setLinkedinUrl(mentorData.identity.socials.linkedin);
-      }
     }
   }, [isFastTrack, user]);
 
@@ -339,17 +329,6 @@ const MenteeOnboarding = () => {
         addCareer(careerSearch.trim());
       }
     }
-  };
-
-  // Real-time LinkedIn Validation
-  const handleLinkedinChange = (val: string) => {
-    setLinkedinUrl(val);
-    if (!val) {
-      setLinkedinError(false);
-      return;
-    }
-    const linkedinRegex = /^https:\/\/(www\.)?linkedin\.com\/in\/[A-Za-z0-9_-]+\/?$/;
-    setLinkedinError(!linkedinRegex.test(val));
   };
 
   const handleNext = (nextStep: OnboardingStep) => {
@@ -394,26 +373,6 @@ const MenteeOnboarding = () => {
         avatarUrl = form.avatarUrl;
       }
 
-      // CV and ID document. Both were previously kept as a filename in React
-      // state and nothing else, so whatever the learner attached was thrown
-      // away on submit while the UI showed a tick beside it.
-      const uploadDoc = async (file: File | null, kind: string): Promise<string> => {
-        if (!file) return '';
-        try {
-          const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
-          const path = `mentee-docs/${user?.id}-${kind}-${Date.now()}.${ext}`;
-          const { error: upErr } = await nexus.storage.from('uploads').upload(path, file);
-          if (upErr) { console.error(`[Onboarding] ${kind} upload failed:`, upErr); return ''; }
-          return nexus.storage.from('uploads').getPublicUrl(path);
-        } catch (err) {
-          console.error(`[Onboarding] ${kind} upload threw:`, err);
-          return '';
-        }
-      };
-
-      const [cvUrl] = await Promise.all([
-        uploadDoc(cvFile, 'cv'),
-      ]);
 
       const result = await updateProfile({
         // Real columns, not only the metadata blob. `country` and the person's
@@ -438,10 +397,6 @@ const MenteeOnboarding = () => {
               country: form.country,
               timezone: form.timezone,
               language: form.language,
-              linkedin: linkedinUrl,
-              // The stored file, not just the name it happened to have.
-              cv_file_name: cvFileName,
-              cv_url: cvUrl,
             },
             learning_background: {
               education_level: form.education,
@@ -857,74 +812,6 @@ const MenteeOnboarding = () => {
 
                 </div>
 
-                {/* OPTIONAL PROFESSIONAL LINKS: CV OR LINKEDIN LINK WITH REAL LINKEDIN VALIDATION */}
-                <div className="space-y-6 pt-6 border-t border-slate-200 dark:border-slate-800">
-                  <div className="space-y-1 ml-2">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">Professional Credentials (Optional)</h4>
-                    <p className="text-[11px] text-slate-700 dark:text-slate-300 font-extrabold">Attach an active LinkedIn URL or upload a CV document to complete fast-track verification.</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {/* LinkedIn Link (Real Verification check) */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-900 dark:text-slate-100 ml-2">LinkedIn Profile Link</label>
-                      <div className="relative">
-                        <Link2 size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 font-black" />
-                        <input 
-                          type="url" 
-                          value={linkedinUrl}
-                          onChange={e => handleLinkedinChange(e.target.value)}
-                          placeholder="https://linkedin.com/in/username"
-                          className={cn(
-                            "w-full h-16 bg-slate-50 dark:bg-slate-900/50 border rounded-2xl pl-12 pr-6 text-xs font-bold text-slate-900 dark:text-white outline-none transition-all shadow-inner",
-                            linkedinError 
-                              ? "border-amber-500 focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 text-amber-600 font-bold"
-                              : "border-slate-350 dark:border-slate-800 focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500"
-                          )}
-                        />
-                      </div>
-                      {linkedinError && (
-                        <p className="text-[10px] text-amber-650 dark:text-amber-400 font-black ml-2 flex items-center gap-1 animate-pulse">
-                          <AlertCircle size={12} /> Must be a valid LinkedIn link (e.g. https://linkedin.com/in/user)
-                        </p>
-                      )}
-                    </div>
-
-                    {/* CV file upload */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-900 dark:text-slate-100 ml-2">CV / Resume File</label>
-                      <div className="relative flex items-center">
-                        <label className={cn(
-                          "w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-350 dark:border-slate-800 rounded-2xl px-6 flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer hover:bg-slate-100/50 transition-all shadow-inner",
-                          cvFileName && "border-emerald-500/40 bg-emerald-500/[0.02]"
-                        )}>
-                          <span className="truncate max-w-[80%] font-bold">{cvFileName || 'Upload CV / Resume (PDF)'}</span>
-                          <UploadCloud size={18} className={cn(cvFileName ? "text-emerald-500" : "text-slate-500")} />
-                          <input 
-                            type="file" 
-                            accept=".pdf,.doc,.docx"
-                            className="hidden" 
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              if (f) { setCvFileName(f.name); setCvFile(f); }
-                            }}
-                          />
-                        </label>
-                        {cvFileName && (
-                          <button 
-                            type="button" 
-                            onClick={() => { setCvFileName(null); setCvFile(null); }}
-                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-200 hover:bg-slate-350 dark:bg-slate-800 text-[10px] font-bold flex items-center justify-center text-slate-500"
-                            title="Remove CV"
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Names exactly which fields are still outstanding, rather
                     than leaving a disabled button unexplained. */}
                 {!canContinue && (
@@ -938,7 +825,7 @@ const MenteeOnboarding = () => {
                 <div className="flex gap-4 pt-4 border-t border-slate-200 dark:border-slate-800">
                   <Button variant="outline" onClick={() => handleBack('welcome')} className="flex-1 h-16 rounded-2xl border-2 border-slate-350 dark:border-slate-800 font-extrabold text-sm text-slate-900 dark:text-white hover:bg-slate-50">Back</Button>
                   <Button 
-                    disabled={!canContinue || linkedinError}
+                    disabled={!canContinue}
                     onClick={() => handleNext('background')} 
                     className="flex-[2] h-16 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest shadow-xl disabled:opacity-50 transition-all active:scale-[0.98]"
                   >
