@@ -150,7 +150,16 @@ const EditProfile: React.FC = () => {
         </div>
       )}
 
-      <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      {/* Capped rather than filling the page.
+          This form had no width limit at all, so on a wide monitor the name
+          and bio fields stretched to roughly a thousand pixels — a single
+          line of text running most of the screen, which is tiring to read and
+          makes a short form look empty. 5xl is wide enough for the 8/4 split
+          to stay side by side and narrow enough that a line stays scannable. */}
+      <form
+        onSubmit={handleSave}
+        className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start max-w-5xl"
+      >
         {/* LEFT COLUMN: Main Form details */}
         <Card className="lg:col-span-8 p-6 sm:p-8 rounded-[2.5rem] border-none shadow-xl bg-surface space-y-6 animate-in duration-500">
           <div className="space-y-2 border-b border-border pb-4">
