@@ -533,20 +533,33 @@ const MenteeOnboarding = () => {
     </div>
   );
 
-  const handleExitToPortal = async () => {
-    try {
-      if (user) {
-        await updateProfile({
-          metadata: {
-            ...user.metadata,
-            mentee_onboarded: true
-          }
-        });
-      }
-    } catch (e) {
-      console.warn('Exit to portal notice:', e);
-    }
+  const handleExitToPortal = () => {
+    // Navigate first, always.
+    //
+    // This used to await updateProfile() before navigating, so a slow or
+    // failed request held the button doing nothing visible. Requests do time
+    // out now, but a timeout is still seconds of a dead control. Leaving a
+    // form should not depend on a network round trip at all.
     navigate('/', { replace: true });
+
+    // Written in the background and allowed to fail quietly.
+    //
+    // mentee_onboarded is set because the route guard in App.tsx sends an
+    // un-onboarded mentee straight back here from anywhere; without it, "skip"
+    // would bounce the user to this same screen and read as a broken button.
+    // The profile keeps its defaults and everything here can still be filled
+    // in from Settings.
+    if (user) {
+      updateProfile({
+        metadata: {
+          ...user.metadata,
+          mentee_onboarded: true,
+          // Recorded so a later prompt can tell someone who skipped from
+          // someone who actually completed the form.
+          mentee_onboarding_skipped_at: new Date().toISOString()
+        }
+      }).catch(e => console.warn('[Onboarding] Could not record exit:', e));
+    }
   };
 
   /* Exit lives inside the header now, so nothing renders above it. */
@@ -623,13 +636,30 @@ const MenteeOnboarding = () => {
                 </div>
               </div>
 
-              <Button 
-                onClick={() => handleNext(isFastTrack ? 'background' : 'profile')}
-                className="h-16 px-16 bg-slate-900 hover:bg-black dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.2em] rounded-[1.5rem] shadow-2xl hover:shadow-emerald-500/10 group transition-all"
-              >
-                Let's Get Started
-                <ChevronRight className="ml-2 group-hover:translate-x-1.5 transition-transform" size={16} />
-              </Button>
+              {/* A way out of the first screen.
+                  Every later step carries "Exit to Portal" in its header, but
+                  the welcome step is a bare hero with no header — so the one
+                  screen a new mentee meets first was the only one they could
+                  not leave. The route guard sends them back here from
+                  anywhere, so browser Back did not help either: it was a
+                  genuine dead end, not merely a missing button. */}
+              <div className="flex flex-col items-center gap-3">
+                <Button
+                  onClick={() => handleNext(isFastTrack ? 'background' : 'profile')}
+                  className="h-16 px-16 bg-slate-900 hover:bg-black dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-[0.2em] rounded-[1.5rem] shadow-2xl hover:shadow-emerald-500/10 group transition-all"
+                >
+                  Let's Get Started
+                  <ChevronRight className="ml-2 group-hover:translate-x-1.5 transition-transform" size={16} />
+                </Button>
+
+                <button
+                  type="button"
+                  onClick={handleExitToPortal}
+                  className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-4 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent"
+                >
+                  Skip for now
+                </button>
+              </div>
             </motion.div>
           )}
 
