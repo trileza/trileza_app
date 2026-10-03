@@ -357,8 +357,42 @@ const LoginPage = () => {
   if (view === 'login' || view === 'signup') {
     return (
       <div className="min-h-screen bg-[#F8F8F8] dark:bg-[#000000] text-slate-900 dark:text-slate-100 flex items-center justify-center p-6 relative overflow-hidden font-sans transition-colors duration-300">
-        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/10 dark:bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none -z-10" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-indigo-500/10 dark:bg-indigo-500/10 rounded-full blur-[140px] pointer-events-none -z-10" />
+        {/* A blurred echo of the home page behind the form.
+            The page was a near-black field with two tinted orbs sitting at
+            -z-10, which put them behind the opaque background — so nothing
+            showed and the card floated on flat black. These sit above it.
+
+            The hero illustration is the same image the landing page uses, so
+            the two pages feel continuous rather than unrelated. Blurred hard
+            and held at a low opacity: it should read as colour and movement,
+            never as a picture competing with the fields in front of it.
+
+            aria-hidden and pointer-events-none throughout — this is wallpaper,
+            and nothing here should reach the keyboard or a screen reader. */}
+        <div aria-hidden className="absolute inset-0 overflow-hidden pointer-events-none">
+          {/* Lazy and low priority on purpose. The file is 3.3 MB, and at this
+              blur it is indistinguishable from a colour wash — so it must
+              never compete with the form for bandwidth. The gradients below
+              stand on their own while it loads, and if it never arrives the
+              page still looks finished. */}
+          <img
+            src="/hero-illustration.png"
+            alt=""
+            loading="lazy"
+            decoding="async"
+            fetchPriority="low"
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[140%] max-w-none opacity-[0.07] dark:opacity-[0.10] blur-[90px] saturate-150 select-none"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+
+          <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/20 dark:bg-emerald-500/25 rounded-full blur-[140px]" />
+          <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-indigo-500/15 dark:bg-indigo-500/20 rounded-full blur-[140px]" />
+          <div className="absolute top-[30%] right-[5%] w-[35%] h-[35%] bg-teal-400/10 dark:bg-teal-400/15 rounded-full blur-[120px]" />
+
+          {/* Keeps the centre calm enough to read against, so the colour stays
+              at the edges where it belongs. */}
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#F8F8F8]/40 to-[#F8F8F8]/70 dark:via-black/40 dark:to-black/70" />
+        </div>
 
         <header className="fixed top-0 left-0 w-full z-50 bg-[#F8F8F8]/95 dark:bg-[#000000]/95 backdrop-blur-2xl border-b border-transparent px-6 md:px-12 py-4 pt-safe flex items-center justify-between shadow-xs dark:shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
           <button 
@@ -405,7 +439,7 @@ const LoginPage = () => {
           // sign-up form sprawled wider than its content needed.
           className="w-full max-w-md transition-all duration-300 pt-16 sm:pt-20 pb-12"
         >
-          <Card className="border border-slate-200 dark:border-emerald-900/40 shadow-2xl dark:shadow-[0_30px_70px_-15px_rgba(0,0,0,0.9)] bg-white dark:bg-[#0c1712] backdrop-blur-2xl ring-1 ring-slate-200/50 dark:ring-white/10 transition-all duration-300 p-7 sm:p-9 rounded-[2rem]">
+          <Card className="border border-slate-200 dark:border-emerald-900/40 shadow-2xl dark:shadow-[0_30px_70px_-15px_rgba(0,0,0,0.9)] bg-white/85 dark:bg-[#0c1712]/85 backdrop-blur-2xl ring-1 ring-slate-200/50 dark:ring-white/10 transition-all duration-300 p-7 sm:p-9 rounded-[2rem]">
             {view === 'login' && (
               <div className="flex justify-center mb-5">
                 <div className="relative group">
@@ -718,7 +752,7 @@ const LoginPage = () => {
       <div className="min-h-screen bg-slate-50 dark:bg-[#070c09] text-slate-900 dark:text-slate-100 flex items-center justify-center p-6 relative overflow-hidden font-sans transition-colors duration-300">
         <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none -z-10" />
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
-          <Card className="p-8 sm:p-10 border border-slate-200 dark:border-emerald-900/40 shadow-2xl bg-white dark:bg-[#0c1712] backdrop-blur-2xl rounded-[3rem] ring-1 ring-slate-200/50 dark:ring-white/10">
+          <Card className="p-8 sm:p-10 border border-slate-200 dark:border-emerald-900/40 shadow-2xl bg-white/85 dark:bg-[#0c1712]/85 backdrop-blur-2xl rounded-[3rem] ring-1 ring-slate-200/50 dark:ring-white/10">
             <div className="text-center mb-8">
               <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                 {isRequest ? 'Reset Password' : 'Choose a New Password'}
@@ -808,7 +842,7 @@ const LoginPage = () => {
       <div className="min-h-screen bg-slate-50 dark:bg-[#070c09] text-slate-900 dark:text-slate-100 flex items-center justify-center p-6 relative overflow-hidden font-sans transition-colors duration-300">
         <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none -z-10" />
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
-          <Card className="p-8 sm:p-10 border border-slate-200 dark:border-emerald-900/40 shadow-2xl bg-white dark:bg-[#0c1712] backdrop-blur-2xl rounded-[3rem] ring-1 ring-slate-200/50 dark:ring-white/10">
+          <Card className="p-8 sm:p-10 border border-slate-200 dark:border-emerald-900/40 shadow-2xl bg-white/85 dark:bg-[#0c1712]/85 backdrop-blur-2xl rounded-[3rem] ring-1 ring-slate-200/50 dark:ring-white/10">
             <div className="text-center mb-8">
               <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Verify Identity</h1>
               <p className="text-slate-600 dark:text-slate-400 font-medium mt-2 text-sm">Enter the code sent to <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{email}</span></p>
