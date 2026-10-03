@@ -14,7 +14,8 @@ import {
   Info,
   AlertCircle,
   UploadCloud,
-  Link2
+  Link2,
+  ArrowLeft
 } from 'lucide-react';
 import { Card, Button } from '../../components/ui';
 import { PageHeader, Logo } from '../../components/shared';
@@ -540,7 +541,29 @@ const MenteeOnboarding = () => {
     // failed request held the button doing nothing visible. Requests do time
     // out now, but a timeout is still seconds of a dead control. Leaving a
     // form should not depend on a network round trip at all.
-    navigate('/', { replace: true });
+    //
+    // navigate(-1) rather than a fixed route, so Back means the page they came
+    // from. It cannot be used alone: the guard in App.tsx returns an
+    // un-onboarded mentee to this screen from anywhere, so without the flag
+    // below the browser would go back and be sent straight here again, which
+    // reads as a button that flashes and does nothing. The flag is set first,
+    // in memory, so the guard sees it on the very next render.
+    if (user) {
+      useAuthStore.setState(s => ({
+        user: s.user
+          ? { ...s.user, metadata: { ...s.user.metadata, mentee_onboarded: true } }
+          : s.user
+      }));
+    }
+
+    // history.length > 1 means there is somewhere to go back to. Landing here
+    // directly — a fresh tab, a bookmark — leaves nothing behind us, so the
+    // dashboard is the sensible destination instead of a no-op.
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/', { replace: true });
+    }
 
     // Written in the background and allowed to fail quietly.
     //
@@ -655,9 +678,10 @@ const MenteeOnboarding = () => {
                 <button
                   type="button"
                   onClick={handleExitToPortal}
-                  className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-4 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent"
+                  className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-4 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent flex items-center gap-1.5 group"
                 >
-                  Skip for now
+                  <ArrowLeft size={14} className="group-hover:-translate-x-0.5 transition-transform" />
+                  Back
                 </button>
               </div>
             </motion.div>
