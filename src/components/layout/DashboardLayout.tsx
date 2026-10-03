@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore, resolveActiveRole, isMentorOnboarded as isMentorOnboardedFn } from '../../store/authStore';
 import { useMessageStore } from '../../store/messageStore';
 import { cn } from '../../utils';
-import { CartButton, CartDrawer } from '../shared';
+import { CartButton, CartDrawer, NotificationBell } from '../shared';
 import { GlobalCallManager } from '../messaging/GlobalCallManager';
 import { PlusCircle, Menu } from 'lucide-react';
 
@@ -112,12 +112,16 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
                 }}
               />
             </div>
-            <CartButton />
+            <div className="flex items-center gap-2">
+              {showNavigation && <NotificationBell />}
+              <CartButton />
+            </div>
           </header>
         )}
 
         {/* Top-Right Premium Header Controls - Desktop */}
         <div className="hidden md:flex fixed md:top-6 md:right-8 z-50 items-center gap-3">
+          {showNavigation && <NotificationBell />}
           {showNavigation && <CartButton />}
         </div>
 

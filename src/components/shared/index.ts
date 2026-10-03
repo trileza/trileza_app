@@ -18,4 +18,5 @@ export { default as FormShell, Field } from './FormShell';
 export { default as Modal } from './Modal';
 export * from '../video/TrilezaVideoPlayer';
 export * from './CartButton';
+export * from './NotificationBell';
 export * from './CartDrawer';
