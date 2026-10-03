@@ -383,9 +383,25 @@ html, body, #root {
 /* Remove tap highlight on mobile */
 * {
   -webkit-tap-highlight-color: transparent;
-  max-width: 100%;
   box-sizing: border-box;
 }
+
+/* `max-width: 100%` is deliberately NOT in the rule above.
+ *
+ * It was, and it silently defeated every max-w-* class in the application. A
+ * universal selector and a utility class have the same specificity, and this
+ * file is emitted after Tailwind's utilities — around 236,000 characters
+ * later in the built stylesheet — so on a tie the universal rule won.
+ *
+ * The visible symptom was forms that ignored their width: the sign-up card
+ * carried max-w-md and still ran the full width of a monitor, and adding a
+ * cap anywhere else changed nothing, because the cap was being overridden
+ * rather than missing.
+ *
+ * What it was there for — stopping wide children forcing a horizontal scroll —
+ * is already handled by the html/body/#root rule below, which is where a page
+ * level constraint belongs.
+ */
 
 /* Hide scrollbar on mobile horizontal scroll areas */
 .mobile-scroll-hidden::-webkit-scrollbar {
