@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import { Button, Card } from '../../components/ui';
 import { LoadingOverlay } from '../../components/shared';
 import { useAuthStore } from '../../store/authStore';
+import { signupDraft } from '../../lib/signupDraft';
 import { PasswordStrength, passwordMeetsPolicy } from '../../components/auth/PasswordStrength';
 import { useSettingsStore } from '../../store/settingsStore';
 import { nexus } from '../../lib/nexus';
@@ -80,6 +81,46 @@ const LoginPage = () => {
   const [pendingRegistration, setPendingRegistration] = useState<any | null>(null);
   
   const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
+
+  // Bring back whatever was typed before leaving.
+  //
+  // Registration spans two screens, and backing out of onboarding returns
+  // here. Without this that trip emptied the form and the person retyped
+  // their name, handle, phone and photo to get back to where they were.
+  //
+  // Runs once on mount; the save effect below is what keeps it current.
+  useEffect(() => {
+    const draft = signupDraft.load();
+    if (!draft) return;
+
+    if (draft.email) setEmail(draft.email);
+    if (draft.username) setUsername(draft.username);
+    if (draft.surname) setSurname(draft.surname);
+    if (draft.firstName) setFirstName(draft.firstName);
+    if (draft.middleName) setMiddleName(draft.middleName);
+    if (draft.phoneNumber) setPhoneNumber(draft.phoneNumber);
+    if (draft.avatarFile) setAvatarFile(draft.avatarFile);
+
+    // Land on the form they were filling in, not the sign-in panel. Anything
+    // in the draft means they were part-way through signing up.
+    setView('signup');
+  }, []);
+
+  // Keep the draft current while they type.
+  //
+  // The password is deliberately absent: storing one leaves it readable to any
+  // script on the origin and to whoever opens the device next, which is not
+  // worth saving a single field of typing.
+  useEffect(() => {
+    if (view !== 'signup') return;
+
+    const anythingTyped =
+      email || username || surname || firstName || middleName || phoneNumber || avatarFile;
+
+    if (anythingTyped) {
+      signupDraft.save({ email, username, surname, firstName, middleName, phoneNumber, avatarFile });
+    }
+  }, [view, email, username, surname, firstName, middleName, phoneNumber, avatarFile]);
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
@@ -239,6 +280,9 @@ const LoginPage = () => {
       setError(error);
     } else {
       setPendingRegistration(null);
+      // The account exists now, so the draft has done its job. Leaving it
+      // would repopulate the form for whoever signs up next on this device.
+      signupDraft.clear();
       setSuccessMsg('Identity verified! Access established.');
     }
   };

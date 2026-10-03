@@ -19,6 +19,7 @@ import { Card, Button } from '../../components/ui';
 import { PageHeader, Logo } from '../../components/shared';
 import { cn } from '../../utils';
 import { useAuthStore } from '../../store/authStore';
+import { signupDraft } from '../../lib/signupDraft';
 import { motion, AnimatePresence } from 'framer-motion';
 
 type OnboardingStep = 
@@ -439,6 +440,8 @@ const MenteeOnboarding = () => {
         return;
       }
 
+      // Registration is genuinely finished here, so the sign-up draft can go.
+      signupDraft.clear();
       setTimeout(() => navigate('/', { replace: true }), 2000);
     } catch (err) {
       setStep('review');
