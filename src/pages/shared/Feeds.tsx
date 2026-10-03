@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Rss, 
   User, 
@@ -24,6 +25,7 @@ interface FeedsProps {
 }
 
 export const Feeds: React.FC<FeedsProps> = ({ hideHeader = false }) => {
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const { 
     posts, 
@@ -240,7 +242,15 @@ export const Feeds: React.FC<FeedsProps> = ({ hideHeader = false }) => {
             </div>
 
             {/* Realtime Notifications Widget */}
-            <NotificationsWidget onNotificationClick={(n) => n.sender_id && setSelectedUserId(n.sender_id)} />
+            {/* A library notification carries a link and no sender, so the
+                old handler — open the sender's profile — did nothing at all
+                for it. Follow the link when there is one. */}
+            <NotificationsWidget
+              onNotificationClick={(n) => {
+                if (n.link) navigate(n.link);
+                else if (n.sender_id) setSelectedUserId(n.sender_id);
+              }}
+            />
 
             {/* Suggested Scholars / Follow Recommendations */}
             {suggestedUsers.length > 0 && (

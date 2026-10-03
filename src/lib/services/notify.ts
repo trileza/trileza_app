@@ -69,7 +69,7 @@ const compose = (event: LibraryEvent, ctx: Record<string, any>): Notice => {
           ? `${title} was not approved. ${ctx.notes}`
           : `${title} was not approved. Open it to see the reviewer's notes.`,
         tone: 'error',
-        link: '/author'
+        link: '/author/dashboard'
       };
 
     case 'book_scan_flagged':
@@ -79,7 +79,7 @@ const compose = (event: LibraryEvent, ctx: Record<string, any>): Notice => {
         title: 'Your book is being checked',
         message: `${title} was flagged by the automatic content check and is waiting for a person to look at it.`,
         tone: 'warning',
-        link: '/author'
+        link: '/author/dashboard'
       };
 
     case 'license_expiring':
@@ -90,7 +90,7 @@ const compose = (event: LibraryEvent, ctx: Record<string, any>): Notice => {
             ? `${title} is due back today.`
             : `${title} is due back in ${ctx.daysLeft} day${ctx.daysLeft === 1 ? '' : 's'}.`,
         tone: 'warning',
-        link: '/library/mine'
+        link: '/library?tab=mine'
       };
 
     case 'license_expired':
@@ -98,7 +98,7 @@ const compose = (event: LibraryEvent, ctx: Record<string, any>): Notice => {
         title: 'A loan has ended',
         message: `${title} is no longer readable. You can borrow it again or buy a copy.`,
         tone: 'info',
-        link: ctx.bookId ? `/library/${ctx.bookId}` : '/library/mine'
+        link: ctx.bookId ? `/library/${ctx.bookId}` : '/library?tab=mine'
       };
 
     case 'sponsorship_requested':
@@ -106,7 +106,7 @@ const compose = (event: LibraryEvent, ctx: Record<string, any>): Notice => {
         title: 'A mentee asked for a book',
         message: `${ctx.menteeName || 'A mentee'} asked you for ${title}.`,
         tone: 'info',
-        link: '/library/sponsorship'
+        link: '/library?tab=sponsorship'
       };
 
     case 'sponsorship_granted':
@@ -114,7 +114,7 @@ const compose = (event: LibraryEvent, ctx: Record<string, any>): Notice => {
         title: 'A book was bought for you',
         message: `${ctx.mentorName || 'Your mentor'} got you ${title}. It is in your library now.`,
         tone: 'success',
-        link: '/library/mine'
+        link: '/library?tab=mine'
       };
 
     case 'earning_recorded':
@@ -122,7 +122,7 @@ const compose = (event: LibraryEvent, ctx: Record<string, any>): Notice => {
         title: 'You earned from a sale',
         message: `${title} earned you ₦${Number(ctx.amount || 0).toLocaleString()}.`,
         tone: 'success',
-        link: '/author'
+        link: '/author/dashboard'
       };
   }
 };

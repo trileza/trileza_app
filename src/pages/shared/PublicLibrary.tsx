@@ -47,7 +47,15 @@ const PublicLibrary: React.FC = () => {
   // with ?read=<id>, so the reader is reachable without a separate route.
   useEffect(() => {
     if (params.get('read')) setArea('mine');
-    if (params.get('tab') === 'bought' || params.get('tab') === 'borrowed') setArea('mine');
+
+    // Notifications deep-link here with ?tab=. They used to point at
+    // /library/mine and /library/sponsorship, which are not routes — they
+    // matched /library/:bookId instead, so clicking one tried to open a book
+    // whose id was the literal string "mine" and failed.
+    const tab = params.get('tab');
+    if (tab === 'bought' || tab === 'borrowed' || tab === 'mine') setArea('mine');
+    if (tab === 'sponsorship') setArea('sponsorship');
+    if (tab === 'requests') setArea('requests');
   }, [params]);
 
   const areas: Array<{ key: Area; label: string; icon: any; show: boolean }> = [

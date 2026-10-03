@@ -39,13 +39,21 @@ export interface FeedNotification {
   id: string;
   user_id: string;
   sender_id?: string;
-  type: 'follow' | 'like' | 'comment' | 'mention';
+  /**
+   * Social types come from the feed; the tone values come from the library and
+   * anywhere else writing to this table. One widget shows both, so the union
+   * has to admit both — it used to list only the social four, which made every
+   * library notification a type error waiting to be noticed.
+   */
+  type: 'follow' | 'like' | 'comment' | 'mention' | 'success' | 'warning' | 'error' | 'info';
   target_id?: string;
   title?: string;
   message: string;
   is_read: boolean;
   created_at: string;
   sender?: AuthorProfile;
+  /** Where clicking it should go. Library notifications set this. */
+  link?: string;
 }
 
 // Cache profiles in memory to avoid excessive profile queries
@@ -755,7 +763,8 @@ export const feedService = {
           message: n.message,
           is_read: !!n.is_read,
           created_at: n.created_at,
-          sender: senderId ? senders[senderId] : undefined
+          sender: senderId ? senders[senderId] : undefined,
+          link: n.link ?? undefined
         };
       });
     } catch (err) {

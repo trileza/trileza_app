@@ -64,7 +64,7 @@ BEGIN
       ELSE format('%s is due back tomorrow.', COALESCE('"' || b.title || '"', 'A book'))
     END,
     'warning',
-    '/library/mine',
+    '/library?tab=mine',
     FALSE,
     jsonb_build_object('event', 'license_expiring', 'bookId', w.book_id)
   FROM warned w
