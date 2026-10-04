@@ -414,13 +414,13 @@ const LoginPage = () => {
             aria-hidden and pointer-events-none throughout — this is wallpaper,
             and nothing here should reach the keyboard or a screen reader. */}
         <div aria-hidden className="absolute inset-0 overflow-hidden pointer-events-none">
-          {/* Lazy and low priority on purpose. The file is 3.3 MB, and at this
-              blur it is indistinguishable from a colour wash — so it must
-              never compete with the form for bandwidth. The gradients below
-              stand on their own while it loads, and if it never arrives the
-              page still looks finished. */}
+          {/* Lazy and low priority on purpose. At this blur the image is
+              indistinguishable from a colour wash, so it must never compete
+              with the form for bandwidth however small it gets. The gradients
+              below stand on their own while it loads, and if it never arrives
+              the page still looks finished. */}
           <img
-            src="/hero-illustration.png"
+            src="/hero-illustration.webp"
             alt=""
             loading="lazy"
             decoding="async"
@@ -1665,7 +1665,7 @@ const LoginPage = () => {
               <div className="absolute inset-8 bg-yellow-400/[0.05] dark:bg-emerald-500/15 rounded-full blur-3xl -z-10 pointer-events-none transition-all duration-300" />
               <div className="absolute inset-14 bg-amber-300/[0.03] dark:bg-emerald-400/10 rounded-full blur-2xl -z-10 pointer-events-none" />
               <img 
-                src="/hero-illustration.png" 
+                src="/hero-illustration.webp" 
                 alt="Trileza Platform - Empowering Learning and Growth" 
                 className="hero-illustration-img w-full max-w-[480px] h-auto object-contain select-none"
               />
