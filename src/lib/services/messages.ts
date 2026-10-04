@@ -76,18 +76,31 @@ export const messageService = {
       profiles = data || [];
     } catch {}
 
-    // Fallback sample contacts if database profiles list is empty
-    if (profiles.length === 0) {
-      profiles = [
-        { id: 'c-david-mentor', full_name: 'David Mentor', role: 'Mentor', avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150', username: 'david_mentor' },
-        { id: 'c-[#1B2620]', full_name: 'Sarah Trileza', role: 'Instructor', avatar_url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150', username: 'sarah_t' },
-        { id: 'c-alex-dev', full_name: 'Alex Code', role: 'Mentee', avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', username: 'alex_code' },
-        { id: 'c-support', full_name: 'Trileza Support Agent', role: 'Support', avatar_url: null, username: 'trileza_support' }
-      ];
-    }
+    // No invented contacts when the list is empty.
+    //
+    // This used to return four people who do not exist — "David Mentor",
+    // "Sarah Trileza", "Alex Code" and a support agent — with stock photos and
+    // ids like c-david-mentor. They appeared in everyone's sidebar, could be
+    // opened, and accepted messages that went to a row with no account behind
+    // it. The same pattern as the fabricated group chats.
+    //
+    // Messages.tsx already has an empty state for this — "No direct messages",
+    // with a prompt to start one — and the fallback was what kept it from ever
+    // being seen.
 
-    // Build conversation list for all contacts
-    const conversations: ConversationPartner[] = profiles.map(profile => {
+    // Only people this user has actually exchanged messages with.
+    //
+    // Which is what the docstring above has always promised, and what the
+    // sidebar is for. The code mapped every profile it had fetched — up to
+    // thirty — so the conversation list was really a directory of strangers,
+    // most with no message between them, sorted so the handful of real threads
+    // floated to the top of the pile.
+    //
+    // Starting a new conversation goes through the DM picker, which searches
+    // profiles deliberately; it does not need everyone pre-listed here.
+    const conversations: ConversationPartner[] = profiles
+      .filter(profile => partnerMap.has(profile.id))
+      .map(profile => {
       const entry = partnerMap.get(profile.id);
       return {
         id: profile.id,
