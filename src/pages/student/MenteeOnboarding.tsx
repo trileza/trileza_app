@@ -165,7 +165,6 @@ const MenteeOnboarding = () => {
   const [form, setForm] = useState({
     
     // Section 2: Personal Profile
-    displayName: '',
     dob: '',
     country: 'Nigeria',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Lagos',
@@ -226,7 +225,6 @@ const MenteeOnboarding = () => {
     const blank = (v: unknown) => !String(v ?? '').trim();
 
     if (s === 'profile') {
-      if (blank(form.displayName)) missing.push('Display name');
       if (!dobDay || !dobMonth || !dobYear) missing.push('Date of birth');
       if (blank(form.country)) missing.push('Country');
       if (blank(form.timezone)) missing.push('Time zone');
@@ -275,7 +273,6 @@ const MenteeOnboarding = () => {
       const userAvatar = user.avatar_url || (user.metadata as any)?.avatar_url || '';
       setForm(prev => ({
         ...prev,
-        displayName: prev.displayName || user.full_name?.split(' ')[0] || user.full_name || '',
         legalCertificateName: prev.legalCertificateName || user.full_name || '',
         avatarUrl: prev.avatarUrl || userAvatar
       }));
@@ -291,7 +288,6 @@ const MenteeOnboarding = () => {
         yearsExp: mentorData.qualifications?.years_exp || prev.yearsExp,
         education: mentorData.qualifications?.education || prev.education,
         legalCertificateName: mentorData.identity?.legal_name || user.full_name,
-        displayName: mentorData.identity?.public_name || user.full_name.split(' ')[0] || prev.displayName,
         country: mentorData.identity?.address?.country || prev.country
       }));
     }
@@ -397,7 +393,11 @@ const MenteeOnboarding = () => {
               social_provider: socialConnected,
             },
             profile: {
-              display_name: form.displayName,
+              // Derived from the legal name rather than asked for
+              // separately. The field above already has it, and a second box
+              // wanting "Goza" when "Goza ololo mimi" is one line up is work
+              // without a purpose.
+              display_name: form.legalCertificateName?.trim().split(/\s+/)[0] || '',
               dob: form.dob,
               country: form.country,
               timezone: form.timezone,
@@ -573,7 +573,7 @@ const MenteeOnboarding = () => {
                 <div className="flex flex-col sm:flex-row items-center gap-6 p-6 bg-slate-50 dark:bg-slate-900/50 border border-slate-350 dark:border-slate-850 rounded-3xl shadow-inner">
                   <div className="relative group">
                     <img 
-                      src={form.avatarUrl || user?.avatar_url || (user?.metadata as any)?.avatar_url || (user?.metadata as any)?.pending_mentor_data?.identity?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${form.displayName || user?.full_name || 'seed'}`}
+                      src={form.avatarUrl || user?.avatar_url || (user?.metadata as any)?.avatar_url || (user?.metadata as any)?.pending_mentor_data?.identity?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${form.legalCertificateName || user?.full_name || 'seed'}`}
                       alt="Profile Avatar"
                       className="w-24 h-24 rounded-full bg-slate-200 dark:bg-slate-800 border-2 border-emerald-500 p-0.5 object-cover shadow-lg"
                     />
@@ -611,19 +611,6 @@ const MenteeOnboarding = () => {
                       value={user?.full_name || ''}
                       disabled
                       className="w-full h-16 bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-850 rounded-2xl px-6 text-sm font-extrabold text-slate-500 dark:text-slate-400 outline-none cursor-not-allowed shadow-inner"
-                    />
-                  </div>
-
-                  {/* Display Name */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100 ml-2">Display Name (Required)</label>
-                    <input 
-                      type="text"
-                      value={form.displayName}
-                      onChange={e => setForm({...form, displayName: e.target.value})}
-                      placeholder="e.g. David"
-                      required
-                      className="w-full h-16 bg-slate-50 dark:bg-slate-900/50 border border-slate-350 dark:border-slate-800 rounded-2xl px-6 text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all shadow-inner"
                     />
                   </div>
 
@@ -1157,10 +1144,10 @@ const MenteeOnboarding = () => {
                 {/* Visual recap card */}
                 <div className="flex items-center gap-6 pb-6 border-b border-slate-100 dark:border-slate-800">
                   <div className="w-16 h-16 bg-gradient-to-tr from-emerald-600 to-teal-400 rounded-2xl flex items-center justify-center text-white font-black text-xl flex-shrink-0 shadow-lg">
-                    {form.displayName ? form.displayName[0] : 'S'}
+                    {form.legalCertificateName?.trim()[0]?.toUpperCase() || 'S'}
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900 dark:text-white">Active Student: {form.displayName}</h3>
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white">Active Student: {form.legalCertificateName?.trim().split(/\s+/)[0] || '—'}</h3>
                     <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Country: {form.country}</p>
                   </div>
                 </div>
