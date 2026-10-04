@@ -316,7 +316,57 @@ export const useMessageStore = create<MessageStore>((set, get) => {
             });
             messageService.markAsRead(userId, payload.sender_id).catch(() => {});
           } else {
-            set(s => ({ totalUnreadCount: s.totalUnreadCount + 1 }));
+            // The conversation is not open, so put the message straight into
+            // the sidebar rather than only counting it.
+            //
+            // This branch used to increment totalUnreadCount and nothing else.
+            // The row's preview, its timestamp and its position all waited on
+            // the debounced refetch — and if the sender was not already in the
+            // list, the conversation did not appear at all until the next
+            // reload. That is why a new message was only visible after
+            // refreshing the page.
+            set(s => {
+              const idx = s.conversations.findIndex(c => c.id === payload.sender_id);
+
+              const preview = {
+                id: payload.id,
+                content: payload.content,
+                created_at: payload.created_at,
+                sender_id: payload.sender_id,
+                highlight_data: payload.highlight_data ?? null
+              };
+
+              // A sender already in the list: update in place and move to the
+              // top, which is where the refetch would have put them.
+              if (idx !== -1) {
+                const next = [...s.conversations];
+                const row = { ...next[idx], lastMessage: preview, unreadCount: next[idx].unreadCount + 1 };
+                next.splice(idx, 1);
+                return {
+                  conversations: [row, ...next],
+                  totalUnreadCount: s.totalUnreadCount + 1
+                };
+              }
+
+              // A first message from someone new. The name and avatar are not
+              // in this payload, so a placeholder holds the row until the
+              // debounced refresh fills it in — far better than no row at all.
+              return {
+                conversations: [
+                  {
+                    id: payload.sender_id,
+                    full_name: payload.sender_name || 'New message',
+                    avatar_url: payload.sender_avatar ?? null,
+                    username: null,
+                    role: 'Member',
+                    lastMessage: preview,
+                    unreadCount: 1
+                  } as any,
+                  ...s.conversations
+                ],
+                totalUnreadCount: s.totalUnreadCount + 1
+              };
+            });
           }
 
           // Refresh the sidebar, but not once per message.
@@ -608,7 +658,13 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         highlight_data: highlightData,
         created_at: new Date().toISOString(),
         read_at: null,
-        pending: true
+        pending: true,
+        // Carried so a recipient who has never spoken to this sender can show
+        // their name immediately, instead of a row labelled "New message"
+        // until the sidebar refetch fills it in. Not stored — the database row
+        // has no such column — it only travels with the realtime event.
+        sender_name: senderName,
+        sender_avatar: senderAvatar
       };
 
       set(s => ({ messages: [...s.messages, optimistic] }));
@@ -629,7 +685,18 @@ export const useMessageStore = create<MessageStore>((set, get) => {
 
         // Re-publish with the real id so the recipient's copy matches what is
         // stored; their handler de-duplicates on content and sender.
-        nexus.realtime.publish(`dm:${targetId}`, 'new_message', realMsg).catch(() => {});
+        //
+        // The sender's name rides along again: realMsg is the database row and
+        // has no column for it, so without this the second publish would
+        // replace a correctly labelled sidebar row with one reading "New
+        // message".
+        nexus.realtime
+          .publish(`dm:${targetId}`, 'new_message', {
+            ...realMsg,
+            sender_name: senderName,
+            sender_avatar: senderAvatar
+          })
+          .catch(() => {});
 
         // Debounced for the same reason as the receive path: someone typing
         // several messages in a row should not queue a 2.3s query behind each
