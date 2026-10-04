@@ -110,10 +110,30 @@ const LiveStudio: React.FC = () => {
       });
 
       setToast({ message: 'Uploading thumbnail...', type: 'info' });
+
+      // A key of our own, rather than the file's name.
+      //
+      // uploadAuto stores a file under its own filename, so the key is shared
+      // by everyone: the first person to upload "office area.jpg" owns that
+      // key forever, and the next person to pick a file with the same name is
+      // refused — "You do not have permission to write office area.jpg" —
+      // because the insert policy requires them to own the row they are
+      // writing. Common names like photo.jpg or cover.png collide constantly.
+      //
+      // Namespacing by user and time makes a collision impossible and matches
+      // what bookStorage already does for manuscripts and covers. The name is
+      // sanitised for the same reason it is there: a filename must not escape
+      // its prefix.
+      const safeName = compressedFile.name
+        .replace(/\.\./g, '_')
+        .replace(/^\/+/, '')
+        .replace(/[/\\]/g, '_');
+      const key = `${user?.id || 'anon'}_${Date.now()}_${safeName}`;
+
       const { data, error: uploadError } = await executeWithAutoRefresh(() =>
         nexus.storage
           .from('session-thumbnails')
-          .uploadAuto(compressedFile)
+          .upload(key, compressedFile)
       );
 
       if (uploadError) throw uploadError;

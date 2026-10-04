@@ -210,6 +210,9 @@ const ThumbnailSelector: React.FC<ThumbnailSelectorProps> = ({
   className = ""
 }) => {
   const [activeTab, setActiveTab] = useState<'upload' | 'link'>(value.startsWith('http') && !value.includes('course-materials-trileza') ? 'link' : 'upload');
+  // Only to namespace the upload key, so two tutors picking a file with the
+  // same name do not collide.
+  const { user } = useAuthStore();
   const [uploading, setUploading] = useState(false);
   const [linkInput, setLinkInput] = useState(value.startsWith('http') ? value : '');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -228,10 +231,23 @@ const ThumbnailSelector: React.FC<ThumbnailSelectorProps> = ({
 
     setUploading(true);
     try {
+      // Keyed by uploader and time, not by the file's own name.
+      //
+      // uploadAuto uses the filename as the key, so it is shared across every
+      // user of the bucket: whoever uploads "cover.png" first owns that key,
+      // and the next person to choose a file with the same name is refused by
+      // the insert policy, which requires them to own the row. Same fix as the
+      // live session thumbnails, and the same pattern bookStorage uses.
+      const safeName = file.name
+        .replace(/\.\./g, '_')
+        .replace(/^\/+/, '')
+        .replace(/[/\\]/g, '_');
+      const key = `${user?.id || 'anon'}_${Date.now()}_${safeName}`;
+
       const { data, error } = await executeWithAutoRefresh(() =>
         nexus.storage
           .from('course-materials-trileza-784bc328')
-          .uploadAuto(file)
+          .upload(key, file)
       );
 
       if (error) throw error;
