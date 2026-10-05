@@ -420,7 +420,7 @@ const LoginPage = () => {
               below stand on their own while it loads, and if it never arrives
               the page still looks finished. */}
           <img
-            src="/hero-illustration.webp"
+            src="/hero-illustration.png"
             alt=""
             loading="lazy"
             decoding="async"
@@ -937,32 +937,50 @@ const LoginPage = () => {
     <div className="landing-root-container w-full min-h-screen">
       <style dangerouslySetInnerHTML={{ __html: `
         :root, .light {
-          --lp-bg: #F8F8F8;
-          --lp-bg-subtle: #EFEFEF;
+          /* Pure white, not the near-grey it was. #F8F8F8 reads as slightly
+             dirty next to a white card, and the illustration has a
+             transparent background, so anything other than white shows
+             through it as a tint. */
+          --lp-bg: #ffffff;
+          --lp-bg-subtle: #F4F6F5;
           --lp-card: #ffffff;
           --lp-card-hover: #f1f5f9;
-          --lp-border: rgba(15, 23, 42, 0.08);
+          --lp-border: rgba(15, 23, 42, 0.10);
           --lp-border-accent: rgba(46, 125, 50, 0.4);
-          --lp-text-title: #0f172a;
-          --lp-text-body: #475569;
+          /* Darker titles and body on a white ground: #0f172a on #F8F8F8 was
+             fine, but on pure white there is room to push the contrast
+             further, which is what makes the words read as vivid rather than
+             soft. */
+          --lp-text-title: #0A0F1A;
+          --lp-text-body: #334155;
           --lp-text-muted: #64748b;
-          --lp-accent-mint: #059669;
-          --lp-nav-bg: #F8F8F8;
+          /* A deeper, more saturated green. #059669 leans teal and goes flat
+             against white; this holds its colour. */
+          --lp-accent-mint: #047A45;
+          --lp-nav-bg: #ffffff;
           --lp-nav-border: rgba(15, 23, 42, 0.06);
           --lp-nav-text: #475569;
           --lp-eyebrow-bg: #ecfdf5;
           --lp-eyebrow-border: rgba(46, 125, 50, 0.3);
-          --lp-eyebrow-text: #059669;
+          --lp-eyebrow-text: #047A45;
           --lp-dots: rgba(0, 0, 0, 0.08);
           --lp-glow-1: rgba(250, 204, 21, 0.035);
           --lp-glow-2: rgba(245, 158, 11, 0.025);
+          /* Defined but never consumed — nothing reads var(--lp-glow-illo).
+             The glow behind the illustration comes from two divs in the
+             markup, which is where it is turned off for light mode. Left in
+             place rather than deleted, since the dark block below declares it
+             too and removing one half would just look like an oversight. */
           --lp-glow-illo: rgba(251, 191, 36, 0.04);
-          --lp-btn-primary-bg: #43A047;
+          /* A stronger primary. #43A047 is the mid-tone of the brand ramp and
+             sits quietly on white; this is the same hue with more depth, so
+             the button carries the page rather than blending into it. */
+          --lp-btn-primary-bg: #1E8E3E;
           --lp-btn-primary-text: #ffffff;
-          --lp-btn-primary-hover: #059669;
+          --lp-btn-primary-hover: #157233;
           --lp-btn-sec-bg: #ffffff;
-          --lp-btn-sec-border: rgba(15, 23, 42, 0.12);
-          --lp-btn-sec-text: #0f172a;
+          --lp-btn-sec-border: rgba(15, 23, 42, 0.16);
+          --lp-btn-sec-text: #0A0F1A;
           --lp-btn-sec-hover: #f1f5f9;
           --lp-pricing-featured-bg: #f0fdf4;
           --lp-chip-bg: rgba(255, 255, 255, 0.96);
@@ -1662,10 +1680,16 @@ const LoginPage = () => {
             </div>
 
             <div className="relative flex items-center justify-center w-full">
-              <div className="absolute inset-8 bg-yellow-400/[0.05] dark:bg-emerald-500/15 rounded-full blur-3xl -z-10 pointer-events-none transition-all duration-300" />
-              <div className="absolute inset-14 bg-amber-300/[0.03] dark:bg-emerald-400/10 rounded-full blur-2xl -z-10 pointer-events-none" />
+              {/* Glow only in dark mode.
+                  These were yellow and amber washes behind a transparent PNG.
+                  On a dark ground that reads as light catching the artwork; on
+                  white it reads as a dirty smudge, since there is nothing for
+                  the glow to lift the image away from. The light variants are
+                  gone and the dark ones kept. */}
+              <div className="absolute inset-8 bg-transparent dark:bg-emerald-500/15 rounded-full blur-3xl -z-10 pointer-events-none transition-all duration-300" />
+              <div className="absolute inset-14 bg-transparent dark:bg-emerald-400/10 rounded-full blur-2xl -z-10 pointer-events-none" />
               <img 
-                src="/hero-illustration.webp" 
+                src="/hero-illustration.png" 
                 alt="Trileza Platform - Empowering Learning and Growth" 
                 className="hero-illustration-img w-full max-w-[480px] h-auto object-contain select-none"
               />
