@@ -1177,8 +1177,6 @@ const LoginPage = () => {
           padding: 72px 40px 48px;
           position: relative; z-index: 2;
         }
-        .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--lp-eyebrow-text); background: var(--lp-eyebrow-bg); border: 1px solid var(--lp-eyebrow-border) !important; padding: 7px 16px; border-radius: 100px; margin-bottom: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
-        .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lp-eyebrow-text); box-shadow: 0 0 10px var(--lp-eyebrow-text); }
         h1 { font-weight: 800; font-size: clamp(40px,6vw,72px); line-height: 1.02; letter-spacing: -0.03em; color: var(--lp-text-title); max-width: 600px; text-align: left; margin: 24px 0; }
         /* The glow is dropped in light mode: a text-shadow tuned for a dark
            ground makes green type look blurred on white. Dark keeps it. */
@@ -1751,7 +1749,6 @@ const LoginPage = () => {
         <div className="hero-glow-2"></div>
         <div className="hero-inner">
           <div className="hero-copy">
-            <div className="eyebrow"><span className="dot"></span>The learning platform for individuals and institutions</div>
             <h1>The hub of <span className="accent">unrestrained<svg viewBox="0 0 220 14" preserveAspectRatio="none"><path d="M2 9C40 2 90 2 110 7C130 12 180 4 218 9" stroke="var(--lp-accent-mint)" strokeWidth="2.8" fill="none" strokeLinecap="round"/></svg></span> impact</h1>
             <p className="hero-sub">A single platform for individual learners and institutions. Courses, books, mentors, and live classes — all from one clean, minimalist dashboard.</p>
             <div className="hero-ctas-desktop">
