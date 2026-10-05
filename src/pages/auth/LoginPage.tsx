@@ -36,6 +36,15 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const { signIn, signUp, loading } = useAuthStore();
   const { theme, updateSetting } = useSettingsStore();
+
+  // What the page is actually showing, which is not the same as the setting:
+  // 'system' resolves to whichever the device prefers. The toggle's label has
+  // to describe what a press will do, so it needs the resolved value.
+  const isDarkTheme =
+    theme === 'dark' ||
+    (theme === 'system' &&
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [view, setView] = useState<AuthView>('landing');
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -964,6 +973,12 @@ const LoginPage = () => {
           --lp-eyebrow-border: rgba(46, 125, 50, 0.3);
           --lp-eyebrow-text: #047A45;
           --lp-dots: rgba(0, 0, 0, 0.08);
+          /* Aurora. Green, teal and lime, kept low enough to read as tinted
+             light rather than as three coloured blobs. */
+          --lp-aurora-1: rgba(22, 163, 74, 0.22);
+          --lp-aurora-2: rgba(45, 212, 191, 0.18);
+          --lp-aurora-3: rgba(190, 242, 100, 0.22);
+          --lp-grid-line: rgba(21, 128, 61, 0.08);
           --lp-glow-1: rgba(250, 204, 21, 0.035);
           --lp-glow-2: rgba(245, 158, 11, 0.025);
           /* Defined but never consumed — nothing reads var(--lp-glow-illo).
@@ -1019,6 +1034,12 @@ const LoginPage = () => {
           --lp-eyebrow-border: rgba(52, 211, 153, 0.3);
           --lp-eyebrow-text: #34d399;
           --lp-dots: rgba(52, 211, 153, 0.12);
+          /* Stronger in dark mode: the same opacities that read as a tint on
+             white disappear entirely against #0b1410. */
+          --lp-aurora-1: rgba(34, 197, 94, 0.30);
+          --lp-aurora-2: rgba(45, 212, 191, 0.22);
+          --lp-aurora-3: rgba(163, 230, 53, 0.18);
+          --lp-grid-line: rgba(255, 255, 255, 0.05);
           --lp-glow-1: rgba(46, 125, 50, 0.12);
           --lp-glow-2: rgba(99, 102, 241, 0.10);
           --lp-glow-illo: rgba(46, 125, 50, 0.15);
@@ -1085,21 +1106,71 @@ const LoginPage = () => {
         .nav-right { display: flex; align-items: center; gap: 16px; }
 
         /* ---------- HERO ---------- */
-        .hero { position: relative; overflow: hidden; background: var(--lp-bg); transition: background 0.3s ease; }
-        .grid-dots {
-          position: absolute; inset: 0; z-index: 0;
-          background-image: radial-gradient(circle, var(--lp-dots) 1.2px, transparent 1.2px);
-          background-size: 28px 28px;
-          mask-image: radial-gradient(ellipse 85% 75% at 30% 35%, black 35%, transparent 80%);
+        /* ── Hero: aurora + grid ──────────────────────────────────────────
+           isolation creates a stacking context, so the two negative z-index
+           layers below sit behind the hero's own content without escaping to
+           sit behind the page background as well. */
+        .hero {
+          position: relative;
+          isolation: isolate;
+          overflow: hidden;
+          background: var(--lp-bg);
+          transition: background 0.3s ease;
         }
-        .hero-glow-1 {
-          position: absolute; top: -150px; left: -100px; width: 500px; height: 500px;
-          background: var(--lp-glow-1); border-radius: 50%; filter: blur(140px); pointer-events: none; z-index: 0;
+
+        /* Soft blurred light, concentrated behind the text rather than
+           centred — the illustration side needs no help and a glow there
+           would wash it out. */
+        .hero::before {
+          content: "";
+          position: absolute;
+          z-index: -1;
+          inset: -20% 40% -10% -15%;
+          pointer-events: none;
+          background:
+            radial-gradient(40% 45% at 30% 35%, var(--lp-aurora-1), transparent 70%),
+            radial-gradient(35% 40% at 60% 65%, var(--lp-aurora-2), transparent 70%),
+            radial-gradient(30% 30% at 20% 75%, var(--lp-aurora-3), transparent 70%);
+          filter: blur(40px);
+          animation: aurora-drift 18s ease-in-out infinite alternate;
         }
-        .hero-glow-2 {
-          position: absolute; bottom: -100px; right: -50px; width: 450px; height: 450px;
-          background: var(--lp-glow-2); border-radius: 50%; filter: blur(140px); pointer-events: none; z-index: 0;
+
+        /* A faint grid, masked so it fades out before it reaches an edge and
+           never ends in a visible straight line. */
+        .hero::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          z-index: -2;
+          pointer-events: none;
+          background-image:
+            linear-gradient(var(--lp-grid-line) 1px, transparent 1px),
+            linear-gradient(90deg, var(--lp-grid-line) 1px, transparent 1px);
+          background-size: 48px 48px;
+          -webkit-mask-image: radial-gradient(ellipse 60% 70% at 30% 50%, #000 30%, transparent 75%);
+                  mask-image: radial-gradient(ellipse 60% 70% at 30% 50%, #000 30%, transparent 75%);
         }
+
+        @keyframes aurora-drift {
+          to { transform: translate(4%, -3%) scale(1.08); }
+        }
+
+        /* Movement is a preference, not a given. The aurora still renders —
+           it simply stops drifting. */
+        @media (prefers-reduced-motion: reduce) {
+          .hero::before { animation: none; }
+        }
+
+        /* Stacked layout: the glow moves up behind the text block, which is
+           now at the top rather than on the left. */
+        @media (max-width: 820px) {
+          .hero::before { inset: -10% -20% 30% -20%; }
+        }
+
+        /* The dot pattern and the two blur circles are replaced by the layers
+           above. Kept as no-ops rather than removing the elements, so the JSX
+           stays untouched and nothing renders a stray box. */
+        .grid-dots, .hero-glow-1, .hero-glow-2 { display: none; }
         .hero-inner {
           max-width: 1200px; margin: 0 auto;
           display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: center; gap: 32px;
@@ -1108,16 +1179,39 @@ const LoginPage = () => {
         }
         .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--lp-eyebrow-text); background: var(--lp-eyebrow-bg); border: 1px solid var(--lp-eyebrow-border) !important; padding: 7px 16px; border-radius: 100px; margin-bottom: 22px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
         .eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lp-eyebrow-text); box-shadow: 0 0 10px var(--lp-eyebrow-text); }
-        h1 { font-weight: 800; font-size: clamp(36px,4.3vw,54px); line-height: 1.12; letter-spacing: -0.03em; color: var(--lp-text-title); max-width: 540px; text-align: left; }
-        h1 .accent { color: var(--lp-accent-mint); position: relative; text-shadow: 0 0 24px rgba(52,211,153,0.35); }
+        h1 { font-weight: 800; font-size: clamp(40px,6vw,72px); line-height: 1.02; letter-spacing: -0.03em; color: var(--lp-text-title); max-width: 600px; text-align: left; margin: 24px 0; }
+        /* The glow is dropped in light mode: a text-shadow tuned for a dark
+           ground makes green type look blurred on white. Dark keeps it. */
+        h1 .accent { color: var(--lp-accent-mint); position: relative; }
+        .dark h1 .accent { text-shadow: 0 0 24px rgba(52,211,153,0.35); }
         h1 .accent svg { position: absolute; left: 0; bottom: -8px; width: 100%; height: 14px; overflow: visible; }
-        .hero-sub { max-width: 480px; margin: 20px 0 32px; font-size: 17px; line-height: 1.65; color: var(--lp-text-body); text-align: left; }
+        .hero-sub { max-width: 34em; margin: 20px 0 32px; font-size: clamp(16px,1.4vw,19px); font-weight: 400; line-height: 1.7; color: var(--lp-text-body); text-align: left; }
         .hero-ctas-desktop { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 24px; }
         .hero-ctas-mobile { display: none; }
         .btn-primary { display: inline-flex; align-items: center; gap: 8px; background: var(--lp-btn-primary-bg); color: var(--lp-btn-primary-text); font-size: 15px; font-weight: 800; padding: 14px 28px; border-radius: 12px; transition: all .2s ease; border: none; cursor: pointer; box-shadow: 0 10px 25px -4px rgba(46, 125, 50,0.45); }
-        .btn-primary:hover { background: var(--lp-btn-primary-hover); transform: translateY(-2px); box-shadow: 0 14px 30px -4px rgba(52,211,153,0.55); }
+        .btn-primary:hover { background: var(--lp-btn-primary-hover); transform: translateY(-1px); box-shadow: 0 14px 30px -4px rgba(52,211,153,0.55); }
+        .btn-primary:active { transform: translateY(0) scale(0.98); }
+        /* The arrow leans into the hover rather than the whole button
+           sliding — a smaller movement that still reads as forward. */
+        .btn-primary svg, .btn-primary .arrow { transition: transform .2s ease; }
+        .btn-primary:hover svg, .btn-primary:hover .arrow { transform: translateX(3px); }
         .btn-secondary { display: inline-flex; align-items: center; gap: 8px; background: var(--lp-btn-sec-bg); color: var(--lp-btn-sec-text); font-size: 15px; font-weight: 700; padding: 14px 24px; border-radius: 12px; border: 1px solid var(--lp-btn-sec-border) !important; backdrop-filter: blur(8px); cursor: pointer; transition: all .2s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
-        .btn-secondary:hover { background: var(--lp-btn-sec-hover); transform: translateY(-2px); border-color: var(--lp-border-accent) !important; }
+        .btn-secondary:hover { background: var(--lp-btn-sec-hover); transform: translateY(-1px); border-color: var(--lp-accent-mint) !important; color: var(--lp-accent-mint); }
+        .btn-secondary:active { transform: scale(0.98); }
+
+        /* A visible focus ring on both. Hover styles alone leave anyone
+           navigating by keyboard with no idea where they are. :focus-visible
+           rather than :focus, so a mouse click does not leave a ring behind. */
+        .btn-primary:focus-visible, .btn-secondary:focus-visible {
+          outline: 2px solid var(--lp-accent-mint);
+          outline-offset: 3px;
+        }
+
+        /* Full width on a narrow screen. Three buttons wrapping into an
+           uneven stack reads as broken; stacked and equal reads as designed. */
+        @media (max-width: 480px) {
+          .btn-primary, .btn-secondary { flex: 1 1 100%; justify-content: center; }
+        }
 
         /* store badges */
         .store-row { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -1616,8 +1710,13 @@ const LoginPage = () => {
 
         {/* Header Badges & Theme Toggle Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* The icon alone says nothing to a screen reader, and `title` is
+              not reliably announced. The label names what pressing it will
+              do, which is more useful than naming the current state. */}
           <button
             onClick={toggleTheme}
+            aria-label={isDarkTheme ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-pressed={isDarkTheme}
             className="p-2 sm:p-2.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-white/15 transition-all cursor-pointer shadow-xs"
             title="Toggle theme (Light / Dark)"
           >

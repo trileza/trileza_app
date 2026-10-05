@@ -403,6 +403,29 @@ html.dark { color-scheme: dark; }
   box-sizing: border-box;
 }
 
+/* Honour a stated preference for less motion.
+ *
+ * Nothing in this application respected it, so every drifting gradient and
+ * sliding panel ran regardless — which for some people means nausea or a
+ * migraine, not merely a preference about taste.
+ *
+ * Animations are reduced to a single frame rather than removed outright:
+ * `animation: none` can leave an element stuck at its starting position when
+ * a keyframe was doing the positioning, and a broken layout is worse than a
+ * still one. Smooth scrolling goes too, since that is motion the user did not
+ * ask for either.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* `max-width: 100%` is deliberately NOT in the rule above.
  *
  * It was, and it silently defeated every max-w-* class in the application. A
