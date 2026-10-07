@@ -417,7 +417,23 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         // Listen for new messages
         nexus.realtime.on('new_message', (payload: any) => {
           const { activePartnerId } = get();
-          if (payload.sender_id === activePartnerId) {
+
+          // Loud on purpose, and worth keeping.
+          //
+          // The sidebar updated while the open thread did not, which means
+          // the event arrived and this comparison rejected it. Logging both
+          // sides turns "it does not work" into a specific mismatch — a type
+          // difference, a group id in place of a sender, whitespace — that no
+          // amount of reading the code reveals.
+          console.debug(
+            '[Messages] new_message',
+            { from: payload?.sender_id, active: activePartnerId, match: payload?.sender_id === activePartnerId }
+          );
+
+          // Compared as strings. An id that arrives as a number from one path
+          // and a string from another fails === while looking identical in
+          // every log.
+          if (payload.sender_id != null && String(payload.sender_id) === String(activePartnerId)) {
             set(s => {
               // The sender publishes twice: once optimistically with a
               // temporary id so this arrives at network speed, and again with
@@ -428,12 +444,21 @@ export const useMessageStore = create<MessageStore>((set, get) => {
               // publishes carry different ids by design. The second one
               // replaces the first, so the recipient ends up holding the
               // stored row.
-              const existing = s.messages.findIndex(
-                (m: any) =>
-                  m.sender_id === payload.sender_id &&
-                  m.content === payload.content &&
-                  (m.id === payload.id || String(m.id).startsWith('tmp-'))
-              );
+              // Same sender, same text, within a few seconds — that is the
+              // same message arriving twice, not someone sending it twice.
+              //
+              // The id cannot be used for this. The two publishes carry
+              // different ids by design, and the recipient never holds a
+              // 'tmp-' row of its own, so the previous check matched neither
+              // publish and appended both.
+              const sentAt = new Date(payload.created_at ?? Date.now()).getTime();
+              const existing = s.messages.findIndex((m: any) => {
+                if (String(m.sender_id) !== String(payload.sender_id)) return false;
+                if (m.content !== payload.content) return false;
+                if (m.id === payload.id) return true;
+                const mAt = new Date(m.created_at ?? 0).getTime();
+                return Math.abs(sentAt - mAt) < 10000;
+              });
 
               if (existing !== -1) {
                 const next = [...s.messages];
@@ -454,7 +479,7 @@ export const useMessageStore = create<MessageStore>((set, get) => {
             // reload. That is why a new message was only visible after
             // refreshing the page.
             set(s => {
-              const idx = s.conversations.findIndex(c => c.id === payload.sender_id);
+              const idx = s.conversations.findIndex(c => String(c.id) === String(payload.sender_id));
 
               const preview = {
                 id: payload.id,
