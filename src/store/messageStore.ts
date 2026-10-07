@@ -156,6 +156,16 @@ let peer: PeerSession | null = null;
 /** The offer, held while the callee decides whether to answer. */
 let pendingOffer: { sdp: RTCSessionDescriptionInit; callId: string } | null = null;
 
+/**
+ * The in-flight initialize(), so two callers share one run.
+ *
+ * DashboardLayout and Messages both call initialize on mount. Without this
+ * they raced: one reached connect() while the other hit the listener guard
+ * and returned before anything was bound.
+ */
+let initPromise: Promise<void> | null = null;
+let initializedFor: string | null = null;
+
 /** Re-joins channels when the tab comes back. Removed on cleanup. */
 let visibilityHandler: (() => void) | null = null;
 
@@ -250,6 +260,18 @@ export const useMessageStore = create<MessageStore>((set, get) => {
     },
 
     initialize: async (userId: string) => {
+      // Two components call this — DashboardLayout on sign-in and Messages on
+      // mount — and both ran it concurrently. The first reached connect(),
+      // the second reached the listener guard, saw the flag the first had
+      // already set, and returned before anything was bound. Whichever won
+      // the race decided whether messages arrived, which is why this was
+      // intermittent and why only a reload reliably fixed it.
+      //
+      // One run at a time, and callers wait for the same promise.
+      if (initPromise && initializedFor === userId) return initPromise;
+
+      initializedFor = userId;
+      initPromise = (async () => {
       try {
         // Connect before loading anything.
         //
@@ -266,13 +288,12 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         get().loadConversations(userId).catch(err => console.error('[MessageStore] Error loading conversations:', err));
         get().loadGroups(userId).catch(err => console.error('[MessageStore] Error loading groups:', err));
 
-        nexus.realtime.connect().then(() => {
-          // subscribe() resolves with { ok, error } rather than throwing, so
-          // `.catch()` alone caught nothing: a refused subscription returned
-          // ok:false, was discarded, and the app carried on believing it was
-          // listening. That is exactly the shape of "messages only appear
-          // after a refresh" — the socket is up, the channel is not.
-          const join = (channel: string) =>
+        // subscribe() resolves with { ok, error } rather than throwing, so
+        // `.catch()` alone caught nothing: a refused subscription returned
+        // ok:false, was discarded, and the app carried on believing it was
+        // listening. That is exactly the shape of "messages only appear
+        // after a refresh" — the socket is up, the channel is not.
+        const join = (channel: string) =>
             nexus.realtime
               .subscribe(channel)
               .then(res => {
@@ -286,34 +307,37 @@ export const useMessageStore = create<MessageStore>((set, get) => {
                 set({ realtimeConnected: false });
               });
 
+        /** Every channel this user listens on, joined together. */
+        const joinAll = () => {
           join(`dm:${userId}`);
           join(`typing:${userId}`);
           join(`user_call:${userId}`);
+          join('presence');
+        };
 
-          // Re-join every channel whenever the socket comes back.
-          //
-          // Nothing listened for this before. A subscription belongs to a
-          // socket, so when the connection drops — a laptop sleeping, a tunnel,
-          // a backgrounded tab, a wifi handover — the SDK reconnects and the
-          // channels are simply gone. The app looks connected, hears nothing,
-          // and only a page refresh runs initialize() again. That is the
-          // "messages only appear after a refresh" everyone was seeing.
-          //
-          // Registered inside connect().then() so it is attached once, after
-          // the first connection rather than before it.
-          nexus.realtime.on('connect', () => {
-            console.info('[Realtime] Reconnected — re-joining channels.');
-            set({ realtimeConnected: true });
-            join(`dm:${userId}`);
-            join(`typing:${userId}`);
-            join(`user_call:${userId}`);
-            join('presence');
-          });
+        // Listeners first, connection second.
+        //
+        // 'connect' fires the moment the socket opens, so registering the
+        // handler after calling connect() can miss it entirely — and then
+        // nothing ever joins a channel. Binding first means the handler is
+        // already waiting when the event arrives, whichever order the two
+        // callers of initialize() happen to run in.
+        nexus.realtime.on('connect', () => {
+          console.info('[Realtime] Connected — joining channels.');
+          set({ realtimeConnected: true });
+          joinAll();
+        });
 
-          nexus.realtime.on('disconnect', (reason: unknown) => {
-            console.warn('[Realtime] Disconnected:', reason);
-            set({ realtimeConnected: false });
-          });
+        nexus.realtime.on('disconnect', (reason: unknown) => {
+          console.warn('[Realtime] Disconnected:', reason);
+          set({ realtimeConnected: false });
+        });
+
+        nexus.realtime.connect().then(() => {
+          // Also joined here, because a connection that was already open when
+          // this ran will not fire 'connect' again. Subscribing twice to the
+          // same channel is harmless; never subscribing is not.
+          joinAll();
 
           // Returning to the tab is its own recovery point.
           //
@@ -377,21 +401,13 @@ export const useMessageStore = create<MessageStore>((set, get) => {
           }, PRESENCE_SWEEP_MS);
         }).catch(() => {});
 
-        // Bind the event handlers once per user.
+        // No second guard here.
         //
-        // The guard has to be set before any await above it could let a second
-        // call through, and checked here rather than at the top of
-        // initialize(), because everything below this line is what actually
-        // registers listeners.
-        //
-        // This is also why messages needed a refresh. Messages.tsx calls
-        // cleanup() when it unmounts, which disconnects the socket outright —
-        // so navigating away from the chat and back tore down a connection
-        // that DashboardLayout had set up for the whole session, and the
-        // guard then stopped the listeners being re-bound. The page only
-        // worked after a reload because that is the one path where everything
-        // runs fresh in the right order.
-        if (listenersBoundFor === userId) return;
+        // There used to be one, and it was the thing that actually broke
+        // delivery: initPromise above already guarantees one run per user, so
+        // this only ever fired when the two were briefly out of step — and
+        // when it did, it returned before a single listener was registered.
+        // Two overlapping guards on the same invariant is one too many.
         listenersBoundFor = userId;
 
         // Someone said they are here.
@@ -763,7 +779,14 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         set({ realtimeConnected: true });
       } catch (err) {
         console.error('[Messages] Realtime initialization failed:', err);
+        // Let the next caller try again rather than leaving a failed run
+        // cached as though it had succeeded.
+        initPromise = null;
+        initializedFor = null;
       }
+      })();
+
+      return initPromise;
     },
 
     loadConversations: async (userId: string) => {
@@ -1267,6 +1290,8 @@ export const useMessageStore = create<MessageStore>((set, get) => {
       // Or signing out and back in binds nothing, because the guard still
       // thinks this user's listeners are attached.
       listenersBoundFor = null;
+      initPromise = null;
+      initializedFor = null;
       nexus.realtime.disconnect();
       typingTimers.forEach(timer => clearTimeout(timer));
       typingTimers.clear();
