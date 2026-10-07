@@ -172,6 +172,9 @@ export const GlobalCallManager: React.FC = () => {
             isMuted: signalingCall.isMuted,
             isCameraOn: signalingCall.isCameraOn,
             isScreenSharing: signalingCall.isScreenSharing,
+            localStream: signalingCall.localStream,
+            remoteStream: signalingCall.remoteStream,
+            mediaError: signalingCall.mediaError,
           }}
           onEndCall={endCall}
           onToggleMute={toggleMuteCall}

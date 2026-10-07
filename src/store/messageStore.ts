@@ -6,6 +6,7 @@
  * and 1-on-1 / group audio & video calls with WebRTC signaling & ringing.
  */
 import { create } from 'zustand';
+import { PeerSession, hasTurn } from '../lib/webrtc';
 import { nexus } from '../lib/nexus';
 import { messageService, type ConversationPartner, type Message } from '../lib/services/messages';
 import {
@@ -29,6 +30,17 @@ export interface SignalingCallState {
   isMuted: boolean;
   isCameraOn: boolean;
   isScreenSharing: boolean;
+
+  /** The two ends of the media, for the UI to attach to <video> elements. */
+  localStream?: MediaStream | null;
+  remoteStream?: MediaStream | null;
+  /**
+   * Set when the call signalled fine but no media path could be found —
+   * usually a strict NAT with no TURN server configured. Worth saying
+   * plainly, because the alternative is a call that looks connected and is
+   * silent.
+   */
+  mediaError?: string | null;
 }
 
 interface MessageStore {
@@ -131,6 +143,32 @@ interface MessageStore {
 }
 
 let ringingTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * The live peer connection, if a call is up.
+ *
+ * Module scope rather than store state: a PeerSession holds MediaStreams and
+ * an RTCPeerConnection, none of which belong in a serialisable store, and
+ * putting them there would have every subscriber re-render on an ICE event.
+ */
+let peer: PeerSession | null = null;
+
+/** The offer, held while the callee decides whether to answer. */
+let pendingOffer: { sdp: RTCSessionDescriptionInit; callId: string } | null = null;
+
+/**
+ * Releases the camera, microphone and peer connection.
+ *
+ * Called from every path that ends a call — hang-up, decline, cancel, the
+ * other side hanging up, the no-answer timeout and sign-out. Missing one
+ * leaves the camera light on after the call is over, which people reasonably
+ * read as still being recorded.
+ */
+const teardownCall = () => {
+  peer?.close();
+  peer = null;
+  pendingOffer = null;
+};
 
 export const useMessageStore = create<MessageStore>((set, get) => {
   let typingTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
@@ -421,7 +459,8 @@ export const useMessageStore = create<MessageStore>((set, get) => {
           ringingTimeoutTimer = setTimeout(() => {
             if (get().signalingCall.status === 'incoming_ringing') {
               callAudioRinger.stopAll();
-              set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle' } }));
+              teardownCall();
+            set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle', localStream: null, remoteStream: null, mediaError: null } }));
             }
           }, 35000);
         });
@@ -436,6 +475,114 @@ export const useMessageStore = create<MessageStore>((set, get) => {
               status: 'connected',
             },
           }));
+
+          // The callee has answered, so the caller opens its devices and
+          // sends the offer. Media is started here rather than at dial time:
+          // asking for a camera before anyone has picked up turns the light
+          // on for a call that may never happen.
+          const call = get().signalingCall;
+          if (!call.partnerId || !call.callId) return;
+
+          peer = new PeerSession(call.partnerId, userId, {
+            onRemoteStream: stream =>
+              set(s => ({ signalingCall: { ...s.signalingCall, remoteStream: stream } })),
+            onStateChange: state => {
+              if (state === 'failed') {
+                set(s => ({
+                  signalingCall: {
+                    ...s.signalingCall,
+                    mediaError: hasTurn()
+                      ? 'The connection could not be established.'
+                      : 'No media path could be found. This network needs a TURN relay, which is not configured.'
+                  }
+                }));
+              }
+            }
+          });
+
+          peer
+            .openMedia(call.mode === 'video')
+            .then(local => {
+              set(s => ({ signalingCall: { ...s.signalingCall, localStream: local } }));
+              return peer!.createOffer(call.callId!);
+            })
+            .catch(err => {
+              console.error('[Call] Could not start media:', err);
+              set(s => ({
+                signalingCall: {
+                  ...s.signalingCall,
+                  mediaError:
+                    err?.name === 'NotAllowedError'
+                      ? 'Microphone and camera permission was refused.'
+                      : 'Your microphone or camera could not be opened.'
+                }
+              }));
+            });
+        });
+
+        // ── SDP and ICE ──────────────────────────────────────────────────
+        // The offer arrives at the callee, who has already accepted; the
+        // answer goes back to the caller. Candidates flow both ways
+        // throughout and may arrive before a description is set, which
+        // PeerSession queues rather than dropping.
+
+        nexus.realtime.on('call_sdp_offer', (payload: any) => {
+          if (!payload?.sdp || payload.from === userId) return;
+          pendingOffer = { sdp: payload.sdp, callId: payload.callId };
+
+          // The callee builds its session only once it has an offer to answer.
+          const call = get().signalingCall;
+          if (!peer && call.partnerId) {
+            peer = new PeerSession(call.partnerId, userId, {
+              onRemoteStream: stream =>
+                set(s => ({ signalingCall: { ...s.signalingCall, remoteStream: stream } })),
+              onStateChange: state => {
+                if (state === 'failed') {
+                  set(s => ({
+                    signalingCall: {
+                      ...s.signalingCall,
+                      mediaError: hasTurn()
+                        ? 'The connection could not be established.'
+                        : 'No media path could be found. This network needs a TURN relay, which is not configured.'
+                    }
+                  }));
+                }
+              }
+            });
+          }
+
+          if (!peer) return;
+
+          peer
+            .openMedia(call.mode === 'video')
+            .then(local => {
+              set(s => ({ signalingCall: { ...s.signalingCall, localStream: local } }));
+              return peer!.acceptOffer(pendingOffer!.sdp, pendingOffer!.callId);
+            })
+            .catch(err => {
+              console.error('[Call] Could not answer:', err);
+              set(s => ({
+                signalingCall: {
+                  ...s.signalingCall,
+                  mediaError:
+                    err?.name === 'NotAllowedError'
+                      ? 'Microphone and camera permission was refused.'
+                      : 'Your microphone or camera could not be opened.'
+                }
+              }));
+            });
+        });
+
+        nexus.realtime.on('call_sdp_answer', (payload: any) => {
+          if (!payload?.sdp || payload.from === userId) return;
+          peer?.acceptAnswer(payload.sdp).catch(err =>
+            console.error('[Call] Could not apply answer:', err)
+          );
+        });
+
+        nexus.realtime.on('call_ice_candidate', (payload: any) => {
+          if (!payload?.candidate || payload.from === userId) return;
+          peer?.addCandidate(payload.candidate).catch(() => {});
         });
 
         // Listen for Call Declined
@@ -449,7 +596,8 @@ export const useMessageStore = create<MessageStore>((set, get) => {
             },
           }));
           setTimeout(() => {
-            set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle' } }));
+            teardownCall();
+            set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle', localStream: null, remoteStream: null, mediaError: null } }));
           }, 2000);
         });
 
@@ -898,8 +1046,9 @@ export const useMessageStore = create<MessageStore>((set, get) => {
       ringingTimeoutTimer = setTimeout(() => {
         if (get().signalingCall.status === 'outgoing_ringing') {
           callAudioRinger.stopAll();
-          set(s => ({ signalingCall: { ...s.signalingCall, status: 'ended' } }));
-          setTimeout(() => set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle' } })), 2000);
+          teardownCall();
+          set(s => ({ signalingCall: { ...s.signalingCall, status: 'ended', localStream: null, remoteStream: null } }));
+          setTimeout(() => set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle', mediaError: null } })), 2000);
         }
       }, 35000);
     },
@@ -929,7 +1078,8 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         }).catch(() => {});
       }
 
-      set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle' } }));
+      teardownCall();
+            set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle', localStream: null, remoteStream: null, mediaError: null } }));
     },
 
     cancelCall: () => {
@@ -943,7 +1093,8 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         }).catch(() => {});
       }
 
-      set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle' } }));
+      teardownCall();
+            set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle', localStream: null, remoteStream: null, mediaError: null } }));
     },
 
     endCall: () => {
@@ -957,15 +1108,23 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         }).catch(() => {});
       }
 
-      set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle' } }));
+      teardownCall();
+            set(s => ({ signalingCall: { ...s.signalingCall, status: 'idle', localStream: null, remoteStream: null, mediaError: null } }));
     },
 
+    // These used to flip a flag and nothing else, so the button changed and
+    // the microphone kept transmitting. They now disable the track itself,
+    // which is what actually stops the other side hearing or seeing you.
     toggleMuteCall: () => {
-      set(s => ({ signalingCall: { ...s.signalingCall, isMuted: !s.signalingCall.isMuted } }));
+      const next = !get().signalingCall.isMuted;
+      peer?.setMuted(next);
+      set(s => ({ signalingCall: { ...s.signalingCall, isMuted: next } }));
     },
 
     toggleCameraCall: () => {
-      set(s => ({ signalingCall: { ...s.signalingCall, isCameraOn: !s.signalingCall.isCameraOn } }));
+      const next = !get().signalingCall.isCameraOn;
+      peer?.setCameraOn(next);
+      set(s => ({ signalingCall: { ...s.signalingCall, isCameraOn: next } }));
     },
 
     toggleScreenShareCall: () => {
@@ -974,6 +1133,8 @@ export const useMessageStore = create<MessageStore>((set, get) => {
 
     cleanup: () => {
       callAudioRinger.stopAll();
+      // Signing out during a call must still release the camera.
+      teardownCall();
       nexus.realtime.disconnect();
       typingTimers.forEach(timer => clearTimeout(timer));
       typingTimers.clear();

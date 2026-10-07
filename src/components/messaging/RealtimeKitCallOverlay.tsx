@@ -2,9 +2,10 @@
  * RealtimeKit Call Overlay — Interactive Voice & Video Calls for Messages
  * ────────────────────────────────────────────────────────────────────────
  * Enables 1-on-1 & group voice/video calls inside the Messages tab
- * using Cloudflare RealtimeKit WebRTC.
+ * Peer-to-peer WebRTC, signalled over InsForge Realtime. Media travels
+ * directly between the two devices and through no server of ours.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, Monitor, MonitorOff,
   PhoneOff, Maximize2, Minimize2, Users
@@ -22,6 +23,12 @@ export interface ActiveCallState {
   isMuted: boolean;
   isCameraOn: boolean;
   isScreenSharing: boolean;
+
+  /** Live media, bound to the elements below. */
+  localStream?: MediaStream | null;
+  remoteStream?: MediaStream | null;
+  /** Why the call has no media, when it has none. */
+  mediaError?: string | null;
 }
 
 interface RealtimeKitCallOverlayProps {
@@ -41,6 +48,32 @@ export const RealtimeKitCallOverlay: React.FC<RealtimeKitCallOverlayProps> = ({
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [duration, setDuration] = useState(0);
+
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+
+  // Attach the streams to the elements.
+  //
+  // srcObject cannot be set as a JSX attribute — it takes a MediaStream, not
+  // a string — so it has to be assigned against a ref once the element
+  // exists. The remote stream goes to both the video and a hidden audio
+  // element: on an audio-only call there is no video element mounted, and
+  // without the audio tag the call connects and nobody hears anything.
+  useEffect(() => {
+    if (localVideoRef.current && callState.localStream) {
+      localVideoRef.current.srcObject = callState.localStream;
+    }
+  }, [callState.localStream, callState.isCameraOn, isMinimized]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && callState.remoteStream) {
+      remoteVideoRef.current.srcObject = callState.remoteStream;
+    }
+    if (remoteAudioRef.current && callState.remoteStream) {
+      remoteAudioRef.current.srcObject = callState.remoteStream;
+    }
+  }, [callState.remoteStream, callState.isCameraOn, isMinimized]);
 
   // Timer counter
   useEffect(() => {
@@ -90,11 +123,11 @@ export const RealtimeKitCallOverlay: React.FC<RealtimeKitCallOverlayProps> = ({
               <h4 className="font-bold text-sm text-slate-100 flex items-center gap-1.5 font-sans">
                 {callState.title}
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 font-mono font-semibold">
-                  {callState.mode === 'video' ? 'Cloudflare Video' : 'Cloudflare Audio'}
+                  {callState.mode === 'video' ? 'Video call' : 'Voice call'}
                 </span>
               </h4>
               <p className="text-xs text-slate-400 font-mono">
-                {formatDuration(duration)} • WebRTC Connected
+                {formatDuration(duration)} • {callState.remoteStream ? `Connected` : `Connecting…`}
               </p>
             </div>
           </div>
@@ -107,19 +140,56 @@ export const RealtimeKitCallOverlay: React.FC<RealtimeKitCallOverlayProps> = ({
           </button>
         </div>
 
+        {/* The call's audio, outside every conditional.
+            It must survive minimising and audio-only mode: if this were
+            inside the video panel, collapsing the window would cut the
+            sound mid-sentence. */}
+        <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+
+        {/* Said plainly rather than left as a call that looks fine and
+            carries nothing. */}
+        {callState.mediaError && (
+          <div className="mb-3 px-3 py-2 rounded-lg bg-red-500/15 border border-red-500/30">
+            <p className="text-[11px] font-bold text-red-300 leading-relaxed">
+              {callState.mediaError}
+            </p>
+          </div>
+        )}
+
         {/* Video Stream Area (Only shown when not minimized) */}
         {!isMinimized && (
           <div className="my-4 relative rounded-xl bg-slate-950 border border-slate-800 h-48 md:h-56 flex items-center justify-center overflow-hidden">
             {callState.mode === 'video' && callState.isCameraOn ? (
-              <div className="w-full h-full relative bg-slate-900 flex items-center justify-center">
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent z-10" />
-                <div className="text-center z-20">
-                  <div className="w-20 h-20 rounded-full bg-green-600/20 border-2 border-green-500 flex items-center justify-center mx-auto mb-2">
-                    <Video size={36} className="text-green-400" />
+              /* The actual video, not a picture of one.
+                 This panel used to show a green camera icon captioned
+                 "Cloudflare RealtimeKit HD Stream" over an empty box — a
+                 drawing of a call, with no stream behind it. The remote
+                 feed fills the panel and the local preview sits in the
+                 corner, which is the arrangement people already expect. */
+              <div className="w-full h-full relative bg-slate-900">
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
+
+                {/* Muted, or the caller hears themselves back. */}
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="absolute bottom-3 right-3 w-24 h-32 object-cover rounded-lg border border-slate-700 shadow-lg bg-slate-950 z-20"
+                />
+
+                {/* Until the remote track arrives there is nothing to show,
+                    so say so rather than leaving a black rectangle. */}
+                {!callState.remoteStream && (
+                  <div className="absolute inset-0 flex items-center justify-center z-10">
+                    <p className="text-xs font-bold text-slate-400">Connecting video…</p>
                   </div>
-                  <p className="text-xs font-bold text-slate-200">Cloudflare RealtimeKit HD Stream</p>
-                  <p className="text-[11px] text-slate-400">Broadcasting video feed to participants</p>
-                </div>
+                )}
               </div>
             ) : (
               <div className="text-center p-6">
