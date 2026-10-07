@@ -1,13 +1,13 @@
 /**
- * Messages — Cloudflare RealtimeKit Powered Messaging & Communication System
+ * Messages — direct messages, groups, attachments and calls.
  * ──────────────────────────────────────────────────────────────────────────
  * Features:
- * 1. Cloudflare RealtimeKit DMs, Image/File Attachments, Pinned Messages.
+ * 1. Direct messages over InsForge Realtime, with attachments and pinning.
  * 2. Group Chats & Channels (Mentor-Mentee Groups, Study Groups).
  * 3. Group Member Management (Add, Remove Members, Public/Private).
  * 4. 1-on-1 & Group Voice & Video Calls directly from chat header.
  * 5. Message Editing, Deletion, Read Receipts, Typing Indicators.
- * 6. Cloudflare CDN Storage for File Attachments & Previews.
+ * 6. InsForge Storage for file attachments and previews.
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '../../components/ui';
@@ -428,7 +428,7 @@ const Messages = () => {
                           </div>
 
                           <p className="text-xs text-slate-500 dark:text-slate-400 truncate font-sans">
-                            {g.description || "Cloudflare RealtimeKit Group Channel"}
+                            {g.description || "Group channel"}
                           </p>
                         </div>
                       </button>
@@ -625,7 +625,7 @@ const Messages = () => {
                 {messagesLoading ? (
                   <div className="flex items-center justify-center py-20 text-slate-400 gap-2">
                     <Loader2 className="animate-spin" size={20} />
-                    <span className="text-xs font-bold">Retrieving messages from RealtimeKit...</span>
+                    <span className="text-xs font-bold">Loading messages…</span>
                   </div>
                 ) : messages.length === 0 ? (
                   <div className="text-center py-20">
@@ -634,7 +634,7 @@ const Messages = () => {
                     </div>
                     <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200 font-sans">Say Hello!</h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto font-sans">
-                      Start your conversation powered by Cloudflare RealtimeKit with end-to-end reliability.
+                      Say hello — messages arrive instantly.
                     </p>
                   </div>
                 ) : (
@@ -883,7 +883,7 @@ const Messages = () => {
               <div className="w-20 h-20 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 flex items-center justify-center mx-auto mb-4">
                 <MessageSquare size={36} />
               </div>
-              <h3 className="text-xl font-black text-slate-900 dark:text-white font-sans">Cloudflare RealtimeKit Messaging</h3>
+              <h3 className="text-xl font-black text-slate-900 dark:text-white font-sans">Messages</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 max-w-md mx-auto font-sans leading-relaxed">
                 Select a direct message or join a study group to communicate in real-time with instant file sharing and voice/video calling.
               </p>
@@ -944,7 +944,7 @@ const Messages = () => {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white dark:bg-[#1B2620] rounded-3xl p-6 w-full max-w-lg border border-slate-200 dark:border-slate-800 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-black text-slate-900 dark:text-white font-sans">Create Cloudflare Group Chat</h3>
+              <h3 className="text-base font-black text-slate-900 dark:text-white font-sans">Create a group chat</h3>
               <button onClick={() => setShowNewGroupModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
             </div>
 
