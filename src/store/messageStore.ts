@@ -379,10 +379,18 @@ export const useMessageStore = create<MessageStore>((set, get) => {
 
         // Bind the event handlers once per user.
         //
-        // Everything below registers an `on` listener, and initialize() runs
-        // again whenever its calling effect re-runs. Without this guard a
-        // remount doubles every handler: one message renders twice, and each
-        // arrival fires two conversation refetches.
+        // The guard has to be set before any await above it could let a second
+        // call through, and checked here rather than at the top of
+        // initialize(), because everything below this line is what actually
+        // registers listeners.
+        //
+        // This is also why messages needed a refresh. Messages.tsx calls
+        // cleanup() when it unmounts, which disconnects the socket outright —
+        // so navigating away from the chat and back tore down a connection
+        // that DashboardLayout had set up for the whole session, and the
+        // guard then stopped the listeners being re-bound. The page only
+        // worked after a reload because that is the one path where everything
+        // runs fresh in the right order.
         if (listenersBoundFor === userId) return;
         listenersBoundFor = userId;
 

@@ -49,7 +49,7 @@ const Messages = () => {
     sendAttachmentMessage, pinMessage, unpinMessage, editMessage, deleteMessage,
     createGroup, addGroupMember, removeGroupMember, searchUsers, clearSearch,
     publishTyping, initiateCall, acceptCall, declineCall, cancelCall, endCall, toggleMuteCall, toggleCameraCall,
-    toggleScreenShareCall, cleanup
+    toggleScreenShareCall
   } = useMessageStore();
 
   const [activeTab, setActiveTab] = useState<'dm' | 'group'>('dm');
@@ -87,7 +87,18 @@ const Messages = () => {
     if (user?.id) {
       initialize(user.id);
     }
-    return () => cleanup();
+
+    // No cleanup() here.
+    //
+    // This used to disconnect the realtime socket when the page unmounted —
+    // but the connection belongs to the session, not to this screen.
+    // DashboardLayout opens it on sign-in so notifications, calls and unread
+    // counts work everywhere in the app, and tearing it down on leaving the
+    // chat broke all three, then left messages arriving nowhere until a
+    // reload rebuilt everything in the right order.
+    //
+    // The socket is closed in the store's own cleanup, which runs on
+    // sign-out, where it belongs.
   }, [user?.id]);
 
   useEffect(() => {

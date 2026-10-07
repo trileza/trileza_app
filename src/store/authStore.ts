@@ -670,6 +670,19 @@ export const useAuthStore = create<AuthState>((set, get) => {
      */
     logout: async () => {
       set({ loading: true });
+
+      // Close the realtime socket, release any call, and clear the message
+      // listeners. This used to happen when the Messages page unmounted,
+      // which was both too early — it ran on simply navigating away — and
+      // too late, since signing out left the socket open under the previous
+      // user. Sign-out is the moment the session ends, so it belongs here.
+      try {
+        const { useMessageStore } = await import('./messageStore');
+        useMessageStore.getState().cleanup();
+      } catch (err) {
+        console.warn('[Auth] Could not tear down messaging:', err);
+      }
+
       const token = get().adminSessionToken;
       if (token) {
         try {
