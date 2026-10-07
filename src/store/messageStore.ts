@@ -411,7 +411,12 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         listenersBoundFor = userId;
 
         // Someone said they are here.
-        nexus.realtime.on('presence_ping', (payload: any) => {
+        nexus.realtime.on('presence_ping', (raw: any) => {
+          // Same envelope as new_message: the SDK delivers a SocketMessage,
+          // so the published object is either spread beside meta or nested
+          // under a payload key. Accept both.
+          const payload: any = raw?.payload ?? raw;
+
           const id = payload?.userId;
           if (!id || id === userId) return;
 
@@ -439,7 +444,22 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         }
 
         // Listen for new messages
-        nexus.realtime.on('new_message', (payload: any) => {
+        nexus.realtime.on('new_message', (raw: any) => {
+          // Unwrap the envelope.
+          //
+          // The SDK hands every listener a SocketMessage — "meta + passthrough
+          // for payload" — so what arrives is not the object that was
+          // published. Whether the server spreads those fields alongside
+          // `meta` or nests them under `payload` is not something the types
+          // settle, and reading `payload.sender_id` directly gave undefined
+          // either way: the guard compared undefined to a real id, failed,
+          // and the message was dropped. Which is exactly the symptom —
+          // delivered, ignored, and only visible after a reload refetched
+          // from the database.
+          //
+          // Accepting both shapes costs one line and removes the guesswork.
+          const payload: any = raw?.payload ?? raw;
+
           const { activePartnerId } = get();
 
           // Loud on purpose, and worth keeping.
@@ -558,7 +578,12 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         });
 
         // Listen for WebRTC Incoming Call Signal
-        nexus.realtime.on('incoming_call_signal', (payload: any) => {
+        nexus.realtime.on('incoming_call_signal', (raw: any) => {
+          // Same envelope as new_message: the SDK delivers a SocketMessage,
+          // so the published object is either spread beside meta or nested
+          // under a payload key. Accept both.
+          const payload: any = raw?.payload ?? raw;
+
           const { signalingCall } = get();
           if (payload.targetId && payload.targetId !== userId) return;
           if (payload.callerId === userId) return;
@@ -605,7 +630,12 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         });
 
         // Listen for Call Accepted
-        nexus.realtime.on('call_accepted_signal', (payload: any) => {
+        nexus.realtime.on('call_accepted_signal', (raw: any) => {
+          // Same envelope as new_message: the SDK delivers a SocketMessage,
+          // so the published object is either spread beside meta or nested
+          // under a payload key. Accept both.
+          const payload: any = raw?.payload ?? raw;
+
           callAudioRinger.stopAll();
           if (ringingTimeoutTimer) clearTimeout(ringingTimeoutTimer);
           set(s => ({
@@ -665,7 +695,12 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         // throughout and may arrive before a description is set, which
         // PeerSession queues rather than dropping.
 
-        nexus.realtime.on('call_sdp_offer', (payload: any) => {
+        nexus.realtime.on('call_sdp_offer', (raw: any) => {
+          // Same envelope as new_message: the SDK delivers a SocketMessage,
+          // so the published object is either spread beside meta or nested
+          // under a payload key. Accept both.
+          const payload: any = raw?.payload ?? raw;
+
           if (!payload?.sdp || payload.from === userId) return;
           pendingOffer = { sdp: payload.sdp, callId: payload.callId };
 
@@ -712,20 +747,35 @@ export const useMessageStore = create<MessageStore>((set, get) => {
             });
         });
 
-        nexus.realtime.on('call_sdp_answer', (payload: any) => {
+        nexus.realtime.on('call_sdp_answer', (raw: any) => {
+          // Same envelope as new_message: the SDK delivers a SocketMessage,
+          // so the published object is either spread beside meta or nested
+          // under a payload key. Accept both.
+          const payload: any = raw?.payload ?? raw;
+
           if (!payload?.sdp || payload.from === userId) return;
           peer?.acceptAnswer(payload.sdp).catch(err =>
             console.error('[Call] Could not apply answer:', err)
           );
         });
 
-        nexus.realtime.on('call_ice_candidate', (payload: any) => {
+        nexus.realtime.on('call_ice_candidate', (raw: any) => {
+          // Same envelope as new_message: the SDK delivers a SocketMessage,
+          // so the published object is either spread beside meta or nested
+          // under a payload key. Accept both.
+          const payload: any = raw?.payload ?? raw;
+
           if (!payload?.candidate || payload.from === userId) return;
           peer?.addCandidate(payload.candidate).catch(() => {});
         });
 
         // Listen for Call Declined
-        nexus.realtime.on('call_declined_signal', (payload: any) => {
+        nexus.realtime.on('call_declined_signal', (raw: any) => {
+          // Same envelope as new_message: the SDK delivers a SocketMessage,
+          // so the published object is either spread beside meta or nested
+          // under a payload key. Accept both.
+          const payload: any = raw?.payload ?? raw;
+
           callAudioRinger.stopAll();
           if (ringingTimeoutTimer) clearTimeout(ringingTimeoutTimer);
           set(s => ({
@@ -741,7 +791,12 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         });
 
         // Listen for Call Ended / Cancelled
-        nexus.realtime.on('call_ended_signal', (payload: any) => {
+        nexus.realtime.on('call_ended_signal', (raw: any) => {
+          // Same envelope as new_message: the SDK delivers a SocketMessage,
+          // so the published object is either spread beside meta or nested
+          // under a payload key. Accept both.
+          const payload: any = raw?.payload ?? raw;
+
           callAudioRinger.stopAll();
           if (ringingTimeoutTimer) clearTimeout(ringingTimeoutTimer);
           set(s => ({
@@ -752,7 +807,12 @@ export const useMessageStore = create<MessageStore>((set, get) => {
           }));
         });
 
-        nexus.realtime.on('typing_indicator', (payload: any) => {
+        nexus.realtime.on('typing_indicator', (raw: any) => {
+          // Same envelope as new_message: the SDK delivers a SocketMessage,
+          // so the published object is either spread beside meta or nested
+          // under a payload key. Accept both.
+          const payload: any = raw?.payload ?? raw;
+
           if (payload.userId === userId) return;
           const senderId = payload.userId;
           set(s => {
