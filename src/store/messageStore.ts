@@ -156,6 +156,19 @@ let peer: PeerSession | null = null;
 /** The offer, held while the callee decides whether to answer. */
 let pendingOffer: { sdp: RTCSessionDescriptionInit; callId: string } | null = null;
 
+/** Re-joins channels when the tab comes back. Removed on cleanup. */
+let visibilityHandler: (() => void) | null = null;
+
+/**
+ * Who the realtime listeners are currently bound for.
+ *
+ * initialize() can run more than once — its caller is an effect keyed on the
+ * user id — and each run registers another set of `on` handlers. Without this
+ * a remount leaves two listeners for every event, so one message renders
+ * twice and every arrival fires two conversation refetches.
+ */
+let listenersBoundFor: string | null = null;
+
 /**
  * Releases the camera, microphone and peer connection.
  *
@@ -254,14 +267,82 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         get().loadGroups(userId).catch(err => console.error('[MessageStore] Error loading groups:', err));
 
         nexus.realtime.connect().then(() => {
-          nexus.realtime.subscribe(`dm:${userId}`).catch(() => {});
-          nexus.realtime.subscribe(`typing:${userId}`).catch(() => {});
-          nexus.realtime.subscribe(`user_call:${userId}`).catch(() => {});
+          // subscribe() resolves with { ok, error } rather than throwing, so
+          // `.catch()` alone caught nothing: a refused subscription returned
+          // ok:false, was discarded, and the app carried on believing it was
+          // listening. That is exactly the shape of "messages only appear
+          // after a refresh" — the socket is up, the channel is not.
+          const join = (channel: string) =>
+            nexus.realtime
+              .subscribe(channel)
+              .then(res => {
+                if (res && (res as any).ok === false) {
+                  console.error(`[Realtime] Could not subscribe to ${channel}:`, (res as any).error);
+                  set({ realtimeConnected: false });
+                }
+              })
+              .catch(err => {
+                console.error(`[Realtime] Subscribe threw for ${channel}:`, err);
+                set({ realtimeConnected: false });
+              });
+
+          join(`dm:${userId}`);
+          join(`typing:${userId}`);
+          join(`user_call:${userId}`);
+
+          // Re-join every channel whenever the socket comes back.
+          //
+          // Nothing listened for this before. A subscription belongs to a
+          // socket, so when the connection drops — a laptop sleeping, a tunnel,
+          // a backgrounded tab, a wifi handover — the SDK reconnects and the
+          // channels are simply gone. The app looks connected, hears nothing,
+          // and only a page refresh runs initialize() again. That is the
+          // "messages only appear after a refresh" everyone was seeing.
+          //
+          // Registered inside connect().then() so it is attached once, after
+          // the first connection rather than before it.
+          nexus.realtime.on('connect', () => {
+            console.info('[Realtime] Reconnected — re-joining channels.');
+            set({ realtimeConnected: true });
+            join(`dm:${userId}`);
+            join(`typing:${userId}`);
+            join(`user_call:${userId}`);
+            join('presence');
+          });
+
+          nexus.realtime.on('disconnect', (reason: unknown) => {
+            console.warn('[Realtime] Disconnected:', reason);
+            set({ realtimeConnected: false });
+          });
+
+          // Returning to the tab is its own recovery point.
+          //
+          // A browser can suspend a backgrounded tab's socket without the
+          // page ever seeing a 'disconnect', so waiting for that event is not
+          // enough on its own. Reconnecting is safe to call when already
+          // connected, and the conversation refetch catches anything that
+          // arrived while the tab was asleep.
+          if (!visibilityHandler) {
+            visibilityHandler = () => {
+              if (document.visibilityState !== 'visible') return;
+              nexus.realtime
+                .connect()
+                .then(() => {
+                  join(`dm:${userId}`);
+                  join(`typing:${userId}`);
+                  join(`user_call:${userId}`);
+                  join('presence');
+                  scheduleConversationRefresh(userId);
+                })
+                .catch(err => console.warn('[Realtime] Reconnect on focus failed:', err));
+            };
+            document.addEventListener('visibilitychange', visibilityHandler);
+          }
 
           // One shared channel rather than a channel per pair: a heartbeat is
           // the same fact for everyone who cares, and subscribing per
           // conversation would mean re-subscribing every time a chat opens.
-          nexus.realtime.subscribe('presence').catch(() => {});
+          join('presence');
 
           // Announce immediately, then keep saying so. A heartbeat is the only
           // honest way to know someone is still there — a "went offline"
@@ -295,6 +376,15 @@ export const useMessageStore = create<MessageStore>((set, get) => {
             });
           }, PRESENCE_SWEEP_MS);
         }).catch(() => {});
+
+        // Bind the event handlers once per user.
+        //
+        // Everything below registers an `on` listener, and initialize() runs
+        // again whenever its calling effect re-runs. Without this guard a
+        // remount doubles every handler: one message renders twice, and each
+        // arrival fires two conversation refetches.
+        if (listenersBoundFor === userId) return;
+        listenersBoundFor = userId;
 
         // Someone said they are here.
         nexus.realtime.on('presence_ping', (payload: any) => {
@@ -1135,6 +1225,15 @@ export const useMessageStore = create<MessageStore>((set, get) => {
       callAudioRinger.stopAll();
       // Signing out during a call must still release the camera.
       teardownCall();
+
+      if (visibilityHandler) {
+        document.removeEventListener('visibilitychange', visibilityHandler);
+        visibilityHandler = null;
+      }
+
+      // Or signing out and back in binds nothing, because the guard still
+      // thinks this user's listeners are attached.
+      listenersBoundFor = null;
       nexus.realtime.disconnect();
       typingTimers.forEach(timer => clearTimeout(timer));
       typingTimers.clear();
